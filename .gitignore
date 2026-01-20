@@ -1,0 +1,47 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Data caches (keep structure, ignore data)
+data/stock_data/*.csv
+data/state/*.json
+data/logs/*.log
+!data/state/.gitkeep
+!data/stock_data/.gitkeep
+!data/logs/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db

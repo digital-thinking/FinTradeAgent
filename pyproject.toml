@@ -1,0 +1,32 @@
+[project]
+name = "fin-trade"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "digital-thinking",email = "github@digital-thinking.de"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "streamlit>=1.40.0",
+    "yfinance>=0.2.0",
+    "anthropic>=0.40.0",
+    "openai>=1.50.0",
+    "pyyaml>=6.0",
+    "plotly>=5.0.0",
+    "pandas>=2.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+
+[tool.poetry]
+packages = [{include = "fin_trade", from = "src"}]
+
+
+[tool.poetry.scripts]
+fin-trade = "fin_trade.app:main"
