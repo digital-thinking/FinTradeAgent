@@ -1,290 +1,189 @@
 # Agentic Trade Assistant
 
-A Streamlit application for managing AI-powered stock portfolios with LLM trading recommendations based on the **Semantic Alpha** framework.
+An experimental platform for AI-powered trading agents that analyze markets and recommend trades using LLM reasoning capabilities.
 
-## Overview
+## What This Is
 
-This application exploits "interpretive latency" - the time it takes for market consensus to fully digest nuanced qualitative information. Unlike high-frequency strategies that require colocation and proprietary data feeds, these strategies leverage LLM reasoning capabilities to identify pricing inefficiencies in unstructured data.
+This is **not** a portfolio management system. There are plenty of those.
 
-## Features
+This is a platform for running **AI trading agents** - each with a distinct strategy persona - that:
+- Research markets using web search for real-time data
+- Analyze opportunities based on their programmed strategy
+- Recommend specific trades with reasoning
+- Learn from the context of past decisions
 
-- **Portfolio Management**: Create and manage multiple portfolios with different strategies
-- **LLM-Powered Analysis**: OpenAI (GPT-4o, GPT-5.x) and Anthropic (Claude) support
-- **Web Search Integration**: Real-time market data access via LLM web search capabilities
-- **Real-Time Stock Data**: Yahoo Finance integration for price fetching
-- **Security Management**: Automatic ticker/ISIN resolution with persistent storage
-- **Trade Validation**: Pre-execution validation for cash availability and holdings
-- **Interactive UI**: Portfolio overview, holdings tracking, performance charts, trade history
-- **Execution Tracking**: Visual indicators for overdue portfolios, trade acceptance workflow
-- **Debug Logging**: All LLM prompts and responses logged for analysis
+Portfolio tracking exists solely to give agents the context they need: "What do I own? What's my cash? What did I do before?" The AI needs this history to make informed decisions.
 
-## Installation
+## Core Concept
+
+Each agent is defined by a **strategy prompt** - a detailed persona that tells the LLM how to think about markets. The agent then:
+
+1. Receives current portfolio state (holdings, cash, trade history)
+2. Uses web search to gather real-time market data
+3. Applies its strategy logic to identify opportunities
+4. Returns structured trade recommendations with reasoning
+5. Human reviews and accepts/rejects
+
+This is **human-in-the-loop AI trading research**, not automated execution.
+
+## Example Agents
+
+### Take-Private Arbitrage Agent
+Hunts for merger arbitrage opportunities in announced take-private deals. Calculates spreads, scores deal completion probability, assesses downside risk.
+
+### Earnings Momentum Agent
+Identifies "Double Surprise" events - companies that beat estimates AND raised guidance. Scores CEO confidence from earnings calls.
+
+### Squeeze Hunter Agent
+Finds potential short squeeze setups based on short interest, days to cover, and catalyst identification.
+
+### Insider Conviction Agent
+Tracks insider buying patterns to identify high-conviction opportunities from people who know the company best.
+
+See `data/portfolios/` for all agent configurations.
+
+## Quick Start
 
 ```bash
-# Install dependencies
+# Install
 poetry install
-```
 
-## Configuration
+# Configure API keys in .env
+OPENAI_API_KEY=your-key
+ANTHROPIC_API_KEY=your-key
 
-Create a `.env` file in the project root:
-
-```ini
-# OpenAI API Key (required for OpenAI-based strategies)
-OPENAI_API_KEY=your-openai-api-key-here
-
-# Anthropic API Key (required for Claude-based strategies)
-ANTHROPIC_API_KEY=your-anthropic-api-key-here
-```
-
-Get your API keys:
-- **OpenAI**: https://platform.openai.com/api-keys
-- **Anthropic**: https://console.anthropic.com/
-
-## Usage
-
-```bash
+# Run
 poetry run streamlit run src/fin_trade/app.py
 ```
 
-The app runs on http://localhost:8501 by default.
+## Creating an Agent
 
-## Trading Strategies
+Create a YAML file in `data/portfolios/`:
 
-The application includes six distinct portfolio strategies:
+```yaml
+name: "Your Agent Name"
+strategy_prompt: |
+  You are a [STRATEGY TYPE] specialist. Your goal is to [OBJECTIVE].
 
-### 1. Earnings Beat & Raise (PEAD)
+  WHAT TO RESEARCH:
+  - [Data points the agent should look for]
 
-**File**: `data/portfolios/earnings_momentum.yaml`
+  DECISION LOGIC:
+  - BUY SIGNAL: [Conditions]
+  - SELL SIGNAL: [Conditions]
 
-Exploits Post-Earnings Announcement Drift by identifying "Double Surprise" events:
-- Beat estimates on revenue AND earnings
-- Raised forward guidance
-- CEO confidence scoring from earnings call analysis
+  Always use web search to verify current data before recommending.
 
-**Signal**: Buy when Beat + Raise + High CEO Confidence; Sell on lowered guidance.
+initial_amount: 10000.0
+num_initial_trades: 3
+trades_per_run: 3
+run_frequency: daily
+llm_provider: openai
+llm_model: gpt-5.2
+```
 
-### 2. Insider Conviction
+The `strategy_prompt` is everything. It defines the agent's personality, research methodology, and decision framework.
 
-**File**: `data/portfolios/insider_conviction.yaml`
+## Web Search
 
-Tracks insider trading patterns to identify high-conviction opportunities:
-- Cluster buying detection (multiple insiders buying simultaneously)
-- Dollar amount significance analysis
-- Filtering noise from routine transactions
+Agents have access to real-time data via LLM web search:
 
-### 3. Overreaction Arbitrage
+**OpenAI**: Models automatically mapped to search variants
+- `gpt-4o` → `gpt-4o-search-preview`
+- `gpt-5.2` → `gpt-5-search-api`
 
-**File**: `data/portfolios/overreaction_arbitrage.yaml`
+**Anthropic**: Web search tool enabled automatically
+- Uses `web_search_20250305` capability
 
-Identifies market overreactions to news events:
-- Gap analysis after significant price moves
-- Sentiment vs fundamentals divergence
-- Mean reversion opportunities
+This means agents can research current prices, news, SEC filings, earnings dates, deal status - whatever their strategy requires.
 
-### 4. Seasonal Rotation
+## How It Works
 
-**File**: `data/portfolios/seasonal_rotation.yaml`
-
-Sector rotation based on historical seasonal patterns:
-- Monthly sector performance analysis
-- Tax-loss harvesting opportunities
-- Holiday/event-driven patterns
-
-### 5. Squeeze Hunter
-
-**File**: `data/portfolios/squeeze_hunter.yaml`
-
-Identifies potential short squeeze candidates:
-- High short interest analysis
-- Days to cover calculations
-- Catalyst identification
-
-### 6. Take-Private Arbitrage
-
-**File**: `data/portfolios/takeover_arbitrage.yaml`
-
-Merger arbitrage focused on announced take-private/delisting deals:
-- Spread calculation (offer price vs current price)
-- Deal completion probability scoring (financing, regulatory, shareholder approval)
-- Downside risk assessment if deal fails
-- Uses web search to verify current deal status
-
-**Signal**: Buy when spread > 3% with probability > 7/10; Sell when deal closes or concerns emerge.
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  Agent Config   │────▶│   LLM + Search  │────▶│ Recommendations │
+│  (Strategy +    │     │   (Reasoning +  │     │ (Trades with    │
+│   Context)      │     │    Research)    │     │  Reasoning)     │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                                                        │
+                                                        ▼
+                                                ┌─────────────────┐
+                                                │  Human Review   │
+                                                │  Accept/Reject  │
+                                                └─────────────────┘
+```
 
 ## Project Structure
 
 ```
 src/fin_trade/
-├── app.py                    # Main Streamlit entry point
-├── models/
-│   ├── portfolio.py          # Holding, Trade, PortfolioConfig, PortfolioState
-│   └── agent.py              # TradeRecommendation, AgentRecommendation
 ├── services/
-│   ├── stock_data.py         # Yahoo Finance integration with caching
-│   ├── portfolio.py          # Portfolio CRUD and calculations
-│   ├── security.py           # Ticker/ISIN management and price fetching
-│   ├── isin_lookup.py        # ISIN lookup interface
-│   └── agent.py              # LLM invocation with web search support
-├── pages/
-│   ├── overview.py           # Portfolio tiles grid
-│   └── portfolio_detail.py   # Holdings, Performance, Agent Execution, History
-└── components/
-    ├── portfolio_tile.py     # Reusable portfolio card with mini charts
-    └── trade_display.py      # Trade recommendation UI with validation
+│   ├── agent.py          # LLM invocation, web search, prompt building
+│   ├── security.py       # Ticker/price resolution
+│   └── portfolio.py      # State management (for agent context)
+├── components/
+│   └── trade_display.py  # Recommendation UI with validation
+└── pages/
+    └── portfolio_detail.py  # Agent execution interface
 
 data/
-├── portfolios/               # Portfolio YAML configurations
-├── state/                    # Portfolio state JSON (holdings, trades)
-├── stock_data/               # Security data JSON cache (ticker, ISIN, name)
-└── logs/                     # Agent prompt/response logs for debugging
+├── portfolios/           # Agent configurations (YAML)
+├── state/               # Portfolio state (JSON) - agent context
+└── logs/                # All LLM prompts/responses for debugging
 ```
 
-## Portfolio Configuration
+## Debugging Agents
 
-Create a YAML file in `data/portfolios/`:
+Every agent interaction is logged to `data/logs/`:
+- Full prompt sent to LLM
+- Complete response received
+- Timestamp, model, provider
 
-```yaml
-name: "Strategy Name"
-strategy_prompt: |
-  Your detailed strategy prompt here...
-  Use Chain-of-Thought reasoning...
-initial_amount: 10000.0
-num_initial_trades: 5
-trades_per_run: 3
-run_frequency: weekly  # daily/weekly/monthly
-llm_provider: openai   # openai or anthropic
-llm_model: gpt-4o      # gpt-4o, gpt-5.2, claude-sonnet-4-20250514, etc.
-```
-
-## Supported Models
-
-### OpenAI
-- `gpt-4o` → automatically uses `gpt-4o-search-preview` for web access
-- `gpt-4o-mini` → automatically uses `gpt-4o-mini-search-preview`
-- `gpt-5`, `gpt-5.1`, `gpt-5.2` → automatically uses `gpt-5-search-api`
-
-### Anthropic
-- `claude-sonnet-4-20250514`
-- `claude-3-5-sonnet-20241022`
-- Web search enabled via `web_search_20250305` tool
-
-## Stock Support
-
-The application supports **any publicly traded stock**:
-- Enter ticker symbols (AAPL, MSFT, GOOGL, etc.)
-- ISINs are automatically resolved via yfinance when available
-- User can manually provide ISINs when not found
-- Security data (ticker, ISIN, name) is persisted to JSON files
-
-## Key Design Decisions
-
-1. **LLMs Choose Stocks Freely**: No hardcoded stock list - agents recommend any ticker
-2. **Web Search Enabled**: Agents can access real-time market data, news, and prices
-3. **Human-in-the-Loop**: Agent generates recommendations, user accepts/rejects
-4. **Trade Validation**: Validates cash availability and holdings before execution
-5. **Persistent Storage**: Security info and portfolio state stored in JSON files
-6. **Debug Logging**: All LLM interactions logged to `data/logs/`
-
-## Risk Management
-
-- **Human-in-the-Loop**: AI generates signals, human verifies and executes
-- **Pre-Trade Validation**: Insufficient cash/holdings flagged before execution
-- **Zero-Calc Rule**: LLMs used for reasoning, not complex calculations
-- **Verification**: Prompts designed to cite sources for hallucination detection
-
-## Dependencies
-
-- `streamlit` - Web UI framework
-- `yfinance` - Stock data fetching
-- `openai` - OpenAI API
-- `anthropic` - Claude API
-- `python-dotenv` - Environment configuration
-- `pyyaml` - Configuration parsing
-- `plotly` - Interactive charts
-- `pandas` - Data manipulation
-- `requests` - HTTP client
+Use these logs to understand why an agent made specific recommendations and iterate on your strategy prompts.
 
 ---
 
-## Future Improvements and Ideas
+## Future Ideas
 
-### Short-Term Enhancements
+### Agent Capabilities
+- [ ] Multi-agent debates (bull vs bear personas)
+- [ ] Confidence scoring for each recommendation
+- [ ] Position sizing suggestions based on conviction
+- [ ] Stop-loss recommendations based on volatility analysis
+- [ ] Chain-of-thought logging for reasoning transparency
 
-- [ ] **Backtesting Framework**: Add ability to backtest strategies against historical data
-- [ ] **Portfolio Analytics Dashboard**: Sharpe ratio, max drawdown, beta, sector allocation charts
-- [ ] **Trade Journaling**: Notes and tags for each trade decision
-- [ ] **Alert System**: Email/push notifications for overdue portfolios or significant price moves
-- [ ] **CSV/Excel Export**: Export trade history and portfolio performance data
+### Research Tools
+- [ ] Backtesting framework against historical data
+- [ ] Sentiment tracking over time
+- [ ] Performance attribution (which strategy elements drive returns)
+- [ ] A/B testing different prompt variations
 
-### Strategy Improvements
+### Data Sources
+- [ ] Earnings calendar integration
+- [ ] SEC filing alerts
+- [ ] Options flow data
+- [ ] Social sentiment aggregation
 
-- [ ] **Multi-Timeframe Analysis**: Combine daily/weekly/monthly signals
-- [ ] **Sentiment Scoring**: Track sentiment over time for trending analysis
-- [ ] **News Aggregation**: Dedicated news feed per portfolio/stock
-- [ ] **Earnings Calendar Integration**: Automatic alerts before earnings dates
-- [ ] **Options Strategy Support**: Covered calls, protective puts for hedging
+### Execution
+- [ ] Paper trading mode
+- [ ] Broker API integration (Interactive Brokers, Alpaca)
+- [ ] Webhook triggers for external events
+- [ ] Scheduled agent runs
 
-### Technical Enhancements
-
-- [ ] **Real ISIN Lookup**: Integrate with paid ISIN database (OpenFIGI Pro, Bloomberg)
-- [ ] **Multi-Currency Support**: Handle EUR, GBP portfolios with FX conversion
-- [ ] **Fractional Shares**: Support partial share quantities
-- [ ] **Broker Integration**: Connect to Interactive Brokers, Alpaca for live execution
-- [ ] **Rate Limiting**: Respect API rate limits for yfinance and LLM providers
-- [ ] **Caching Layer**: Redis/SQLite for better performance with large portfolios
-
-### Agent Improvements
-
-- [ ] **Multi-Agent Debates**: Implement adversarial bull/bear analysis
-- [ ] **Chain-of-Thought Logging**: Store intermediate reasoning steps
-- [ ] **Confidence Scoring**: Agent provides confidence level for each trade
-- [ ] **Position Sizing Recommendations**: Kelly criterion or risk-parity suggestions
-- [ ] **Stop-Loss Suggestions**: Automatic stop-loss levels based on volatility
-
-### UI/UX Improvements
-
-- [ ] **Dark Mode**: Theme toggle for the interface
-- [ ] **Mobile Responsive**: Better mobile/tablet layout
-- [ ] **Drag-and-Drop Reordering**: Reorder portfolios on overview page
-- [ ] **Keyboard Shortcuts**: Quick actions for power users
-- [ ] **Portfolio Comparison**: Side-by-side performance comparison
-
-### Data & Analytics
-
-- [ ] **Correlation Matrix**: Cross-portfolio correlation analysis
-- [ ] **Risk Metrics**: VaR, Expected Shortfall calculations
-- [ ] **Benchmark Comparison**: Compare against S&P 500, NASDAQ
-- [ ] **Tax Lot Tracking**: FIFO/LIFO cost basis for tax reporting
-- [ ] **Dividend Tracking**: Track and reinvest dividends
-
-### Advanced Features
-
-- [ ] **Paper Trading Mode**: Simulated execution without real money
-- [ ] **Strategy Marketplace**: Share/import community strategies
-- [ ] **LLM Fine-Tuning**: Custom models trained on financial data
-- [ ] **Webhook Support**: Trigger agents via external events
-- [ ] **Multi-User Support**: Authentication and user-specific portfolios
-
-### Research Ideas
-
-- [ ] **Sentiment History Charts**: Visualize LLM sentiment over time
-- [ ] **Trade Attribution**: Analyze which strategy aspects drive returns
-- [ ] **Regime Detection**: Automatic market regime classification
-- [ ] **Alternative Data**: Social media sentiment, satellite data, web traffic
-- [ ] **Reinforcement Learning**: Agent learns from past trade outcomes
+### Platform
+- [ ] Strategy marketplace (share/import agent configs)
+- [ ] Multi-user support
+- [ ] API endpoint for programmatic agent execution
 
 ---
 
-## Theoretical Foundation
+## Why This Exists
 
-This application is based on the **Semantic Alpha** research framework:
+Traditional quant strategies compete on speed - microsecond execution, colocation, proprietary data feeds. That game is won.
 
-- **Lopez-Lira & Tang (2023)**: Demonstrated GPT-4's ability to predict stock returns from sentiment analysis
-- **Li et al. (2024)**: Validated LLM performance against human analysts
-- **AlphaAgents (2025)**: Multi-agent debate frameworks for bias elimination
+The next edge is **reasoning depth** - the ability to process unstructured information (earnings calls, news, filings) and extract insights before market consensus forms. LLMs excel at this.
 
-**Key Insight**: The next frontier of alpha generation lies not in speed of data transmission, but in depth of data reasoning. LLMs can process unstructured textual data (earnings calls, filings, news) to identify pricing inefficiencies before market absorption.
+This platform is for experimenting with that idea.
 
 ## License
 
