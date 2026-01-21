@@ -53,19 +53,46 @@ llm_model: gpt-4o""",
     with col1:
         st.metric("Total Value", f"${total_value:,.2f}")
     with col2:
-        st.metric("Total Gain/Loss", f"${total_gain:,.2f}")
+        gain_pct = (total_gain / (total_value - total_gain) * 100) if (total_value - total_gain) > 0 else 0
+        st.metric("Total Gain/Loss", f"${total_gain:,.2f}", delta=f"{gain_pct:+.1f}%")
     with col3:
         if overdue_count > 0:
-            st.metric("Overdue", f"{overdue_count} portfolios", delta="-Needs attention")
+            st.markdown(
+                f"""<div style="background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
+                padding: 16px; border-radius: 10px; text-align: center; margin-top: 4px;">
+                <span style="font-size: 0.85em; color: rgba(255,255,255,0.8);">Attention Needed</span><br>
+                <span style="font-size: 1.5em; font-weight: bold; color: white;">⚠️ {overdue_count} Overdue</span>
+                </div>""",
+                unsafe_allow_html=True,
+            )
         else:
-            st.metric("Status", "All current")
+            st.markdown(
+                """<div style="background: linear-gradient(135deg, #51cf66, #40c057);
+                padding: 16px; border-radius: 10px; text-align: center; margin-top: 4px;">
+                <span style="font-size: 0.85em; color: rgba(255,255,255,0.8);">Status</span><br>
+                <span style="font-size: 1.5em; font-weight: bold; color: white;">✓ All Current</span>
+                </div>""",
+                unsafe_allow_html=True,
+            )
 
     st.divider()
 
-    cols = st.columns(2)
-    for i, (filename, config, state) in enumerate(portfolio_data):
-        with cols[i % 2]:
+    # Display portfolios in a 2-column grid
+    # Create new row of columns for every 2 portfolios
+    for i in range(0, len(portfolio_data), 2):
+        cols = st.columns(2)
+
+        # First item in the row
+        filename, config, state = portfolio_data[i]
+        with cols[0]:
             if render_portfolio_tile(config, state, portfolio_service):
                 return filename
+
+        # Second item in the row (if exists)
+        if i + 1 < len(portfolio_data):
+            filename, config, state = portfolio_data[i + 1]
+            with cols[1]:
+                if render_portfolio_tile(config, state, portfolio_service):
+                    return filename
 
     return None

@@ -18,80 +18,113 @@ def render_portfolio_tile(
     is_overdue = portfolio_service.is_execution_overdue(config, state)
     num_holdings = len(state.holdings)
 
-    gain_color = "green" if abs_gain >= 0 else "red"
-    border_color = "#ff4b4b" if is_overdue else "#e0e0e0"
+    gain_color = "#51cf66" if abs_gain >= 0 else "#ff6b6b"
 
-    with st.container():
-        tile_style = f"""
-        <style>
-        .portfolio-tile {{
-            border: 2px solid {border_color};
-            border-radius: 10px;
-            padding: 15px;
-            margin: 5px 0;
-            background: #1e1e1e;
-        }}
-        </style>
-        """
-        st.markdown(tile_style, unsafe_allow_html=True)
-
-        col1, col2 = st.columns([3, 1])
+    with st.container(border=True):
+        # Header with name and status badge
+        col1, col2 = st.columns([4, 1])
 
         with col1:
             st.subheader(config.name)
-            st.caption(f"{num_holdings} holdings | {config.run_frequency}")
-
-            if state.last_execution:
-                last_exec = state.last_execution.strftime("%Y-%m-%d %H:%M")
-                if is_overdue:
-                    st.caption(f":red[Last run: {last_exec} (OVERDUE)]")
-                else:
-                    st.caption(f"Last run: {last_exec}")
-            else:
-                st.caption(":red[Never executed]")
 
         with col2:
-            st.metric(
-                label="Value",
-                value=f"${value:,.2f}",
-                delta=f"{pct_gain:+.1f}%",
-                delta_color="normal",
+            if is_overdue:
+                st.markdown(
+                    """<div style="background: #ff6b6b; color: white; padding: 4px 8px;
+                    border-radius: 12px; font-size: 0.75em; text-align: center; font-weight: 500;">
+                    ⚠️ OVERDUE</div>""",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    """<div style="background: #51cf66; color: white; padding: 4px 8px;
+                    border-radius: 12px; font-size: 0.75em; text-align: center; font-weight: 500;">
+                    ✓ Current</div>""",
+                    unsafe_allow_html=True,
+                )
+
+        # Info row
+        info_col1, info_col2 = st.columns(2)
+        with info_col1:
+            st.caption(f"📊 {num_holdings} holdings • {config.run_frequency.capitalize()}")
+        with info_col2:
+            if state.last_execution:
+                last_exec = state.last_execution.strftime("%b %d, %H:%M")
+                st.caption(f"🕐 {last_exec}")
+            else:
+                st.caption("🕐 Never run")
+
+        # Value metrics
+        metric_col1, metric_col2 = st.columns(2)
+        with metric_col1:
+            st.metric("Portfolio Value", f"${value:,.2f}")
+        with metric_col2:
+            st.metric("Return", f"${abs_gain:,.2f}", delta=f"{pct_gain:+.1f}%")
+
+        # Mini chart
+        fig = _create_mini_chart(config, state, gain_color)
+        if fig:
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=f"chart_{config.name}",
             )
 
-        fig = _create_mini_chart(state, gain_color)
-        if fig:
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-
         clicked = st.button(
-            "View Details",
+            "View Details →",
             key=f"tile_{config.name}",
             use_container_width=True,
+            type="primary" if is_overdue else "secondary",
         )
 
         return clicked
 
 
-def _create_mini_chart(state: PortfolioState, color: str) -> go.Figure | None:
+def _create_mini_chart(
+    config: PortfolioConfig, state: PortfolioState, color: str
+) -> go.Figure | None:
     """Create a mini sparkline chart of portfolio performance."""
     if not state.trades:
         return None
 
-    values = []
-    timestamps = []
-    running_cash = state.cash
-    for holding in state.holdings:
-        running_cash += holding.avg_price * holding.quantity
+    # Calculate portfolio value at each trade point (same logic as detail page)
+    values = [config.initial_amount]
+    cash = config.initial_amount
+    holdings: dict[str, dict] = {}
 
-    for trade in state.trades[-20:]:
-        timestamps.append(trade.timestamp)
+    for trade in state.trades[-20:]:  # Last 20 trades for mini chart
+        trade_cost = trade.price * trade.quantity
+
         if trade.action == "BUY":
-            running_cash -= trade.price * trade.quantity
-        else:
-            running_cash += trade.price * trade.quantity
-        values.append(running_cash)
+            cash -= trade_cost
+            if trade.ticker in holdings:
+                existing = holdings[trade.ticker]
+                total_qty = existing["quantity"] + trade.quantity
+                avg_price = (
+                    existing["avg_price"] * existing["quantity"] + trade_cost
+                ) / total_qty
+                holdings[trade.ticker] = {"quantity": total_qty, "avg_price": avg_price}
+            else:
+                holdings[trade.ticker] = {"quantity": trade.quantity, "avg_price": trade.price}
+        else:  # SELL
+            cash += trade_cost
+            if trade.ticker in holdings:
+                holdings[trade.ticker]["quantity"] -= trade.quantity
+                if holdings[trade.ticker]["quantity"] <= 0:
+                    del holdings[trade.ticker]
 
-    if not values:
+        holdings_value = sum(h["quantity"] * h["avg_price"] for h in holdings.values())
+        values.append(cash + holdings_value)
+
+    if len(values) < 2:
         return None
+
+    # Convert hex color to rgba for fill
+    if color == "#51cf66":
+        fill_rgba = "rgba(81, 207, 102, 0.15)"
+    else:
+        fill_rgba = "rgba(255, 107, 107, 0.15)"
 
     fig = go.Figure()
     fig.add_trace(
@@ -101,11 +134,11 @@ def _create_mini_chart(state: PortfolioState, color: str) -> go.Figure | None:
             mode="lines",
             line=dict(color=color, width=2),
             fill="tozeroy",
-            fillcolor=f"rgba({'0,255,0' if color == 'green' else '255,0,0'}, 0.1)",
+            fillcolor=fill_rgba,
         )
     )
     fig.update_layout(
-        height=80,
+        height=60,
         margin=dict(l=0, r=0, t=0, b=0),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",

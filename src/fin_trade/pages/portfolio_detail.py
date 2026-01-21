@@ -6,7 +6,7 @@ import streamlit as st
 import plotly.graph_objects as go
 
 from fin_trade.models import PortfolioConfig, PortfolioState, TradeRecommendation
-from fin_trade.services import PortfolioService, AgentService, StockDataService
+from fin_trade.services import PortfolioService, AgentService, SecurityService
 from fin_trade.components.trade_display import (
     render_trade_recommendations,
     render_trade_history,
@@ -17,7 +17,7 @@ def render_portfolio_detail_page(
     portfolio_name: str,
     portfolio_service: PortfolioService,
     agent_service: AgentService,
-    stock_service: StockDataService,
+    security_service: SecurityService,
     on_back: Callable | None = None,
 ) -> None:
     """Render the portfolio detail page."""
@@ -31,65 +31,88 @@ def render_portfolio_detail_page(
 
     col1, col2 = st.columns([1, 4])
     with col1:
-        if st.button("< Back"):
+        if st.button("← Back to Overview", type="secondary"):
             if on_back:
                 on_back()
-            return
 
     with col2:
         st.title(config.name)
 
-    _render_summary(config, state, portfolio_service)
+    _render_summary(config, state, portfolio_service, security_service)
 
     st.divider()
 
     tab1, tab2, tab3, tab4 = st.tabs(["Holdings", "Performance", "Execute Agent", "Trade History"])
 
     with tab1:
-        _render_holdings(state, stock_service)
+        _render_holdings(state, security_service)
 
     with tab2:
-        _render_performance_chart(config, state, stock_service)
+        _render_performance_chart(config, state, security_service)
 
     with tab3:
         _render_agent_execution(
-            config, state, portfolio_service, agent_service, stock_service, portfolio_name
+            config, state, portfolio_service, agent_service, security_service, portfolio_name
         )
 
     with tab4:
-        render_trade_history(state.trades, stock_service)
+        render_trade_history(state.trades, security_service)
 
 
 def _render_summary(
     config: PortfolioConfig,
     state: PortfolioState,
     portfolio_service: PortfolioService,
+    security_service: SecurityService,
 ) -> None:
     """Render the portfolio summary metrics."""
-    value = portfolio_service.calculate_value(state)
+    total_value = portfolio_service.calculate_value(state)
     abs_gain, pct_gain = portfolio_service.calculate_gain(config, state)
     is_overdue = portfolio_service.is_execution_overdue(config, state)
 
-    col1, col2, col3, col4 = st.columns(4)
+    # Calculate stock holdings value
+    stock_value = 0.0
+    for holding in state.holdings:
+        try:
+            price = security_service.get_price(holding.ticker)
+            stock_value += price * holding.quantity
+        except Exception:
+            stock_value += holding.avg_price * holding.quantity
+
+    col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
-        st.metric("Portfolio Value", f"${value:,.2f}")
+        st.metric("Total Value", f"${total_value:,.2f}")
 
     with col2:
-        st.metric(
-            "Gain/Loss",
-            f"${abs_gain:,.2f}",
-            delta=f"{pct_gain:+.1f}%",
-        )
+        gain_delta = f"{pct_gain:+.1f}%"
+        st.metric("Gain/Loss", f"${abs_gain:,.2f}", delta=gain_delta)
 
     with col3:
-        st.metric("Cash Available", f"${state.cash:,.2f}")
+        st.metric("Stock Holdings", f"${stock_value:,.2f}")
 
     with col4:
+        st.metric("Cash Available", f"${state.cash:,.2f}")
+
+    with col5:
         if is_overdue:
-            st.metric("Status", "OVERDUE", delta="-Needs execution")
+            st.markdown(
+                """<div style="background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
+                padding: 12px; border-radius: 8px; text-align: center;">
+                <span style="font-size: 0.8em; color: rgba(255,255,255,0.8);">Status</span><br>
+                <span style="font-size: 1.2em; font-weight: bold; color: white;">⚠️ OVERDUE</span>
+                </div>""",
+                unsafe_allow_html=True,
+            )
         else:
-            st.metric("Status", "Current")
+            st.markdown(
+                """<div style="background: linear-gradient(135deg, #51cf66, #40c057);
+                padding: 12px; border-radius: 8px; text-align: center;">
+                <span style="font-size: 0.8em; color: rgba(255,255,255,0.8);">Status</span><br>
+                <span style="font-size: 1.2em; font-weight: bold; color: white;">✓ Current</span>
+                </div>""",
+                unsafe_allow_html=True,
+            )
 
     with st.expander("Portfolio Configuration"):
         st.write(f"**Strategy:** {config.strategy_prompt[:200]}...")
@@ -99,7 +122,7 @@ def _render_summary(
         st.write(f"**LLM:** {config.llm_provider} / {config.llm_model}")
 
 
-def _render_holdings(state: PortfolioState, stock_service: StockDataService) -> None:
+def _render_holdings(state: PortfolioState, security_service: SecurityService) -> None:
     """Render the holdings table."""
     st.subheader("Current Holdings")
 
@@ -108,9 +131,8 @@ def _render_holdings(state: PortfolioState, stock_service: StockDataService) -> 
         return
 
     for holding in state.holdings:
-        ticker = stock_service.get_ticker(holding.isin)
         try:
-            current_price = stock_service.get_price(holding.isin)
+            current_price = security_service.get_price(holding.ticker)
             current_value = current_price * holding.quantity
             cost_basis = holding.avg_price * holding.quantity
             gain = current_value - cost_basis
@@ -124,8 +146,8 @@ def _render_holdings(state: PortfolioState, stock_service: StockDataService) -> 
         col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 1])
 
         with col1:
-            st.write(f"**{ticker}**")
-            st.caption(holding.isin)
+            st.write(f"**{holding.ticker}**")
+            st.caption(holding.name)
 
         with col2:
             st.write(f"{holding.quantity} shares")
@@ -147,7 +169,7 @@ def _render_holdings(state: PortfolioState, stock_service: StockDataService) -> 
 def _render_performance_chart(
     config: PortfolioConfig,
     state: PortfolioState,
-    stock_service: StockDataService,
+    security_service: SecurityService,
 ) -> None:
     """Render the portfolio performance chart."""
     st.subheader("Performance")
@@ -156,17 +178,67 @@ def _render_performance_chart(
         st.info("No trade history to display.")
         return
 
-    timestamps = []
-    values = []
-    running_value = config.initial_amount
+    # Calculate portfolio value at each trade point
+    # Track cash and holdings separately
+    timestamps = [None]  # Starting point
+    values = [config.initial_amount]  # Initial value
+
+    cash = config.initial_amount
+    holdings: dict[str, dict] = {}  # ticker -> {quantity, avg_price}
 
     for trade in state.trades:
-        timestamps.append(trade.timestamp)
+        trade_cost = trade.price * trade.quantity
+
         if trade.action == "BUY":
-            running_value -= trade.price * trade.quantity
-        else:
-            running_value += trade.price * trade.quantity
-        values.append(running_value)
+            cash -= trade_cost
+            if trade.ticker in holdings:
+                # Update average price
+                existing = holdings[trade.ticker]
+                total_qty = existing["quantity"] + trade.quantity
+                avg_price = (
+                    existing["avg_price"] * existing["quantity"] + trade_cost
+                ) / total_qty
+                holdings[trade.ticker] = {"quantity": total_qty, "avg_price": avg_price}
+            else:
+                holdings[trade.ticker] = {"quantity": trade.quantity, "avg_price": trade.price}
+        else:  # SELL
+            cash += trade_cost
+            if trade.ticker in holdings:
+                holdings[trade.ticker]["quantity"] -= trade.quantity
+                if holdings[trade.ticker]["quantity"] <= 0:
+                    del holdings[trade.ticker]
+
+        # Calculate total portfolio value at this point
+        # Use purchase prices for holdings (we don't have historical market prices)
+        holdings_value = sum(
+            h["quantity"] * h["avg_price"] for h in holdings.values()
+        )
+        total_value = cash + holdings_value
+
+        timestamps.append(trade.timestamp)
+        values.append(total_value)
+
+    # Add current value as final point
+    try:
+        current_holdings_value = 0.0
+        for ticker, h in holdings.items():
+            try:
+                current_price = security_service.get_price(ticker)
+                current_holdings_value += h["quantity"] * current_price
+            except Exception:
+                current_holdings_value += h["quantity"] * h["avg_price"]
+
+        current_total = cash + current_holdings_value
+        if current_total != values[-1]:
+            from datetime import datetime
+            timestamps.append(datetime.now())
+            values.append(current_total)
+    except Exception:
+        pass
+
+    # Remove the None placeholder if we have trades
+    if timestamps[0] is None and len(timestamps) > 1:
+        timestamps[0] = timestamps[1]
 
     fig = go.Figure()
     fig.add_trace(
@@ -187,6 +259,12 @@ def _render_performance_chart(
         annotation_text=f"Initial: ${config.initial_amount:,.0f}",
     )
 
+    # Color the area based on gain/loss
+    final_value = values[-1] if values else config.initial_amount
+    fill_color = "rgba(0, 212, 255, 0.1)" if final_value >= config.initial_amount else "rgba(255, 75, 75, 0.1)"
+
+    fig.update_traces(fill="tozeroy", fillcolor=fill_color)
+
     fig.update_layout(
         title="Portfolio Value Over Time",
         xaxis_title="Date",
@@ -203,7 +281,7 @@ def _render_agent_execution(
     state: PortfolioState,
     portfolio_service: PortfolioService,
     agent_service: AgentService,
-    stock_service: StockDataService,
+    security_service: SecurityService,
     portfolio_name: str,
 ) -> None:
     """Render the agent execution section."""
@@ -238,7 +316,7 @@ def _render_agent_execution(
                 for trade in trades:
                     state = portfolio_service.execute_trade(
                         state,
-                        trade.isin,
+                        trade.ticker,
                         trade.action,
                         trade.quantity,
                         trade.reasoning,
@@ -256,7 +334,9 @@ def _render_agent_execution(
 
         render_trade_recommendations(
             st.session_state.recommendation,
-            stock_service,
+            security_service,
+            available_cash=state.cash,
+            holdings=state.holdings,
             on_accept=on_accept,
             on_retry=on_retry,
         )
