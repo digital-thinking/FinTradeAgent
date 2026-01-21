@@ -104,7 +104,7 @@ class StockDataService:
                 df = pd.read_csv(cache_path, index_col=0, parse_dates=True)
                 # Ensure index is DatetimeIndex
                 if not isinstance(df.index, pd.DatetimeIndex):
-                    df.index = pd.to_datetime(df.index)
+                    df.index = pd.to_datetime(df.index, utc=True)
                 self._cache[isin] = df
             else:
                 df = self.update_data(isin)

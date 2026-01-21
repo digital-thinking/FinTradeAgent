@@ -13,7 +13,7 @@ from fin_trade.models import (
     PortfolioState,
     Trade,
 )
-from fin_trade.services.stock_data import StockDataService
+from fin_trade.services.security import SecurityService
 
 
 class PortfolioService:
@@ -23,7 +23,7 @@ class PortfolioService:
         self,
         portfolios_dir: Path | None = None,
         state_dir: Path | None = None,
-        stock_service: StockDataService | None = None,
+        security_service: SecurityService | None = None,
     ):
         if portfolios_dir is None:
             portfolios_dir = Path("data/portfolios")
@@ -32,7 +32,7 @@ class PortfolioService:
 
         self.portfolios_dir = portfolios_dir
         self.state_dir = state_dir
-        self.stock_service = stock_service or StockDataService()
+        self.security_service = security_service or SecurityService()
 
         self.portfolios_dir.mkdir(parents=True, exist_ok=True)
         self.state_dir.mkdir(parents=True, exist_ok=True)
@@ -84,6 +84,8 @@ class PortfolioService:
         holdings = [
             Holding(
                 isin=h["isin"],
+                ticker=h.get("ticker", h["isin"]),
+                name=h.get("name", h["isin"]),
                 quantity=int(h["quantity"]),
                 avg_price=float(h["avg_price"]),
             )
@@ -94,6 +96,8 @@ class PortfolioService:
             Trade(
                 timestamp=self._to_naive_datetime(datetime.fromisoformat(t["timestamp"])),
                 isin=t["isin"],
+                ticker=t.get("ticker", t["isin"]),
+                name=t.get("name", t["isin"]),
                 action=t["action"],
                 quantity=int(t["quantity"]),
                 price=float(t["price"]),
@@ -128,6 +132,8 @@ class PortfolioService:
             "holdings": [
                 {
                     "isin": h.isin,
+                    "ticker": h.ticker,
+                    "name": h.name,
                     "quantity": h.quantity,
                     "avg_price": h.avg_price,
                 }
@@ -137,6 +143,8 @@ class PortfolioService:
                 {
                     "timestamp": t.timestamp.isoformat(),
                     "isin": t.isin,
+                    "ticker": t.ticker,
+                    "name": t.name,
                     "action": t.action,
                     "quantity": t.quantity,
                     "price": t.price,
@@ -157,7 +165,7 @@ class PortfolioService:
         total = state.cash
         for holding in state.holdings:
             try:
-                price = self.stock_service.get_price(holding.isin)
+                price = self.security_service.get_price(holding.ticker)
                 total += price * holding.quantity
             except Exception:
                 total += holding.avg_price * holding.quantity
@@ -195,13 +203,15 @@ class PortfolioService:
     def execute_trade(
         self,
         state: PortfolioState,
-        isin: str,
+        ticker: str,
         action: Literal["BUY", "SELL"],
         quantity: int,
         reasoning: str,
     ) -> PortfolioState:
         """Execute a trade and return updated state."""
-        price = self.stock_service.get_price(isin)
+        # Lookup security info from ticker
+        security = self.security_service.lookup_ticker(ticker)
+        price = self.security_service.get_price(ticker)
         cost = price * quantity
 
         holdings = list(state.holdings)
@@ -213,19 +223,31 @@ class PortfolioService:
                 raise ValueError(f"Insufficient cash: need {cost}, have {cash}")
 
             cash -= cost
-            existing = next((h for h in holdings if h.isin == isin), None)
+            existing = next((h for h in holdings if h.ticker == ticker), None)
             if existing:
                 total_qty = existing.quantity + quantity
                 avg_price = (
                     (existing.avg_price * existing.quantity) + (price * quantity)
                 ) / total_qty
-                holdings = [h for h in holdings if h.isin != isin]
-                holdings.append(Holding(isin=isin, quantity=total_qty, avg_price=avg_price))
+                holdings = [h for h in holdings if h.ticker != ticker]
+                holdings.append(Holding(
+                    isin=security.isin,
+                    ticker=security.ticker,
+                    name=security.name,
+                    quantity=total_qty,
+                    avg_price=avg_price,
+                ))
             else:
-                holdings.append(Holding(isin=isin, quantity=quantity, avg_price=price))
+                holdings.append(Holding(
+                    isin=security.isin,
+                    ticker=security.ticker,
+                    name=security.name,
+                    quantity=quantity,
+                    avg_price=price,
+                ))
 
         elif action == "SELL":
-            existing = next((h for h in holdings if h.isin == isin), None)
+            existing = next((h for h in holdings if h.ticker == ticker), None)
             if not existing or existing.quantity < quantity:
                 raise ValueError(
                     f"Insufficient holdings: need {quantity}, have {existing.quantity if existing else 0}"
@@ -233,15 +255,21 @@ class PortfolioService:
 
             cash += cost
             new_qty = existing.quantity - quantity
-            holdings = [h for h in holdings if h.isin != isin]
+            holdings = [h for h in holdings if h.ticker != ticker]
             if new_qty > 0:
-                holdings.append(
-                    Holding(isin=isin, quantity=new_qty, avg_price=existing.avg_price)
-                )
+                holdings.append(Holding(
+                    isin=existing.isin,
+                    ticker=existing.ticker,
+                    name=existing.name,
+                    quantity=new_qty,
+                    avg_price=existing.avg_price,
+                ))
 
         trade = Trade(
             timestamp=datetime.now(),
-            isin=isin,
+            isin=security.isin,
+            ticker=security.ticker,
+            name=security.name,
             action=action,
             quantity=quantity,
             price=price,
