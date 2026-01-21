@@ -10,6 +10,8 @@ class Holding:
     """Represents a stock holding in a portfolio."""
 
     isin: str
+    ticker: str
+    name: str
     quantity: int
     avg_price: float
 
@@ -20,6 +22,8 @@ class Trade:
 
     timestamp: datetime
     isin: str
+    ticker: str
+    name: str
     action: Literal["BUY", "SELL"]
     quantity: int
     price: float

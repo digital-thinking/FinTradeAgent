@@ -8,7 +8,8 @@ from typing import Literal
 class TradeRecommendation:
     """A single trade recommendation from the agent."""
 
-    isin: str
+    ticker: str
+    name: str
     action: Literal["BUY", "SELL"]
     quantity: int
     reasoning: str
