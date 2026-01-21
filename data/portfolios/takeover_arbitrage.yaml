@@ -65,5 +65,5 @@ initial_amount: 10000.0
 num_initial_trades: 3
 trades_per_run: 3
 run_frequency: daily
-llm_provider: anthropic
-llm_model: claude-sonnet-4-20250514
+llm_provider: openai
+llm_model: gpt-5.2
