@@ -30,3 +30,4 @@ trades_per_run: 5
 run_frequency: weekly
 llm_provider: openai
 llm_model: gpt-4o
+agent_mode: langgraph

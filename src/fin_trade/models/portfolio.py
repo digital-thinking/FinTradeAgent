@@ -42,6 +42,7 @@ class PortfolioConfig:
     run_frequency: Literal["daily", "weekly", "monthly"]
     llm_provider: Literal["anthropic", "openai"]
     llm_model: str
+    agent_mode: Literal["simple", "langgraph"] = "langgraph"
 
 
 @dataclass

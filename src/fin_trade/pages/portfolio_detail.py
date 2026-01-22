@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 
 from fin_trade.models import PortfolioConfig, PortfolioState, TradeRecommendation
 from fin_trade.services import PortfolioService, AgentService, SecurityService
+from fin_trade.agents.service import LangGraphAgentService, StepProgress, ExecutionMetrics
 from fin_trade.components.trade_display import (
     render_trade_recommendations,
     render_trade_history,
@@ -120,6 +121,7 @@ def _render_summary(
         st.write(f"**Run Frequency:** {config.run_frequency}")
         st.write(f"**Trades per Run:** {config.trades_per_run}")
         st.write(f"**LLM:** {config.llm_provider} / {config.llm_model}")
+        st.write(f"**Agent Mode:** {getattr(config, 'agent_mode', 'simple')}")
 
 
 def _render_holdings(state: PortfolioState, security_service: SecurityService) -> None:
@@ -295,19 +297,81 @@ def _render_agent_execution(
     if state.last_execution:
         st.caption(f"Last executed: {state.last_execution.strftime('%Y-%m-%d %H:%M')}")
 
+    # Show agent mode badge
+    agent_mode = getattr(config, "agent_mode", "simple")
+    mode_color = "blue" if agent_mode == "langgraph" else "gray"
+    st.caption(f"Agent Mode: :{mode_color}[{agent_mode}]")
+
     if "recommendation" not in st.session_state:
         st.session_state.recommendation = None
+    if "last_metrics" not in st.session_state:
+        st.session_state.last_metrics = None
 
     execute_button_type = "primary" if is_overdue else "secondary"
 
     if st.button("Run Agent", type=execute_button_type, key="run_agent"):
-        with st.spinner("Agent is analyzing portfolio..."):
-            try:
-                recommendation = agent_service.execute(config, state)
-                st.session_state.recommendation = recommendation
-                st.rerun()
-            except Exception as e:
-                st.error(f"Agent execution failed: {e}")
+        try:
+            # Choose agent based on config.agent_mode
+            if agent_mode == "langgraph":
+                langgraph_agent = LangGraphAgentService(security_service=security_service)
+
+                # Create status container for progress
+                with st.status("Running LangGraph Agent...", expanded=True) as status:
+                    steps_completed = []
+
+                    def on_progress(progress: StepProgress) -> None:
+                        steps_completed.append(progress)
+                        # Update status display with metrics
+                        metrics_str = ""
+                        if progress.metrics:
+                            metrics_str = f" ({progress.metrics.duration_ms}ms, {progress.metrics.total_tokens} tokens)"
+                        st.write(f"{progress.icon} **{progress.label}**{metrics_str}")
+                        if progress.result_preview:
+                            st.caption(progress.result_preview)
+
+                    recommendation, metrics = langgraph_agent.execute(config, state, on_progress=on_progress)
+
+                    # Store metrics in session state
+                    st.session_state.last_metrics = metrics
+
+                    # Update final status with metrics summary
+                    if recommendation and recommendation.trades:
+                        status.update(
+                            label=f"Agent completed - {len(recommendation.trades)} trade(s) | {metrics.total_duration_ms}ms | {metrics.total_tokens} tokens",
+                            state="complete",
+                            expanded=False,
+                        )
+                    else:
+                        status.update(
+                            label=f"Agent completed - No trades | {metrics.total_duration_ms}ms | {metrics.total_tokens} tokens",
+                            state="complete",
+                            expanded=False,
+                        )
+            else:
+                with st.spinner("Agent is analyzing portfolio..."):
+                    recommendation = agent_service.execute(config, state)
+                st.session_state.last_metrics = None
+
+            st.session_state.recommendation = recommendation
+            st.rerun()
+        except Exception as e:
+            st.error(f"Agent execution failed: {e}")
+
+    # Show last execution metrics if available
+    if st.session_state.last_metrics:
+        metrics = st.session_state.last_metrics
+        with st.expander("Last Execution Metrics", expanded=False):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Duration", f"{metrics.total_duration_ms}ms")
+            with col2:
+                st.metric("Input Tokens", f"{metrics.total_input_tokens:,}")
+            with col3:
+                st.metric("Output Tokens", f"{metrics.total_output_tokens:,}")
+
+            st.caption("Per-step breakdown:")
+            for step_name, step_metrics in metrics.steps.items():
+                st.text(f"  {step_name}: {step_metrics.duration_ms}ms, {step_metrics.input_tokens} in / {step_metrics.output_tokens} out")
 
     if st.session_state.recommendation:
         def on_accept(trades: list[TradeRecommendation]) -> None:

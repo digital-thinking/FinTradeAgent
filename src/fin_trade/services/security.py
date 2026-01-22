@@ -1,11 +1,17 @@
 """Security service for managing stock ticker/ISIN lookups and prices."""
 
+from __future__ import annotations
+
 import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yfinance as yf
+
+if TYPE_CHECKING:
+    from fin_trade.services.stock_data import StockDataService
 
 
 @dataclass
@@ -24,13 +30,25 @@ class SecurityService:
     1. yfinance (when available)
     2. User-provided via UI (stored in data files)
     3. Fallback to UNKNOWN-{ticker} when not available
+
+    Prices are delegated to StockDataService which handles caching.
     """
 
-    def __init__(self, data_dir: Path | None = None):
+    def __init__(
+        self,
+        data_dir: Path | None = None,
+        stock_data_service: StockDataService | None = None,
+    ):
         if data_dir is None:
             data_dir = Path("data/stock_data")
         self.data_dir = data_dir
         self.data_dir.mkdir(parents=True, exist_ok=True)
+
+        # Lazy import to avoid circular dependency
+        if stock_data_service is None:
+            from fin_trade.services.stock_data import StockDataService
+            stock_data_service = StockDataService(data_dir=data_dir)
+        self._stock_data_service = stock_data_service
 
         # Initialize caches
         self._by_isin: dict[str, Security] = {}
@@ -151,16 +169,13 @@ class SecurityService:
         self._by_ticker[security.ticker] = security
 
     def get_price(self, ticker: str) -> float:
-        """Get the current price for a ticker symbol."""
-        ticker = ticker.upper()
-        try:
-            stock = yf.Ticker(ticker)
-            hist = stock.history(period="5d")
-            if hist.empty:
-                raise ValueError(f"No price data available for {ticker}")
-            return float(hist["Close"].iloc[-1])
-        except Exception as e:
-            raise RuntimeError(f"Failed to fetch price for {ticker}: {e}") from e
+        """Get the current price for a ticker symbol (cached, auto-updates if >24h old)."""
+        return self._stock_data_service.get_price(ticker)
+
+    def force_update_price(self, ticker: str) -> float:
+        """Force refresh price data for a ticker and return current price."""
+        self._stock_data_service.force_update(ticker)
+        return self._stock_data_service.get_price(ticker)
 
     def get_stock_info(self, ticker: str) -> dict:
         """Get stock information including name, ISIN, etc."""

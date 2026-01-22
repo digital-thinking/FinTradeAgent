@@ -67,3 +67,4 @@ trades_per_run: 3
 run_frequency: daily
 llm_provider: openai
 llm_model: gpt-5.2
+agent_mode: langgraph

@@ -62,6 +62,7 @@ class PortfolioService:
             run_frequency=data["run_frequency"],
             llm_provider=data["llm_provider"],
             llm_model=data["llm_model"],
+            agent_mode=data.get("agent_mode", "langgraph"),
         )
 
     @staticmethod
@@ -211,7 +212,8 @@ class PortfolioService:
         """Execute a trade and return updated state."""
         # Lookup security info from ticker
         security = self.security_service.lookup_ticker(ticker)
-        price = self.security_service.get_price(ticker)
+        # Force update price when executing trades to ensure fresh data
+        price = self.security_service.force_update_price(ticker)
         cost = price * quantity
 
         holdings = list(state.holdings)
