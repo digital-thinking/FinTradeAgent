@@ -176,6 +176,7 @@ OVERALL REASONING
         config: PortfolioConfig,
         state: PortfolioState,
         on_progress: Callable[[StepProgress], None] | None = None,
+        user_context: str | None = None,
     ) -> tuple[AgentRecommendation, ExecutionMetrics]:
         """Execute the LangGraph agent to get trading recommendations.
 
@@ -183,6 +184,7 @@ OVERALL REASONING
             config: Portfolio configuration including strategy prompt
             state: Current portfolio state (cash, holdings, trades)
             on_progress: Optional callback for progress updates
+            user_context: Optional user guidance/context to inject into prompts
 
         Returns:
             Tuple of (AgentRecommendation, ExecutionMetrics)
@@ -198,6 +200,7 @@ OVERALL REASONING
         initial_state = {
             "portfolio_config": config,
             "portfolio_state": state,
+            "user_context": user_context,
             "market_research": "",
             "price_data": {},
             "analysis": "",
@@ -478,6 +481,7 @@ OVERALL REASONING
         config: PortfolioConfig,
         state: PortfolioState,
         on_progress: Callable[[StepProgress], None] | None = None,
+        user_context: str | None = None,
     ) -> tuple[AgentRecommendation, ExecutionMetrics]:
         """Execute the debate agent to get trading recommendations.
 
@@ -485,6 +489,7 @@ OVERALL REASONING
             config: Portfolio configuration including strategy prompt
             state: Current portfolio state (cash, holdings, trades)
             on_progress: Optional callback for progress updates
+            user_context: Optional user guidance/context to inject into prompts
 
         Returns:
             Tuple of (AgentRecommendation, ExecutionMetrics)
@@ -504,6 +509,7 @@ OVERALL REASONING
         initial_state = {
             "portfolio_config": config,
             "portfolio_state": state,
+            "user_context": user_context,
             "market_research": "",
             "price_data": {},
             "bull_pitch": "",

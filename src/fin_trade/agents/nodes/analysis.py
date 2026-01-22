@@ -29,6 +29,7 @@ def _build_analysis_prompt(state: SimpleAgentState) -> str:
     portfolio_state = state["portfolio_state"]
     market_research = state.get("market_research", "No research available")
     price_data = state.get("price_data", {})
+    user_context = state.get("user_context")
 
     # Format holdings info
     holdings_info = []
@@ -40,7 +41,17 @@ def _build_analysis_prompt(state: SimpleAgentState) -> str:
             f"current ${current_price:.2f} ({gain:+.1f}%)"
         )
 
+    # Build user context section if provided
+    user_context_section = ""
+    if user_context:
+        user_context_section = f"""
+USER GUIDANCE (from portfolio manager - incorporate this into your analysis):
+{user_context}
+
+"""
+
     return f"""You are a portfolio analyst. Apply the investment strategy to the market research provided.
+{user_context_section}
 
 STRATEGY:
 {config.strategy_prompt}

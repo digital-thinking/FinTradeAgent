@@ -36,6 +36,7 @@ def _build_generate_prompt(state) -> str:
     # Support both simple agent (analysis) and debate agent (moderator_analysis)
     analysis = state.get("analysis") or state.get("moderator_analysis") or "No analysis available"
     price_data = state.get("price_data", {})
+    user_context = state.get("user_context")
 
     # Format holdings for context
     holdings_info = []
@@ -52,7 +53,17 @@ to establish positions. Use the full ${config.initial_amount:.2f} initial invest
     else:
         trade_instruction = f"""Maximum {config.trades_per_run} trades allowed."""
 
+    # Build user context section if provided
+    user_context_section = ""
+    if user_context:
+        user_context_section = f"""
+USER GUIDANCE (incorporate this into trade generation):
+{user_context}
+
+"""
+
     return f"""Convert the analysis into specific trade recommendations in JSON format.
+{user_context_section}
 
 ANALYSIS TO CONVERT:
 {analysis}

@@ -51,7 +51,7 @@
 *Focus: The user experience of running agents and reviewing results.*
 *Primary Files: `src/fin_trade/pages/portfolio_detail.py`, `src/fin_trade/agents/`, `src/fin_trade/services/agent.py`*
 
-- [ ] **User Feedback Loop**
+- [x] **User Feedback Loop**
     - Add UI to inject user feedback *during* the debate or before generation.
     - Update agent graph to accept user input node.
 - [ ] **Fix the formatting issues from the markdown agent output **

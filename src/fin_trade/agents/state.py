@@ -17,6 +17,9 @@ class SimpleAgentState(TypedDict):
     portfolio_config: PortfolioConfig
     portfolio_state: PortfolioState
 
+    # User feedback (optional guidance from user before execution)
+    user_context: str | None
+
     # Research results
     market_research: str  # Web search results about market conditions
     price_data: dict[str, float]  # ticker -> current price
@@ -57,6 +60,9 @@ class DebateAgentState(TypedDict):
     # Input (provided at invocation)
     portfolio_config: PortfolioConfig
     portfolio_state: PortfolioState
+
+    # User feedback (optional guidance from user before execution)
+    user_context: str | None
 
     # Shared research (from research node)
     market_research: str

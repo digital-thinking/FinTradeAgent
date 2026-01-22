@@ -298,8 +298,25 @@ def _render_agent_execution(
         st.session_state.last_metrics = None
     if "debate_transcript" not in st.session_state:
         st.session_state.debate_transcript = None
+    if "user_context" not in st.session_state:
+        st.session_state.user_context = ""
+
+    # User feedback input
+    with st.expander("Provide Guidance (Optional)", expanded=False):
+        st.caption("Give the agent specific instructions or context to consider during analysis.")
+        user_context = st.text_area(
+            "Your guidance:",
+            value=st.session_state.user_context,
+            placeholder="e.g., 'Focus on tech stocks with strong earnings', 'Avoid energy sector', 'Consider selling positions with >20% gains'...",
+            height=100,
+            key="user_context_input",
+        )
+        st.session_state.user_context = user_context
 
     execute_button_type = "primary" if is_overdue else "secondary"
+
+    # Get user context (empty string becomes None)
+    user_context_value = st.session_state.user_context.strip() or None
 
     if st.button("Run Agent", type=execute_button_type, key="run_agent"):
         try:
@@ -320,7 +337,7 @@ def _render_agent_execution(
                         if progress.result_preview:
                             st.caption(progress.result_preview)
 
-                    recommendation, metrics = debate_agent.execute(config, state, on_progress=on_progress)
+                    recommendation, metrics = debate_agent.execute(config, state, on_progress=on_progress, user_context=user_context_value)
 
                     # Store metrics and transcript in session state
                     st.session_state.last_metrics = metrics
@@ -357,7 +374,7 @@ def _render_agent_execution(
                         if progress.result_preview:
                             st.caption(progress.result_preview)
 
-                    recommendation, metrics = langgraph_agent.execute(config, state, on_progress=on_progress)
+                    recommendation, metrics = langgraph_agent.execute(config, state, on_progress=on_progress, user_context=user_context_value)
 
                     # Store metrics in session state
                     st.session_state.last_metrics = metrics

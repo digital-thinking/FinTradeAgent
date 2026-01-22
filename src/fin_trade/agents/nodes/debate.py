@@ -117,7 +117,7 @@ MODERATOR_PROMPT = """You are the CIO moderating this investment committee debat
 
 STRATEGY BEING FOLLOWED:
 {strategy}
-
+{user_context_section}
 BULL CASE:
 {bull_pitch}
 
@@ -399,8 +399,18 @@ def moderator_node(state: DebateAgentState) -> dict:
     for msg in debate_history:
         debate_transcript += f"\n[Round {msg['round']}] {msg['agent'].upper()}: {msg['message']}\n"
 
+    # Build user context section if provided
+    user_context = state.get("user_context")
+    user_context_section = ""
+    if user_context:
+        user_context_section = f"""
+PORTFOLIO MANAGER GUIDANCE (incorporate this into your decision):
+{user_context}
+"""
+
     prompt = MODERATOR_PROMPT.format(
         strategy=config.strategy_prompt,
+        user_context_section=user_context_section,
         bull_pitch=state.get("bull_pitch", "No pitch"),
         bear_pitch=state.get("bear_pitch", "No pitch"),
         neutral_pitch=state.get("neutral_pitch", "No analysis"),
