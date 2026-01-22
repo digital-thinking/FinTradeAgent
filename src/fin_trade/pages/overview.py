@@ -2,7 +2,8 @@
 
 import streamlit as st
 
-from fin_trade.components import render_portfolio_tile
+from fin_trade.cache import get_portfolio_metrics
+from fin_trade.components import render_portfolio_tile, render_large_status_badge
 from fin_trade.services import PortfolioService
 
 
@@ -36,12 +37,11 @@ llm_model: gpt-4o""",
     for filename in portfolios:
         try:
             config, state = portfolio_service.load_portfolio(filename)
-            value = portfolio_service.calculate_value(state)
-            abs_gain, _ = portfolio_service.calculate_gain(config, state)
+            metrics = get_portfolio_metrics(portfolio_service, filename)
             is_overdue = portfolio_service.is_execution_overdue(config, state)
 
-            total_value += value
-            total_gain += abs_gain
+            total_value += metrics["value"]
+            total_gain += metrics["absolute_gain"]
             if is_overdue:
                 overdue_count += 1
 
@@ -56,24 +56,7 @@ llm_model: gpt-4o""",
         gain_pct = (total_gain / (total_value - total_gain) * 100) if (total_value - total_gain) > 0 else 0
         st.metric("Total Gain/Loss", f"${total_gain:,.2f}", delta=f"{gain_pct:+.1f}%")
     with col3:
-        if overdue_count > 0:
-            st.markdown(
-                f"""<div style="background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
-                padding: 16px; border-radius: 10px; text-align: center; margin-top: 4px;">
-                <span style="font-size: 0.85em; color: rgba(255,255,255,0.8);">Attention Needed</span><br>
-                <span style="font-size: 1.5em; font-weight: bold; color: white;">⚠️ {overdue_count} Overdue</span>
-                </div>""",
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                """<div style="background: linear-gradient(135deg, #51cf66, #40c057);
-                padding: 16px; border-radius: 10px; text-align: center; margin-top: 4px;">
-                <span style="font-size: 0.85em; color: rgba(255,255,255,0.8);">Status</span><br>
-                <span style="font-size: 1.5em; font-weight: bold; color: white;">✓ All Current</span>
-                </div>""",
-                unsafe_allow_html=True,
-            )
+        render_large_status_badge(overdue_count > 0, overdue_count)
 
     st.divider()
 
@@ -85,14 +68,14 @@ llm_model: gpt-4o""",
         # First item in the row
         filename, config, state = portfolio_data[i]
         with cols[0]:
-            if render_portfolio_tile(config, state, portfolio_service):
+            if render_portfolio_tile(config, state, portfolio_service, portfolio_name=filename):
                 return filename
 
         # Second item in the row (if exists)
         if i + 1 < len(portfolio_data):
             filename, config, state = portfolio_data[i + 1]
             with cols[1]:
-                if render_portfolio_tile(config, state, portfolio_service):
+                if render_portfolio_tile(config, state, portfolio_service, portfolio_name=filename):
                     return filename
 
     return None

@@ -3,6 +3,8 @@
 import streamlit as st
 import plotly.graph_objects as go
 
+from fin_trade.cache import get_portfolio_metrics
+from fin_trade.components.status_badge import render_status_badge
 from fin_trade.models import PortfolioConfig, PortfolioState
 from fin_trade.services import PortfolioService
 
@@ -11,10 +13,18 @@ def render_portfolio_tile(
     config: PortfolioConfig,
     state: PortfolioState,
     portfolio_service: PortfolioService,
+    portfolio_name: str | None = None,
 ) -> bool:
     """Render a portfolio tile and return True if clicked."""
-    value = portfolio_service.calculate_value(state)
-    abs_gain, pct_gain = portfolio_service.calculate_gain(config, state)
+    # Use cached metrics if portfolio_name provided, otherwise calculate directly
+    if portfolio_name:
+        metrics = get_portfolio_metrics(portfolio_service, portfolio_name)
+        value = metrics["value"]
+        abs_gain = metrics["absolute_gain"]
+        pct_gain = metrics["percentage_gain"]
+    else:
+        value = portfolio_service.calculate_value(state)
+        abs_gain, pct_gain = portfolio_service.calculate_gain(config, state)
     is_overdue = portfolio_service.is_execution_overdue(config, state)
     num_holdings = len(state.holdings)
 
@@ -28,20 +38,7 @@ def render_portfolio_tile(
             st.subheader(config.name)
 
         with col2:
-            if is_overdue:
-                st.markdown(
-                    """<div style="background: #ff6b6b; color: white; padding: 4px 8px;
-                    border-radius: 12px; font-size: 0.75em; text-align: center; font-weight: 500;">
-                    ⚠️ OVERDUE</div>""",
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    """<div style="background: #51cf66; color: white; padding: 4px 8px;
-                    border-radius: 12px; font-size: 0.75em; text-align: center; font-weight: 500;">
-                    ✓ Current</div>""",
-                    unsafe_allow_html=True,
-                )
+            render_status_badge(is_overdue)
 
         # Info row
         info_col1, info_col2 = st.columns(2)
