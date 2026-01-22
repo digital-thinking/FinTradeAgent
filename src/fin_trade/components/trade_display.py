@@ -257,7 +257,17 @@ def render_trade_history(trades: list, security_service: SecurityService) -> Non
 
     st.subheader("Trade History")
 
-    for trade in reversed(trades[-20:]):
+    # Initialize pagination state
+    if "trade_history_limit" not in st.session_state:
+        st.session_state.trade_history_limit = 20
+
+    # Sort trades by timestamp descending
+    sorted_trades = sorted(trades, key=lambda t: t.timestamp, reverse=True)
+    
+    # Slice based on limit
+    visible_trades = sorted_trades[:st.session_state.trade_history_limit]
+
+    for trade in visible_trades:
         action_color = "green" if trade.action == "BUY" else "red"
         total = trade.price * trade.quantity
 
@@ -278,3 +288,15 @@ def render_trade_history(trades: list, security_service: SecurityService) -> Non
                 st.write(f"**${total:,.2f}**")
 
             st.caption(f"💭 {trade.reasoning}")
+
+    # Show "Load More" button if there are more trades
+    if len(trades) > st.session_state.trade_history_limit:
+        if st.button("Load More", key="load_more_trades", type="secondary"):
+            st.session_state.trade_history_limit += 20
+            st.rerun()
+    
+    # Show "Show Less" button if we've expanded
+    if st.session_state.trade_history_limit > 20:
+        if st.button("Show Less", key="show_less_trades", type="secondary"):
+            st.session_state.trade_history_limit = 20
+            st.rerun()
