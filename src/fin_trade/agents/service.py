@@ -596,12 +596,27 @@ OVERALL REASONING
                     )
                     on_progress(progress)
 
-                # Keep track of latest state
-                result = {**initial_state, **node_output} if result is None else {**result, **node_output}
+                # Keep track of latest state - merge carefully to avoid overwriting with empty values
+                if result is None:
+                    result = dict(initial_state)
+                # Only update with non-empty values from node_output
+                for key, value in node_output.items():
+                    # Always update metrics keys, and update data keys only if they have content
+                    if key.startswith("_metrics_") or value:
+                        result[key] = value
 
         # If no streaming happened, fall back to invoke
         if result is None:
             result = self.graph.invoke(initial_state)
+
+        # For parallel fan-in nodes, streaming may not capture all outputs correctly.
+        # Re-invoke to get the final merged state if pitches are missing.
+        if not result.get("bull_pitch") or not result.get("bear_pitch") or not result.get("neutral_pitch"):
+            final_result = self.graph.invoke(initial_state)
+            # Merge the final result, preferring non-empty values
+            for key, value in final_result.items():
+                if value or key.startswith("_metrics_"):
+                    result[key] = value
 
         # Extract metrics from final result
         for node_name in ["research", "bull_pitch", "bear_pitch", "neutral_pitch",

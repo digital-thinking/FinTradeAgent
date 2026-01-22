@@ -35,7 +35,7 @@ ENV/
 *.swo
 
 # Data caches (keep structure, ignore data)
-data/stock_data/*.csv
+data/stock_data/*
 data/state/*.json
 data/logs/*.log
 !data/state/.gitkeep

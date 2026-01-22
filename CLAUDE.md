@@ -1,6 +1,7 @@
 # Claude Code Instructions
 ## Development
 
+Do not commit on your own to git, only if prompted by the user
 Don't overengineer: Simple beats complex
 Don't mock and make up things aside from tests
 No fallbacks: One correct path, no alternatives

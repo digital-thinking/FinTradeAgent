@@ -94,7 +94,7 @@ def _invoke_research_openai(prompt: str, model: str) -> LLMResponse:
         request_params["max_tokens"] = 2048
 
     if "search" in actual_model:
-        request_params["web_search_options"] = {"search_context_size": "medium"}
+        request_params["web_search_options"] = {"search_context_size": "low"}
 
     response = client.chat.completions.create(**request_params)
 
