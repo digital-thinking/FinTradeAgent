@@ -13,6 +13,7 @@ from fin_trade.agents.service import (
     StepProgress,
     ExecutionMetrics,
 )
+from fin_trade.components import render_large_status_badge
 from fin_trade.components.trade_display import (
     render_trade_recommendations,
     render_trade_history,
@@ -31,7 +32,7 @@ def render_portfolio_detail_page(
         config, state = portfolio_service.load_portfolio(portfolio_name)
     except Exception as e:
         st.error(f"Failed to load portfolio: {e}")
-        if on_back and st.button("Back to Overview"):
+        if on_back and st.button("Back to Overview", type="secondary"):
             on_back()
         return
 
@@ -101,24 +102,7 @@ def _render_summary(
         st.metric("Cash Available", f"${state.cash:,.2f}")
 
     with col5:
-        if is_overdue:
-            st.markdown(
-                """<div style="background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
-                padding: 12px; border-radius: 8px; text-align: center;">
-                <span style="font-size: 0.8em; color: rgba(255,255,255,0.8);">Status</span><br>
-                <span style="font-size: 1.2em; font-weight: bold; color: white;">⚠️ OVERDUE</span>
-                </div>""",
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                """<div style="background: linear-gradient(135deg, #51cf66, #40c057);
-                padding: 12px; border-radius: 8px; text-align: center;">
-                <span style="font-size: 0.8em; color: rgba(255,255,255,0.8);">Status</span><br>
-                <span style="font-size: 1.2em; font-weight: bold; color: white;">✓ Current</span>
-                </div>""",
-                unsafe_allow_html=True,
-            )
+        render_large_status_badge(is_overdue)
 
     with st.expander("Portfolio Configuration"):
         st.write(f"**Strategy:** {config.strategy_prompt[:200]}...")

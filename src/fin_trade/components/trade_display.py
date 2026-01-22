@@ -37,7 +37,7 @@ def render_trade_recommendations(
     if not recommendation.trades:
         st.warning("The agent recommends no trades at this time.")
         if on_retry:
-            if st.button("Retry", key="retry_no_trades"):
+            if st.button("Retry", key="retry_no_trades", type="secondary"):
                 on_retry()
         return None
 
@@ -157,7 +157,7 @@ def render_trade_recommendations(
                             placeholder="e.g., AAPL, MSFT",
                         )
                     with col_btn:
-                        if st.button("Verify", key=f"verify_ticker_{i}"):
+                        if st.button("Verify", key=f"verify_ticker_{i}", type="secondary"):
                             st.session_state.ticker_corrections[i] = new_ticker.upper()
                             st.rerun()
 
@@ -236,7 +236,7 @@ def render_trade_recommendations(
                 return selected_trades
 
     with col2:
-        if st.button("↻ Retry", key="retry_trades"):
+        if st.button("↻ Retry", key="retry_trades", type="secondary"):
             # Clear corrections
             st.session_state.ticker_corrections = {}
             st.session_state.isin_inputs = {}

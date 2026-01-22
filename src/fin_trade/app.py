@@ -1,7 +1,8 @@
 import streamlit as st
 
 from fin_trade.services import PortfolioService, AgentService, SecurityService
-from fin_trade.pages import render_overview_page, render_portfolio_detail_page
+from fin_trade.pages.overview import render_overview_page
+from fin_trade.pages.portfolio_detail import render_portfolio_detail_page
 
 
 def main():
@@ -28,6 +29,10 @@ def main():
         }
         div[data-testid="stMetricValue"] {
             font-size: 1.5rem;
+        }
+        /* Hide sidebar navigation items */
+        [data-testid="stSidebarNav"] {
+            display: none;
         }
         </style>
         """,
