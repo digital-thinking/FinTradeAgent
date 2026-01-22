@@ -57,7 +57,7 @@
 - [x] **Fix the formatting issues from the markdown agent output **
     - Sometimes text is very large
     - It may contain links (html #section links) that don't work because they refer to sources not rendered.
-- [ ] **Detailed Transaction Logs**
+- [x] **Detailed Transaction Logs**
     - Store execution logs (tokens, latency, model) in SQLite or something similar.
     - Create a view to inspect these logs (System Health/Cost Analysis).
 - [x] **Paginate Trade History**

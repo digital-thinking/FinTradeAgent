@@ -3,6 +3,7 @@ import streamlit as st
 from fin_trade.services import PortfolioService, AgentService, SecurityService
 from fin_trade.pages.overview import render_overview_page
 from fin_trade.pages.portfolio_detail import render_portfolio_detail_page
+from fin_trade.pages.system_health import render_system_health_page
 
 
 def main():
@@ -68,6 +69,14 @@ def main():
                 del st.session_state.recommendation
             st.rerun()
 
+        if st.button("📊 System Health", use_container_width=True,
+                     type="primary" if st.session_state.current_page == "system_health" else "secondary"):
+            st.session_state.current_page = "system_health"
+            st.session_state.selected_portfolio = None
+            if "recommendation" in st.session_state:
+                del st.session_state.recommendation
+            st.rerun()
+
         # Show available portfolios in sidebar
         st.divider()
         st.caption("PORTFOLIOS")
@@ -115,6 +124,9 @@ def main():
         else:
             st.session_state.current_page = "overview"
             st.rerun()
+
+    elif st.session_state.current_page == "system_health":
+        render_system_health_page()
 
 
 if __name__ == "__main__":

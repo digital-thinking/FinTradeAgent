@@ -9,6 +9,7 @@ from fin_trade.agents.graphs.debate_agent import build_debate_agent_graph
 from fin_trade.agents.graphs.simple_agent import build_simple_agent_graph
 from fin_trade.models import AgentRecommendation, PortfolioConfig, PortfolioState
 from fin_trade.services.security import SecurityService
+from fin_trade.services.execution_log import ExecutionLogService
 
 _project_root = Path(__file__).parent.parent.parent.parent
 _logs_dir = _project_root / "data" / "logs"
@@ -93,6 +94,7 @@ class LangGraphAgentService:
     def __init__(self, security_service: SecurityService | None = None):
         self.security_service = security_service or SecurityService()
         self.graph = build_simple_agent_graph()
+        self.execution_log_service = ExecutionLogService()
         _logs_dir.mkdir(parents=True, exist_ok=True)
 
     def _save_log(
@@ -291,8 +293,36 @@ OVERALL REASONING
         # Calculate total duration
         metrics.total_duration_ms = int((time.time() - start_time) * 1000)
 
-        # Save log with metrics
+        # Save log with metrics (text file)
         self._save_log(config.name, initial_state, result, metrics)
+
+        # Save to SQLite for analytics
+        recommendations = result.get("recommendations")
+        num_trades = len(recommendations.trades) if recommendations else 0
+        success = recommendations is not None
+        error_msg = result.get("error")
+
+        step_details = {
+            step_name: {
+                "duration_ms": step_metrics.duration_ms,
+                "input_tokens": step_metrics.input_tokens,
+                "output_tokens": step_metrics.output_tokens,
+            }
+            for step_name, step_metrics in metrics.steps.items()
+        }
+
+        self.execution_log_service.log_execution(
+            portfolio_name=config.name,
+            agent_mode="langgraph",
+            model=config.llm_model,
+            duration_ms=metrics.total_duration_ms,
+            input_tokens=metrics.total_input_tokens,
+            output_tokens=metrics.total_output_tokens,
+            num_trades=num_trades,
+            success=success,
+            error_message=error_msg,
+            step_details=step_details,
+        )
 
         # Store metrics on the recommendation for UI access
         self._last_metrics = metrics
@@ -372,6 +402,7 @@ class DebateAgentService:
     def __init__(self, security_service: SecurityService | None = None):
         self.security_service = security_service or SecurityService()
         self.graph = build_debate_agent_graph()
+        self.execution_log_service = ExecutionLogService()
         _logs_dir.mkdir(parents=True, exist_ok=True)
         self._last_transcript: DebateTranscript | None = None
 
@@ -651,8 +682,36 @@ OVERALL REASONING
             final_verdict=result.get("final_verdict", ""),
         )
 
-        # Save log with metrics
+        # Save log with metrics (text file)
         self._save_log(config.name, result, metrics)
+
+        # Save to SQLite for analytics
+        recommendations = result.get("recommendations")
+        num_trades = len(recommendations.trades) if recommendations else 0
+        success = recommendations is not None
+        error_msg = result.get("error")
+
+        step_details = {
+            step_name: {
+                "duration_ms": step_metrics.duration_ms,
+                "input_tokens": step_metrics.input_tokens,
+                "output_tokens": step_metrics.output_tokens,
+            }
+            for step_name, step_metrics in metrics.steps.items()
+        }
+
+        self.execution_log_service.log_execution(
+            portfolio_name=config.name,
+            agent_mode="debate",
+            model=config.llm_model,
+            duration_ms=metrics.total_duration_ms,
+            input_tokens=metrics.total_input_tokens,
+            output_tokens=metrics.total_output_tokens,
+            num_trades=num_trades,
+            success=success,
+            error_message=error_msg,
+            step_details=step_details,
+        )
 
         # Store metrics for UI access
         self._last_metrics = metrics
