@@ -14,7 +14,7 @@
 *Focus: Code structure, maintainability, and resilience.*
 *Primary Files: `src/fin_trade/services/agent.py`, `src/fin_trade/services/llm_provider.py` (new), `src/fin_trade/prompts/` (new)*
 
-- [ ] **Dependency Injection for LLM Providers**
+- [x] **Dependency Injection for LLM Providers**
     - Create `LLMProvider` abstract base class.
     - Implement `OpenAIProvider` and `AnthropicProvider`.
     - Refactor `AgentService` to use these providers instead of hardcoded logic.

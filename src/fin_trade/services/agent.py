@@ -1,7 +1,6 @@
 """Agent service for LLM-powered trading recommendations."""
 
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -14,6 +13,7 @@ from fin_trade.models import (
     TradeRecommendation,
 )
 from fin_trade.services.security import SecurityService
+from fin_trade.services.llm_provider import LLMProviderFactory
 
 # Load .env file from project root
 # agent.py -> services -> fin_trade -> src -> project_root
@@ -172,104 +172,14 @@ If you recommend no trades, return an empty trades array with your reasoning for
         except json.JSONDecodeError as e:
             raise ValueError(f"Failed to parse LLM response as JSON: {e}") from e
 
-    def _invoke_anthropic(self, prompt: str, model: str) -> str:
-        """Invoke Anthropic's API with web search enabled."""
-        try:
-            import anthropic
-        except ImportError:
-            raise RuntimeError("anthropic package not installed")
-
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise RuntimeError("ANTHROPIC_API_KEY not set. Add it to your .env file.")
-
-        client = anthropic.Anthropic(api_key=api_key)
-
-        # Enable web search tool for real-time data access using beta header
-        message = client.messages.create(
-            model=model,
-            max_tokens=4096,
-            extra_headers={"anthropic-beta": "web-search-2025-03-05"},
-            tools=[
-                {
-                    "type": "web_search_20250305",
-                    "name": "web_search",
-                    "max_uses": 5,  # Allow up to 5 searches per request
-                }
-            ],
-            messages=[{"role": "user", "content": prompt}],
-        )
-
-        # Extract text from response, handling potential tool use blocks
-        result_text = ""
-        for block in message.content:
-            if hasattr(block, "text"):
-                result_text += block.text
-
-        return result_text
-
-    def _invoke_openai(self, prompt: str, model: str) -> str:
-        """Invoke OpenAI's API with web search enabled for search models."""
-        try:
-            import openai
-        except ImportError:
-            raise RuntimeError("openai package not installed")
-
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            raise RuntimeError("OPENAI_API_KEY not set. Add it to your .env file.")
-
-        client = openai.OpenAI(api_key=api_key)
-
-        # Use search-enabled model for real-time data access
-        # Map standard models to their search variants
-        search_models = {
-            "gpt-4o": "gpt-4o-search-preview",
-            "gpt-4o-mini": "gpt-4o-mini-search-preview",
-            "gpt-5": "gpt-5-search-api",
-            "gpt-5-mini": "gpt-5-mini-search-api",
-            "gpt-5.1": "gpt-5-search-api",
-            "gpt-5.2": "gpt-5-search-api",
-        }
-        actual_model = search_models.get(model, model)
-
-        # Newer models (gpt-5, o1, o3, etc.) use max_completion_tokens instead of max_tokens
-        uses_new_token_param = any(
-            actual_model.startswith(prefix)
-            for prefix in ("gpt-5", "o1", "o3", "o4")
-        )
-
-        # Build request parameters
-        request_params = {
-            "model": actual_model,
-            "messages": [{"role": "user", "content": prompt}],
-        }
-
-        # Add appropriate token limit parameter
-        if uses_new_token_param:
-            request_params["max_completion_tokens"] = 4096
-        else:
-            request_params["max_tokens"] = 4096
-
-        # Enable web search for search-preview models
-        if "search" in actual_model:
-            request_params["web_search_options"] = {"search_context_size": "medium"}
-
-        response = client.chat.completions.create(**request_params)
-        return response.choices[0].message.content
-
     def execute(
         self, config: PortfolioConfig, state: PortfolioState
     ) -> AgentRecommendation:
         """Execute the agent to get trading recommendations."""
         prompt = self._build_prompt(config, state)
 
-        if config.llm_provider == "anthropic":
-            response = self._invoke_anthropic(prompt, config.llm_model)
-        elif config.llm_provider == "openai":
-            response = self._invoke_openai(prompt, config.llm_model)
-        else:
-            raise ValueError(f"Unknown LLM provider: {config.llm_provider}")
+        provider = LLMProviderFactory.get_provider(config.llm_provider)
+        response = provider.generate(prompt, config.llm_model)
 
         # Save log for debugging
         self._save_log(
