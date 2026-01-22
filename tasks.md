@@ -34,7 +34,7 @@
 - [ ] **Loading Skeletons**
     - Create a skeleton loader component.
     - Replace blank states with skeletons during data fetching.
-- [ ] **Use Dataframes for Tables**
+- [x] **Use Dataframes for Tables**
     - Replace divider-based row layouts in Holdings and Trade History with `st.dataframe()` for sorting/scanning.
 
 ## 📦 Package D: Dashboard & Navigation
@@ -44,7 +44,7 @@
 - [ ] **Summary Dashboard**
     - Create a new tab/view showing total value across all strategies.
     - Show best/worst performers and upcoming scheduled runs.
-- [ ] **Ticker Correction UI**
+- [x] **Ticker Correction UI**
     - Improve the UI for handling unknown tickers (move from expander to inline).
 
 ## 📦 Package E: Agent Interaction Flow
@@ -57,9 +57,6 @@
 - [ ] **Fix the formatting issues from the markdown agent output **
     - Sometimes text is very large
     - It may contain links (html #section links) that don't work because they refer to sources not rendered.
-- [ ] **Improve Agent Execution Feedback**
-    - Enhance the "Running..." status display.
-    - Add collapsible summary for debate transcripts with key points highlighted.
 - [ ] **Detailed Transaction Logs**
     - Store execution logs (tokens, latency, model) in SQLite.
     - Create a view to inspect these logs (System Health/Cost Analysis).

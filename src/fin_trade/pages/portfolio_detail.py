@@ -115,12 +115,16 @@ def _render_summary(
 
 def _render_holdings(state: PortfolioState, security_service: SecurityService) -> None:
     """Render the holdings table."""
+    import pandas as pd
+
     st.subheader("Current Holdings")
 
     if not state.holdings:
         st.info("No holdings. Execute the agent to start trading.")
         return
 
+    # Build holdings data for DataFrame
+    holdings_data = []
     for holding in state.holdings:
         try:
             current_price = security_service.get_price(holding.ticker)
@@ -134,27 +138,34 @@ def _render_holdings(state: PortfolioState, security_service: SecurityService) -
             gain = 0
             gain_pct = 0
 
-        col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 1])
+        holdings_data.append({
+            "Ticker": holding.ticker,
+            "Name": holding.name,
+            "Shares": holding.quantity,
+            "Avg Price": holding.avg_price,
+            "Current Price": current_price,
+            "Value": current_value,
+            "Gain/Loss": gain,
+            "Gain %": gain_pct,
+        })
 
-        with col1:
-            st.write(f"**{holding.ticker}**")
-            st.caption(holding.name)
+    df = pd.DataFrame(holdings_data)
 
-        with col2:
-            st.write(f"{holding.quantity} shares")
-
-        with col3:
-            st.write(f"Avg: ${holding.avg_price:.2f}")
-
-        with col4:
-            st.write(f"Now: ${current_price:.2f}")
-
-        with col5:
-            gain_color = "green" if gain >= 0 else "red"
-            st.markdown(f"**:{gain_color}[${gain:,.2f}]**")
-            st.caption(f"{gain_pct:+.1f}%")
-
-        st.divider()
+    st.dataframe(
+        df,
+        column_config={
+            "Ticker": st.column_config.TextColumn("Ticker", width="small"),
+            "Name": st.column_config.TextColumn("Name", width="medium"),
+            "Shares": st.column_config.NumberColumn("Shares", format="%d"),
+            "Avg Price": st.column_config.NumberColumn("Avg Price", format="$%.2f"),
+            "Current Price": st.column_config.NumberColumn("Current", format="$%.2f"),
+            "Value": st.column_config.NumberColumn("Value", format="$%.2f"),
+            "Gain/Loss": st.column_config.NumberColumn("Gain/Loss", format="$%.2f"),
+            "Gain %": st.column_config.NumberColumn("Gain %", format="%.1f%%"),
+        },
+        hide_index=True,
+        use_container_width=True,
+    )
 
 
 def _render_performance_chart(
@@ -313,7 +324,8 @@ def _render_agent_execution(
         )
         st.session_state.user_context = user_context
 
-    execute_button_type = "primary" if is_overdue else "secondary"
+    # Use primary button for execution, regardless of overdue status
+    execute_button_type = "primary"
 
     # Get user context (empty string becomes None)
     user_context_value = st.session_state.user_context.strip() or None

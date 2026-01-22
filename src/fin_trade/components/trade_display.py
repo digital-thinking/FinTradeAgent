@@ -145,9 +145,13 @@ def render_trade_recommendations(
 
             # Show error and correction UI if price fetch failed
             if price_error:
-                with st.expander("🔧 Correct Ticker Symbol", expanded=True):
-                    st.caption("The ticker symbol might be incorrect. Enter the correct symbol:")
-                    col_input, col_btn = st.columns([3, 1])
+                st.error(f"Could not find price for '{corrected_ticker}'.")
+                
+                # Inline correction UI
+                with st.container():
+                    col_label, col_input, col_btn = st.columns([2, 3, 1])
+                    with col_label:
+                        st.markdown("**Did you mean?**")
                     with col_input:
                         new_ticker = st.text_input(
                             "Correct ticker",
@@ -251,52 +255,45 @@ def render_trade_recommendations(
 
 def render_trade_history(trades: list, security_service: SecurityService) -> None:
     """Render the trade history table."""
+    import pandas as pd
+
     if not trades:
         st.info("No trades executed yet.")
         return
 
     st.subheader("Trade History")
 
-    # Initialize pagination state
-    if "trade_history_limit" not in st.session_state:
-        st.session_state.trade_history_limit = 20
-
-    # Sort trades by timestamp descending
-    sorted_trades = sorted(trades, key=lambda t: t.timestamp, reverse=True)
-    
-    # Slice based on limit
-    visible_trades = sorted_trades[:st.session_state.trade_history_limit]
-
-    for trade in visible_trades:
-        action_color = "green" if trade.action == "BUY" else "red"
+    # Build trade data for DataFrame
+    trade_data = []
+    for trade in trades:
         total = trade.price * trade.quantity
+        trade_data.append({
+            "Date": trade.timestamp,
+            "Action": trade.action,
+            "Ticker": trade.ticker,
+            "Name": trade.name,
+            "Shares": trade.quantity,
+            "Price": trade.price,
+            "Total": total,
+            "Reasoning": trade.reasoning,
+        })
 
-        with st.container(border=True):
-            col1, col2, col3, col4 = st.columns([1, 2, 2, 1])
+    df = pd.DataFrame(trade_data)
+    # Sort by date descending
+    df = df.sort_values("Date", ascending=False)
 
-            with col1:
-                st.write(trade.timestamp.strftime("%Y-%m-%d"))
-
-            with col2:
-                st.markdown(f"**:{action_color}[{trade.action}]** {trade.ticker}")
-                st.caption(trade.name)
-
-            with col3:
-                st.write(f"{trade.quantity} × ${trade.price:.2f}")
-
-            with col4:
-                st.write(f"**${total:,.2f}**")
-
-            st.caption(f"💭 {trade.reasoning}")
-
-    # Show "Load More" button if there are more trades
-    if len(trades) > st.session_state.trade_history_limit:
-        if st.button("Load More", key="load_more_trades", type="secondary"):
-            st.session_state.trade_history_limit += 20
-            st.rerun()
-    
-    # Show "Show Less" button if we've expanded
-    if st.session_state.trade_history_limit > 20:
-        if st.button("Show Less", key="show_less_trades", type="secondary"):
-            st.session_state.trade_history_limit = 20
-            st.rerun()
+    st.dataframe(
+        df,
+        column_config={
+            "Date": st.column_config.DatetimeColumn("Date", format="YYYY-MM-DD HH:mm"),
+            "Action": st.column_config.TextColumn("Action", width="small"),
+            "Ticker": st.column_config.TextColumn("Ticker", width="small"),
+            "Name": st.column_config.TextColumn("Name", width="medium"),
+            "Shares": st.column_config.NumberColumn("Shares", format="%d"),
+            "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
+            "Total": st.column_config.NumberColumn("Total", format="$%.2f"),
+            "Reasoning": st.column_config.TextColumn("Reasoning", width="large"),
+        },
+        hide_index=True,
+        use_container_width=True,
+    )
