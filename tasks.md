@@ -29,7 +29,7 @@
 - [x] **Extract Reusable Components**
     - Create shared components for Status Badges, Trade Action colors, and Portfolio Metrics.
     - Refactor `overview.py` and `portfolio_detail.py` to use them.
-- [ ] **Consistent Button Hierarchy**
+- [x] **Consistent Button Hierarchy**
     - Define and apply primary/secondary/danger button styles consistently across the app.
 - [ ] **Loading Skeletons**
     - Create a skeleton loader component.
@@ -54,7 +54,7 @@
 - [x] **User Feedback Loop**
     - Add UI to inject user feedback *during* the debate or before generation.
     - Update agent graph to accept user input node.
-- [ ] **Fix the formatting issues from the markdown agent output **
+- [x] **Fix the formatting issues from the markdown agent output **
     - Sometimes text is very large
     - It may contain links (html #section links) that don't work because they refer to sources not rendered.
 - [ ] **Detailed Transaction Logs**

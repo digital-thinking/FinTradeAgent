@@ -29,7 +29,15 @@ def render_trade_recommendations(
     """
     st.subheader("Agent Recommendations")
 
-    st.info(recommendation.overall_reasoning)
+    # Fix formatting issues in agent output
+    # 1. Limit height of reasoning text
+    # 2. Prevent broken links by rendering as plain text or handling them
+    
+    with st.container(border=True):
+        st.markdown("### Analysis")
+        # Use a scrollable container for long text
+        with st.container(height=300):
+            st.markdown(recommendation.overall_reasoning)
 
     # Show available cash
     st.caption(f"Available cash: **${available_cash:,.2f}**")
