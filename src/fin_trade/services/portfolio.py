@@ -8,6 +8,7 @@ from typing import Literal
 import yaml
 
 from fin_trade.models import (
+    DebateConfig,
     Holding,
     PortfolioConfig,
     PortfolioState,
@@ -53,6 +54,15 @@ class PortfolioService:
         with open(config_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
+        # Load debate config if present
+        debate_config = None
+        if data.get("debate_config"):
+            dc = data["debate_config"]
+            debate_config = DebateConfig(
+                rounds=dc.get("rounds", 2),
+                include_neutral=dc.get("include_neutral", True),
+            )
+
         return PortfolioConfig(
             name=data["name"],
             strategy_prompt=data["strategy_prompt"],
@@ -63,6 +73,7 @@ class PortfolioService:
             llm_provider=data["llm_provider"],
             llm_model=data["llm_model"],
             agent_mode=data.get("agent_mode", "langgraph"),
+            debate_config=debate_config,
         )
 
     @staticmethod

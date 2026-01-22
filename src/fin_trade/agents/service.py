@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from fin_trade.agents.graphs.debate_agent import build_debate_agent_graph
 from fin_trade.agents.graphs.simple_agent import build_simple_agent_graph
 from fin_trade.models import AgentRecommendation, PortfolioConfig, PortfolioState
 from fin_trade.services.security import SecurityService
@@ -297,5 +298,347 @@ OVERALL REASONING
         if result.get("recommendations") is None:
             error_msg = result.get("error", "Unknown error")
             raise RuntimeError(f"Agent failed to generate recommendations: {error_msg}")
+
+        return result["recommendations"], metrics
+
+
+# Node descriptions for debate agent progress reporting
+DEBATE_NODE_INFO = {
+    "research": {
+        "label": "Research",
+        "description": "Searching for market data and news...",
+        "icon": "🔍",
+    },
+    "bull_pitch": {
+        "label": "Bull Case",
+        "description": "Bull agent analyzing opportunities...",
+        "icon": "🐂",
+    },
+    "bear_pitch": {
+        "label": "Bear Case",
+        "description": "Bear agent analyzing risks...",
+        "icon": "🐻",
+    },
+    "neutral_pitch": {
+        "label": "Neutral Analysis",
+        "description": "Neutral analyst providing objective view...",
+        "icon": "⚖️",
+    },
+    "debate_round": {
+        "label": "Debate",
+        "description": "Agents debating and rebutting...",
+        "icon": "💬",
+    },
+    "moderator": {
+        "label": "Moderator",
+        "description": "CIO synthesizing debate and deciding...",
+        "icon": "👔",
+    },
+    "generate": {
+        "label": "Generate Trades",
+        "description": "Generating trade recommendations...",
+        "icon": "💡",
+    },
+    "validate": {
+        "label": "Validate",
+        "description": "Validating recommendations against constraints...",
+        "icon": "✅",
+    },
+}
+
+
+@dataclass
+class DebateTranscript:
+    """Full debate transcript for UI display."""
+
+    bull_pitch: str
+    bear_pitch: str
+    neutral_pitch: str
+    debate_history: list[dict]
+    moderator_analysis: str
+    final_verdict: str
+
+
+class DebateAgentService:
+    """Service for invoking debate agents to get trading recommendations.
+
+    Uses a multi-agent debate system with bull, bear, and neutral analysts
+    followed by a moderator to synthesize the debate and make decisions.
+    """
+
+    def __init__(self, security_service: SecurityService | None = None):
+        self.security_service = security_service or SecurityService()
+        self.graph = build_debate_agent_graph()
+        _logs_dir.mkdir(parents=True, exist_ok=True)
+        self._last_transcript: DebateTranscript | None = None
+
+    def _save_log(
+        self,
+        portfolio_name: str,
+        result: dict,
+        metrics: ExecutionMetrics,
+    ) -> None:
+        """Save debate workflow execution to log file for debugging."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_file = _logs_dir / f"{portfolio_name}_{timestamp}_debate.log"
+
+        # Extract debate info
+        bull_pitch = result.get("bull_pitch", "N/A")
+        bear_pitch = result.get("bear_pitch", "N/A")
+        neutral_pitch = result.get("neutral_pitch", "N/A")
+        debate_history = result.get("debate_history", [])
+        moderator_analysis = result.get("moderator_analysis", "N/A")
+        recommendations = result.get("recommendations")
+        error = result.get("error")
+
+        # Format debate history
+        debate_str = ""
+        for msg in debate_history:
+            debate_str += f"\n[Round {msg['round']}] {msg['agent'].upper()}:\n{msg['message']}\n"
+
+        recs_str = "None"
+        if recommendations:
+            trades_info = []
+            for t in recommendations.trades:
+                trades_info.append(
+                    f"  - {t.action} {t.quantity} {t.ticker} ({t.name}): {t.reasoning[:100]}..."
+                )
+            recs_str = "\n".join(trades_info) if trades_info else "No trades"
+
+        # Format metrics
+        metrics_lines = []
+        for step_name, step_metrics in metrics.steps.items():
+            metrics_lines.append(
+                f"  {step_name}: {step_metrics.duration_ms}ms, "
+                f"{step_metrics.input_tokens} in / {step_metrics.output_tokens} out tokens"
+            )
+        metrics_str = "\n".join(metrics_lines) if metrics_lines else "  No metrics collected"
+
+        log_content = f"""================================================================================
+DEBATE AGENT LOG - {datetime.now().isoformat()}
+================================================================================
+Portfolio: {portfolio_name}
+Agent Mode: debate
+Error: {error or 'None'}
+
+================================================================================
+METRICS
+================================================================================
+Total Duration: {metrics.total_duration_ms}ms
+Total Tokens: {metrics.total_tokens} ({metrics.total_input_tokens} in / {metrics.total_output_tokens} out)
+
+Per-Step Breakdown:
+{metrics_str}
+
+================================================================================
+BULL CASE
+================================================================================
+{bull_pitch}
+
+================================================================================
+BEAR CASE
+================================================================================
+{bear_pitch}
+
+================================================================================
+NEUTRAL ANALYSIS
+================================================================================
+{neutral_pitch}
+
+================================================================================
+DEBATE ROUNDS
+================================================================================
+{debate_str or "No debate rounds"}
+
+================================================================================
+MODERATOR VERDICT
+================================================================================
+{moderator_analysis}
+
+================================================================================
+RECOMMENDATIONS
+================================================================================
+{recs_str}
+
+================================================================================
+OVERALL REASONING
+================================================================================
+{recommendations.overall_reasoning if recommendations else 'N/A'}
+"""
+        with open(log_file, "w", encoding="utf-8") as f:
+            f.write(log_content)
+
+    @property
+    def last_transcript(self) -> DebateTranscript | None:
+        """Get the transcript from the last execution."""
+        return self._last_transcript
+
+    def execute(
+        self,
+        config: PortfolioConfig,
+        state: PortfolioState,
+        on_progress: Callable[[StepProgress], None] | None = None,
+    ) -> tuple[AgentRecommendation, ExecutionMetrics]:
+        """Execute the debate agent to get trading recommendations.
+
+        Args:
+            config: Portfolio configuration including strategy prompt
+            state: Current portfolio state (cash, holdings, trades)
+            on_progress: Optional callback for progress updates
+
+        Returns:
+            Tuple of (AgentRecommendation, ExecutionMetrics)
+
+        Raises:
+            RuntimeError: If agent fails after all retries
+        """
+        import time
+
+        start_time = time.time()
+
+        # Get debate config
+        debate_config = config.debate_config
+        max_rounds = debate_config.rounds if debate_config else 2
+
+        # Initialize state
+        initial_state = {
+            "portfolio_config": config,
+            "portfolio_state": state,
+            "market_research": "",
+            "price_data": {},
+            "bull_pitch": "",
+            "bear_pitch": "",
+            "neutral_pitch": "",
+            "debate_history": [],
+            "current_round": 1,
+            "max_rounds": max_rounds,
+            "moderator_analysis": "",
+            "final_verdict": "",
+            "messages": [],
+            "recommendations": None,
+            "retry_count": 0,
+            "error": None,
+            "_metrics_research": None,
+            "_metrics_bull_pitch": None,
+            "_metrics_bear_pitch": None,
+            "_metrics_neutral_pitch": None,
+            "_metrics_debate": None,
+            "_metrics_moderator": None,
+            "_metrics_generate": None,
+            "_metrics_validate": None,
+        }
+
+        # Collect metrics
+        metrics = ExecutionMetrics()
+
+        # Execute graph with streaming to track progress
+        result = None
+        for event in self.graph.stream(initial_state):
+            for node_name, node_output in event.items():
+                # Extract metrics from node output
+                metrics_key = f"_metrics_{node_name}"
+                if metrics_key in node_output:
+                    step_metrics_data = node_output[metrics_key]
+                    step_metrics = StepMetrics(
+                        duration_ms=step_metrics_data.get("duration_ms", 0),
+                        input_tokens=step_metrics_data.get("input_tokens", 0),
+                        output_tokens=step_metrics_data.get("output_tokens", 0),
+                    )
+                    metrics.add_step(node_name, step_metrics)
+                else:
+                    step_metrics = None
+
+                if on_progress and node_name in DEBATE_NODE_INFO:
+                    info = DEBATE_NODE_INFO[node_name]
+
+                    # Generate result preview based on node
+                    preview = None
+                    if node_name == "research" and node_output.get("market_research"):
+                        research = node_output["market_research"]
+                        preview = research[:200] + "..." if len(research) > 200 else research
+                    elif node_name == "bull_pitch" and node_output.get("bull_pitch"):
+                        pitch = node_output["bull_pitch"]
+                        preview = pitch[:200] + "..." if len(pitch) > 200 else pitch
+                    elif node_name == "bear_pitch" and node_output.get("bear_pitch"):
+                        pitch = node_output["bear_pitch"]
+                        preview = pitch[:200] + "..." if len(pitch) > 200 else pitch
+                    elif node_name == "neutral_pitch" and node_output.get("neutral_pitch"):
+                        pitch = node_output["neutral_pitch"]
+                        preview = pitch[:200] + "..." if len(pitch) > 200 else pitch
+                    elif node_name == "debate_round":
+                        history = node_output.get("debate_history", [])
+                        if history:
+                            latest = history[-1]
+                            preview = f"Round {latest['round']}: {latest['agent'].upper()} responded"
+                    elif node_name == "moderator" and node_output.get("moderator_analysis"):
+                        analysis = node_output["moderator_analysis"]
+                        preview = analysis[:200] + "..." if len(analysis) > 200 else analysis
+                    elif node_name == "generate":
+                        recs = node_output.get("recommendations")
+                        if recs and recs.trades:
+                            preview = f"Generated {len(recs.trades)} trade(s)"
+                        elif node_output.get("error"):
+                            preview = f"Error: {node_output['error'][:100]}"
+                    elif node_name == "validate":
+                        if node_output.get("error"):
+                            preview = f"Validation failed: {node_output['error'][:100]}"
+                        else:
+                            preview = "Validation passed"
+
+                    progress = StepProgress(
+                        step=node_name,
+                        label=info["label"],
+                        description=info["description"],
+                        icon=info["icon"],
+                        status="completed",
+                        result_preview=preview,
+                        metrics=step_metrics,
+                    )
+                    on_progress(progress)
+
+                # Keep track of latest state
+                result = {**initial_state, **node_output} if result is None else {**result, **node_output}
+
+        # If no streaming happened, fall back to invoke
+        if result is None:
+            result = self.graph.invoke(initial_state)
+
+        # Extract metrics from final result
+        for node_name in ["research", "bull_pitch", "bear_pitch", "neutral_pitch",
+                          "debate", "moderator", "generate", "validate"]:
+            metrics_key = f"_metrics_{node_name}"
+            if metrics_key in result and node_name not in metrics.steps:
+                step_metrics_data = result[metrics_key]
+                if step_metrics_data:
+                    step_metrics = StepMetrics(
+                        duration_ms=step_metrics_data.get("duration_ms", 0),
+                        input_tokens=step_metrics_data.get("input_tokens", 0),
+                        output_tokens=step_metrics_data.get("output_tokens", 0),
+                    )
+                    metrics.add_step(node_name, step_metrics)
+
+        # Calculate total duration
+        metrics.total_duration_ms = int((time.time() - start_time) * 1000)
+
+        # Store transcript for UI access
+        self._last_transcript = DebateTranscript(
+            bull_pitch=result.get("bull_pitch", ""),
+            bear_pitch=result.get("bear_pitch", ""),
+            neutral_pitch=result.get("neutral_pitch", ""),
+            debate_history=result.get("debate_history", []),
+            moderator_analysis=result.get("moderator_analysis", ""),
+            final_verdict=result.get("final_verdict", ""),
+        )
+
+        # Save log with metrics
+        self._save_log(config.name, result, metrics)
+
+        # Store metrics for UI access
+        self._last_metrics = metrics
+
+        # Check for success
+        if result.get("recommendations") is None:
+            error_msg = result.get("error", "Unknown error")
+            raise RuntimeError(f"Debate agent failed to generate recommendations: {error_msg}")
 
         return result["recommendations"], metrics

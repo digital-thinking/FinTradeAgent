@@ -25,11 +25,16 @@ class LLMResponse:
     output_tokens: int
 
 
-def _build_generate_prompt(state: SimpleAgentState) -> str:
-    """Build the prompt for generating trade recommendations."""
+def _build_generate_prompt(state) -> str:
+    """Build the prompt for generating trade recommendations.
+
+    Works with both SimpleAgentState (has 'analysis') and
+    DebateAgentState (has 'moderator_analysis').
+    """
     config = state["portfolio_config"]
     portfolio_state = state["portfolio_state"]
-    analysis = state.get("analysis", "No analysis available")
+    # Support both simple agent (analysis) and debate agent (moderator_analysis)
+    analysis = state.get("analysis") or state.get("moderator_analysis") or "No analysis available"
     price_data = state.get("price_data", {})
 
     # Format holdings for context
@@ -184,8 +189,10 @@ def _invoke_generate_anthropic(prompt: str, model: str) -> LLMResponse:
     )
 
 
-def generate_trades_node(state: SimpleAgentState) -> dict:
+def generate_trades_node(state) -> dict:
     """Generate trades node: creates specific trade recommendations.
+
+    Works with both SimpleAgentState and DebateAgentState.
 
     Updates state with:
     - recommendations: Parsed AgentRecommendation (or None if parsing fails)

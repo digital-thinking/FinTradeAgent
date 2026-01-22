@@ -31,6 +31,14 @@ class Trade:
 
 
 @dataclass
+class DebateConfig:
+    """Configuration for debate agent mode."""
+
+    rounds: int = 2  # Number of debate rounds
+    include_neutral: bool = True  # Include neutral analyst
+
+
+@dataclass
 class PortfolioConfig:
     """Configuration for a portfolio loaded from YAML."""
 
@@ -42,7 +50,8 @@ class PortfolioConfig:
     run_frequency: Literal["daily", "weekly", "monthly"]
     llm_provider: Literal["anthropic", "openai"]
     llm_model: str
-    agent_mode: Literal["simple", "langgraph"] = "langgraph"
+    agent_mode: Literal["simple", "langgraph", "debate"] = "langgraph"
+    debate_config: DebateConfig | None = None
 
 
 @dataclass

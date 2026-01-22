@@ -7,7 +7,12 @@ import plotly.graph_objects as go
 
 from fin_trade.models import PortfolioConfig, PortfolioState, TradeRecommendation
 from fin_trade.services import PortfolioService, AgentService, SecurityService
-from fin_trade.agents.service import LangGraphAgentService, StepProgress, ExecutionMetrics
+from fin_trade.agents.service import (
+    DebateAgentService,
+    LangGraphAgentService,
+    StepProgress,
+    ExecutionMetrics,
+)
 from fin_trade.components.trade_display import (
     render_trade_recommendations,
     render_trade_history,
@@ -299,20 +304,59 @@ def _render_agent_execution(
 
     # Show agent mode badge
     agent_mode = getattr(config, "agent_mode", "simple")
-    mode_color = "blue" if agent_mode == "langgraph" else "gray"
+    mode_colors = {"langgraph": "blue", "debate": "green", "simple": "gray"}
+    mode_color = mode_colors.get(agent_mode, "gray")
     st.caption(f"Agent Mode: :{mode_color}[{agent_mode}]")
 
     if "recommendation" not in st.session_state:
         st.session_state.recommendation = None
     if "last_metrics" not in st.session_state:
         st.session_state.last_metrics = None
+    if "debate_transcript" not in st.session_state:
+        st.session_state.debate_transcript = None
 
     execute_button_type = "primary" if is_overdue else "secondary"
 
     if st.button("Run Agent", type=execute_button_type, key="run_agent"):
         try:
             # Choose agent based on config.agent_mode
-            if agent_mode == "langgraph":
+            if agent_mode == "debate":
+                debate_agent = DebateAgentService(security_service=security_service)
+
+                # Create status container for progress
+                with st.status("Running Debate Agent...", expanded=True) as status:
+                    steps_completed = []
+
+                    def on_progress(progress: StepProgress) -> None:
+                        steps_completed.append(progress)
+                        metrics_str = ""
+                        if progress.metrics:
+                            metrics_str = f" ({progress.metrics.duration_ms}ms, {progress.metrics.total_tokens} tokens)"
+                        st.write(f"{progress.icon} **{progress.label}**{metrics_str}")
+                        if progress.result_preview:
+                            st.caption(progress.result_preview)
+
+                    recommendation, metrics = debate_agent.execute(config, state, on_progress=on_progress)
+
+                    # Store metrics and transcript in session state
+                    st.session_state.last_metrics = metrics
+                    st.session_state.debate_transcript = debate_agent.last_transcript
+
+                    # Update final status
+                    if recommendation and recommendation.trades:
+                        status.update(
+                            label=f"Debate completed - {len(recommendation.trades)} trade(s) | {metrics.total_duration_ms}ms | {metrics.total_tokens} tokens",
+                            state="complete",
+                            expanded=False,
+                        )
+                    else:
+                        status.update(
+                            label=f"Debate completed - No trades | {metrics.total_duration_ms}ms | {metrics.total_tokens} tokens",
+                            state="complete",
+                            expanded=False,
+                        )
+
+            elif agent_mode == "langgraph":
                 langgraph_agent = LangGraphAgentService(security_service=security_service)
 
                 # Create status container for progress
@@ -333,6 +377,7 @@ def _render_agent_execution(
 
                     # Store metrics in session state
                     st.session_state.last_metrics = metrics
+                    st.session_state.debate_transcript = None
 
                     # Update final status with metrics summary
                     if recommendation and recommendation.trades:
@@ -351,6 +396,7 @@ def _render_agent_execution(
                 with st.spinner("Agent is analyzing portfolio..."):
                     recommendation = agent_service.execute(config, state)
                 st.session_state.last_metrics = None
+                st.session_state.debate_transcript = None
 
             st.session_state.recommendation = recommendation
             st.rerun()
@@ -372,6 +418,42 @@ def _render_agent_execution(
             st.caption("Per-step breakdown:")
             for step_name, step_metrics in metrics.steps.items():
                 st.text(f"  {step_name}: {step_metrics.duration_ms}ms, {step_metrics.input_tokens} in / {step_metrics.output_tokens} out")
+
+    # Show debate transcript if available
+    if st.session_state.debate_transcript:
+        transcript = st.session_state.debate_transcript
+        with st.expander("Debate Transcript", expanded=True):
+            # Bull Case
+            st.markdown("### Bull Case")
+            st.markdown(transcript.bull_pitch)
+
+            st.divider()
+
+            # Bear Case
+            st.markdown("### Bear Case")
+            st.markdown(transcript.bear_pitch)
+
+            st.divider()
+
+            # Neutral Analysis
+            st.markdown("### Neutral Analysis")
+            st.markdown(transcript.neutral_pitch)
+
+            # Debate Rounds
+            if transcript.debate_history:
+                st.divider()
+                st.markdown("### Debate Rounds")
+                for msg in transcript.debate_history:
+                    agent_icon = {"bull": "🐂", "bear": "🐻", "neutral": "⚖️"}.get(msg["agent"], "💬")
+                    st.markdown(f"**{agent_icon} {msg['agent'].upper()} (Round {msg['round']})**")
+                    st.markdown(msg["message"])
+                    st.write("")
+
+            st.divider()
+
+            # Moderator Verdict
+            st.markdown("### Moderator Verdict")
+            st.markdown(transcript.moderator_analysis)
 
     if st.session_state.recommendation:
         def on_accept(trades: list[TradeRecommendation]) -> None:

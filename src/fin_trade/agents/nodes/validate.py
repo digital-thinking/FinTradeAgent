@@ -2,13 +2,14 @@
 
 import time
 
-from fin_trade.agents.state import SimpleAgentState
 from fin_trade.agents.tools.price_lookup import get_stock_price
 from fin_trade.services.security import SecurityService
 
 
-def validate_node(state: SimpleAgentState) -> dict:
+def validate_node(state) -> dict:
     """Validate node: checks trade recommendations against portfolio constraints.
+
+    Works with both SimpleAgentState and DebateAgentState.
 
     Validates:
     - SELL orders have sufficient shares owned

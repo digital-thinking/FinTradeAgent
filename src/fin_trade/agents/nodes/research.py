@@ -25,7 +25,7 @@ class LLMResponse:
     output_tokens: int
 
 
-def _build_research_prompt(state: SimpleAgentState) -> str:
+def _build_research_prompt(state) -> str:
     """Build the prompt for the research phase."""
     config = state["portfolio_config"]
     portfolio_state = state["portfolio_state"]
@@ -152,8 +152,10 @@ def _invoke_research_anthropic(prompt: str, model: str) -> LLMResponse:
     )
 
 
-def research_node(state: SimpleAgentState) -> dict:
+def research_node(state) -> dict:
     """Research node: gathers market data via web search.
+
+    Works with both SimpleAgentState and DebateAgentState.
 
     Updates state with:
     - market_research: Summary of web search findings

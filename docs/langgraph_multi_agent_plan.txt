@@ -1,162 +1,15 @@
 ================================================================================
-LANGGRAPH MULTI-AGENT DEBATE SYSTEM - CONCEPT & IMPLEMENTATION PLAN
+LANGGRAPH MULTI-AGENT DEBATE SYSTEM - REMAINING IMPLEMENTATION PLAN
 ================================================================================
 
 OVERVIEW
 --------
-Migrate from simple single-shot LLM calls to LangGraph-based agent orchestration.
-This enables:
-1. Structured agent workflows with state management
-2. Multi-agent debates between bull/bear personas
-3. Tool use (web search, price lookup) as graph nodes
-4. Retry/error handling built into the graph
-5. Streaming and observability
+The simple LangGraph agent workflow (research -> analysis -> generate -> validate)
+is now implemented. This document covers the next phase: multi-agent debate system.
 
 
 ================================================================================
-PART 1: MIGRATE EXISTING SIMPLE AGENT TO LANGGRAPH
-================================================================================
-
-CURRENT ARCHITECTURE
---------------------
-```
-AgentService.execute()
-    └── _build_prompt()
-    └── _invoke_openai() or _invoke_anthropic()
-    └── _parse_response()
-    └── return AgentRecommendation
-```
-
-Single LLM call with web search enabled. No state management between steps.
-
-
-PROPOSED LANGGRAPH ARCHITECTURE
--------------------------------
-```
-                    ┌─────────────┐
-                    │   START     │
-                    └──────┬──────┘
-                           │
-                    ┌──────▼──────┐
-                    │  Research   │  (web search for market data)
-                    │    Node     │
-                    └──────┬──────┘
-                           │
-                    ┌──────▼──────┐
-                    │  Analysis   │  (apply strategy logic)
-                    │    Node     │
-                    └──────┬──────┘
-                           │
-                    ┌──────▼──────┐
-                    │  Generate   │  (create trade recommendations)
-                    │   Trades    │
-                    └──────┬──────┘
-                           │
-                    ┌──────▼──────┐
-                    │  Validate   │  (check JSON format, constraints)
-                    │    Node     │
-                    └──────┬──────┘
-                           │
-              ┌────────────┼────────────┐
-              │ valid      │            │ invalid
-              ▼            │            ▼
-        ┌─────────┐        │      ┌─────────┐
-        │   END   │        │      │  Retry  │──── (max 3 retries)
-        └─────────┘        │      └─────────┘
-                           │
-                    (loops back to Generate)
-```
-
-
-STATE SCHEMA
-------------
-```python
-from typing import TypedDict, Annotated
-from langgraph.graph.message import add_messages
-
-class SimpleAgentState(TypedDict):
-    # Input
-    portfolio_config: PortfolioConfig
-    portfolio_state: PortfolioState
-
-    # Research results
-    market_research: str  # web search results
-    price_data: dict[str, float]  # ticker -> current price
-
-    # Analysis
-    analysis: str  # strategy-specific analysis
-
-    # Output
-    messages: Annotated[list, add_messages]
-    recommendations: AgentRecommendation | None
-
-    # Control
-    retry_count: int
-    error: str | None
-```
-
-
-NODE IMPLEMENTATIONS
---------------------
-
-1. research_node:
-   - Takes portfolio context (holdings, strategy)
-   - Calls LLM with web search to gather relevant market data
-   - Stores results in state.market_research
-
-2. analysis_node:
-   - Takes research results + strategy prompt
-   - Applies strategy logic to identify opportunities
-   - Stores analysis in state.analysis
-
-3. generate_trades_node:
-   - Takes analysis + portfolio constraints
-   - Generates JSON trade recommendations
-   - Stores in state.recommendations (or error if parse fails)
-
-4. validate_node:
-   - Checks JSON structure
-   - Validates against constraints (cash, holdings)
-   - Routes to END or retry
-
-
-CONDITIONAL EDGES
------------------
-```python
-def should_retry(state: SimpleAgentState) -> str:
-    if state["error"] and state["retry_count"] < 3:
-        return "retry"
-    elif state["recommendations"]:
-        return "end"
-    else:
-        return "end"  # give up after max retries
-```
-
-
-FILE STRUCTURE
---------------
-```
-src/fin_trade/agents/
-├── __init__.py
-├── state.py              # State schemas
-├── nodes/
-│   ├── __init__.py
-│   ├── research.py       # Web search node
-│   ├── analysis.py       # Strategy analysis node
-│   ├── generate.py       # Trade generation node
-│   └── validate.py       # Validation node
-├── graphs/
-│   ├── __init__.py
-│   └── simple_agent.py   # Single agent graph
-└── tools/
-    ├── __init__.py
-    ├── web_search.py     # Web search tool
-    └── price_lookup.py   # Price fetching tool
-```
-
-
-================================================================================
-PART 2: MULTI-AGENT DEBATE SYSTEM
+MULTI-AGENT DEBATE SYSTEM
 ================================================================================
 
 CONCEPT
@@ -174,48 +27,48 @@ prompts that bias their analysis.
 DEBATE FLOW
 -----------
 ```
-                         ┌─────────────┐
-                         │   START     │
-                         └──────┬──────┘
-                                │
-                         ┌──────▼──────┐
-                         │  Research   │  (shared research phase)
-                         │   Phase     │
-                         └──────┬──────┘
-                                │
-              ┌─────────────────┼─────────────────┐
-              │                 │                 │
-       ┌──────▼──────┐   ┌──────▼──────┐   ┌──────▼──────┐
-       │    BULL     │   │    BEAR     │   │  NEUTRAL    │
-       │   Agent     │   │   Agent     │   │   Agent     │
-       │  (Pitch)    │   │  (Pitch)    │   │  (Pitch)    │
-       └──────┬──────┘   └──────┬──────┘   └──────┬──────┘
-              │                 │                 │
-              └─────────────────┼─────────────────┘
-                                │
-                         ┌──────▼──────┐
-                         │   DEBATE    │  (agents respond to each other)
-                         │   Round 1   │
-                         └──────┬──────┘
-                                │
-                         ┌──────▼──────┐
-                         │   DEBATE    │  (rebuttals)
-                         │   Round 2   │
-                         └──────┬──────┘
-                                │
-                         ┌──────▼──────┐
-                         │  MODERATOR  │  (synthesize + decide)
-                         │   Verdict   │
-                         └──────┬──────┘
-                                │
-                         ┌──────▼──────┐
-                         │  Generate   │  (final recommendations)
-                         │   Trades    │
-                         └──────┬──────┘
-                                │
-                         ┌──────▼──────┐
-                         │    END      │
-                         └─────────────┘
+                         +-------------+
+                         |   START     |
+                         +------+------+
+                                |
+                         +------v------+
+                         |  Research   |  (shared research phase)
+                         |   Phase     |
+                         +------+------+
+                                |
+              +-----------------+-----------------+
+              |                 |                 |
+       +------v------+   +------v------+   +------v------+
+       |    BULL     |   |    BEAR     |   |  NEUTRAL    |
+       |   Agent     |   |   Agent     |   |   Agent     |
+       |  (Pitch)    |   |  (Pitch)    |   |  (Pitch)    |
+       +------+------+   +------+------+   +------+------+
+              |                 |                 |
+              +-----------------+-----------------+
+                                |
+                         +------v------+
+                         |   DEBATE    |  (agents respond to each other)
+                         |   Round 1   |
+                         +------+------+
+                                |
+                         +------v------+
+                         |   DEBATE    |  (rebuttals)
+                         |   Round 2   |
+                         +------+------+
+                                |
+                         +------v------+
+                         |  MODERATOR  |  (synthesize + decide)
+                         |   Verdict   |
+                         +------+------+
+                                |
+                         +------v------+
+                         |  Generate   |  (final recommendations)
+                         |   Trades    |
+                         +------+------+
+                                |
+                         +------v------+
+                         |    END      |
+                         +-------------+
 ```
 
 
@@ -375,55 +228,11 @@ def debate_round_node(state: DebateAgentState) -> DebateAgentState:
 
 
 ================================================================================
-PART 3: IMPLEMENTATION PLAN
+IMPLEMENTATION PLAN
 ================================================================================
 
-PHASE 1: SETUP & DEPENDENCIES (Day 1)
--------------------------------------
-1. Add langgraph to dependencies:
-   poetry add langgraph langchain-openai langchain-anthropic
-
-2. Create directory structure:
-   src/fin_trade/agents/
-
-3. Define state schemas in state.py
-
-4. Create base tool implementations:
-   - web_search tool (wraps existing LLM web search)
-   - price_lookup tool (wraps SecurityService)
-
-
-PHASE 2: SIMPLE AGENT MIGRATION (Days 2-3)
-------------------------------------------
-1. Implement nodes:
-   - research_node
-   - analysis_node
-   - generate_trades_node
-   - validate_node
-
-2. Build simple_agent graph with edges and conditionals
-
-3. Create new AgentService that uses the graph:
-   ```python
-   class LangGraphAgentService:
-       def __init__(self):
-           self.graph = build_simple_agent_graph()
-
-       def execute(self, config, state) -> AgentRecommendation:
-           result = self.graph.invoke({
-               "portfolio_config": config,
-               "portfolio_state": state,
-           })
-           return result["recommendations"]
-   ```
-
-4. Add configuration option to switch between old/new agent
-
-5. Test with existing portfolios, compare outputs
-
-
-PHASE 3: MULTI-AGENT DEBATE (Days 4-6)
---------------------------------------
+PHASE 1: MULTI-AGENT DEBATE
+---------------------------
 1. Implement debate-specific nodes:
    - bull_pitch_node
    - bear_pitch_node
@@ -435,17 +244,17 @@ PHASE 3: MULTI-AGENT DEBATE (Days 4-6)
 
 3. Add "debate" mode to portfolio config:
    ```yaml
-   agent_mode: debate  # or "simple"
+   agent_mode: debate  # or "langgraph"
    debate_rounds: 2
    ```
 
 4. Create DebateAgentService
 
-5. Test with takeover_arbitrage portfolio (good for debate)
+5. Create a new portfolio and strategy for the debate agent
 
 
-PHASE 4: UI INTEGRATION (Day 7)
--------------------------------
+PHASE 2: UI INTEGRATION
+-----------------------
 1. Update trade_display.py to show debate transcript
 
 2. Add collapsible sections:
@@ -460,20 +269,6 @@ PHASE 4: UI INTEGRATION (Day 7)
 4. Store full debate in logs for analysis
 
 
-PHASE 5: OBSERVABILITY & REFINEMENT (Day 8+)
---------------------------------------------
-1. Add LangSmith tracing for debugging
-
-2. Implement streaming for long debates
-
-3. Add metrics:
-   - Time per agent
-   - Token usage breakdown
-   - Debate "winner" tracking over time
-
-4. A/B test: simple vs debate performance
-
-
 ================================================================================
 CONFIGURATION EXAMPLE
 ================================================================================
@@ -486,7 +281,7 @@ strategy_prompt: |
   ... (base strategy for all agents)
 
 # Agent orchestration settings
-agent_mode: debate          # "simple" or "debate"
+agent_mode: debate          # "langgraph" or "debate"
 debate_config:
   rounds: 2                 # number of rebuttal rounds
   parallel_pitches: true    # run bull/bear/neutral in parallel
@@ -507,50 +302,18 @@ OPEN QUESTIONS
 ================================================================================
 
 1. Should debate agents have access to DIFFERENT data sources?
-   - Bull only sees positive news?
-   - Or same data, different interpretation?
-   → Recommendation: Same data, different prompts
+   - Bull only sees positive news? No
+   - Or same data, different interpretation? Yes
 
 2. How many debate rounds are optimal?
    - More rounds = more tokens = higher cost
    - Diminishing returns after 2-3 rounds?
-   → Start with 2, make configurable
+   -> Start with 2, make configurable
 
-3. Should we weight agent opinions differently?
-   - Track historical accuracy per agent persona?
-   - Adjust moderator weighting based on track record?
-   → Future enhancement
-
-4. How to handle agent disagreement on facts?
-   - Bull says revenue grew, Bear says it didn't
-   - Need fact-checking step?
-   → Add validation node that checks claims
-
-5. Cost management:
+3. Cost management:
    - Debate uses 4-5x more tokens than simple
    - Worth it for high-conviction decisions only?
-   → Add cost estimate before running, let user choose
-
-
-================================================================================
-SUCCESS METRICS
-================================================================================
-
-1. Decision Quality:
-   - Do debate decisions outperform simple agent?
-   - Track win rate over time
-
-2. Reasoning Transparency:
-   - Can user understand WHY a trade was recommended?
-   - Are counter-arguments surfaced?
-
-3. Risk Identification:
-   - Does bear agent catch risks simple agent misses?
-   - Track "near misses" where bear was right
-
-4. User Trust:
-   - Do users accept more debate recommendations?
-   - Higher confidence in decisions?
+   -> Track costs in the debug log. Important: Circuit breaker after too many tokens.
 
 
 ================================================================================

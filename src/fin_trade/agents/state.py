@@ -37,3 +37,59 @@ class SimpleAgentState(TypedDict):
     _metrics_analysis: dict | None
     _metrics_generate: dict | None
     _metrics_validate: dict | None
+
+
+class DebateMessage(TypedDict):
+    """A single message in the debate history."""
+
+    agent: str  # "bull", "bear", "neutral"
+    message: str
+    round: int
+
+
+class DebateAgentState(TypedDict):
+    """State for the multi-agent debate workflow.
+
+    Flow: research -> parallel(bull_pitch, bear_pitch, neutral_pitch) ->
+          debate_rounds -> moderator -> generate -> validate
+    """
+
+    # Input (provided at invocation)
+    portfolio_config: PortfolioConfig
+    portfolio_state: PortfolioState
+
+    # Shared research (from research node)
+    market_research: str
+    price_data: dict[str, float]
+
+    # Agent pitches (round 0)
+    bull_pitch: str
+    bear_pitch: str
+    neutral_pitch: str
+
+    # Debate rounds
+    debate_history: list[DebateMessage]
+    current_round: int
+    max_rounds: int
+
+    # Moderator
+    moderator_analysis: str
+    final_verdict: str  # Summary of decision with reasoning
+
+    # Output
+    messages: Annotated[list, add_messages]
+    recommendations: AgentRecommendation | None
+
+    # Control flow
+    retry_count: int
+    error: str | None
+
+    # Metrics (populated by each node)
+    _metrics_research: dict | None
+    _metrics_bull_pitch: dict | None
+    _metrics_bear_pitch: dict | None
+    _metrics_neutral_pitch: dict | None
+    _metrics_debate: dict | None
+    _metrics_moderator: dict | None
+    _metrics_generate: dict | None
+    _metrics_validate: dict | None
