@@ -20,7 +20,7 @@
     - Refactor `AgentService` to use these providers instead of hardcoded logic.
 - [ ] **Centralized Prompt Management**
     - Create a `prompts` module or directory.
-    - Move all hardcoded prompts (from `agent.py`, `nodes/*.py`) into templates (Jinja2 or simple strings).
+    - Move all hardcoded prompts (from `agent.py`, `nodes/*.py`) into templates (simple strings).
 
 ## 📦 Package B: UI Foundation (Components & Style)
 *Focus: Visual consistency, reusable components, and basic UI elements.*
@@ -36,23 +36,6 @@
     - Replace blank states with skeletons during data fetching.
 - [ ] **Use Dataframes for Tables**
     - Replace divider-based row layouts in Holdings and Trade History with `st.dataframe()` for sorting/scanning.
-- [ ] **Improve Mobile Layout**
-    - Refactor fixed column grids to be responsive.
-
-## 📦 Package C: Advanced Features (New Modules)
-*Focus: New business logic and capabilities.*
-*Primary Files: `src/fin_trade/services/risk.py` (new), `src/fin_trade/services/backtest.py` (new), `src/fin_trade/services/research.py` (refactor)*
-
-- [ ] **Risk Management Module**
-    - Create `RiskService`.
-    - Implement rules: Max sector allocation, Stop-loss/Take-profit checks.
-    - Integrate into `validate_node`.
-- [ ] **Vector Database for Research**
-    - Implement a simple vector store (e.g., ChromaDB or simple file-based embeddings).
-    - Cache research summaries to reduce redundant web searches.
-- [ ] **Backtesting Capability**
-    - Create a backtesting engine to replay historical data.
-    - Use cached `StockDataService` data to simulate agent performance.
 
 ## 📦 Package D: Dashboard & Navigation
 *Focus: High-level application structure and portfolio management views.*
@@ -61,12 +44,8 @@
 - [ ] **Summary Dashboard**
     - Create a new tab/view showing total value across all strategies.
     - Show best/worst performers and upcoming scheduled runs.
-- [ ] **Portfolio Filtering & Sorting**
-    - Add controls to filter by status (overdue/current) and sort by value/return.
 - [ ] **Ticker Correction UI**
     - Improve the UI for handling unknown tickers (move from expander to inline).
-- [ ] **Keyboard Shortcuts**
-    - Add shortcuts for common actions (New Portfolio, Run Agent, Back).
 
 ## 📦 Package E: Agent Interaction Flow
 *Focus: The user experience of running agents and reviewing results.*
@@ -75,6 +54,9 @@
 - [ ] **User Feedback Loop**
     - Add UI to inject user feedback *during* the debate or before generation.
     - Update agent graph to accept user input node.
+- [ ] **Fix the formatting issues from the markdown agent output **
+    - Sometimes text is very large
+    - It may contain links (html #section links) that don't work because they refer to sources not rendered.
 - [ ] **Improve Agent Execution Feedback**
     - Enhance the "Running..." status display.
     - Add collapsible summary for debate transcripts with key points highlighted.
