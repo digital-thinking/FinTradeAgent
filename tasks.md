@@ -61,8 +61,6 @@
 - [ ] **Summary Dashboard**
     - Create a new tab/view showing total value across all strategies.
     - Show best/worst performers and upcoming scheduled runs.
-- [ ] **Portfolio Comparison**
-    - Add a view to overlay performance charts of multiple portfolios.
 - [ ] **Portfolio Filtering & Sorting**
     - Add controls to filter by status (overdue/current) and sort by value/return.
 - [ ] **Ticker Correction UI**
