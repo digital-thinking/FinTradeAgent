@@ -29,7 +29,7 @@
 - [x] **Extract Reusable Components**
     - Create shared components for Status Badges, Trade Action colors, and Portfolio Metrics.
     - Refactor `overview.py` and `portfolio_detail.py` to use them.
-- [ ] **Consistent Button Hierarchy**
+- [x] **Consistent Button Hierarchy**
     - Define and apply primary/secondary/danger button styles consistently across the app.
 - [ ] **Loading Skeletons**
     - Create a skeleton loader component.
@@ -44,7 +44,7 @@
 - [ ] **Summary Dashboard**
     - Create a new tab/view showing total value across all strategies.
     - Show best/worst performers and upcoming scheduled runs.
-- [x] **Ticker Correction UI**
+- [ ] **Ticker Correction UI**
     - Improve the UI for handling unknown tickers (move from expander to inline).
 
 ## 📦 Package E: Agent Interaction Flow

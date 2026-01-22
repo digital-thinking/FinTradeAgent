@@ -72,7 +72,7 @@ def render_portfolio_tile(
             "View Details →",
             key=f"tile_{config.name}",
             use_container_width=True,
-            type="primary" if is_overdue else "secondary",
+            type="secondary",
         )
 
         return clicked
