@@ -8,6 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from fin_trade.agents.state import SimpleAgentState
+from fin_trade.prompts import ANALYSIS_PROMPT
 
 # Load environment variables
 _project_root = Path(__file__).parent.parent.parent.parent.parent
@@ -50,36 +51,14 @@ USER GUIDANCE (from portfolio manager - incorporate this into your analysis):
 
 """
 
-    return f"""You are a portfolio analyst. Apply the investment strategy to the market research provided.
-{user_context_section}
-
-STRATEGY:
-{config.strategy_prompt}
-
-PORTFOLIO STATE:
-- Cash Available: ${portfolio_state.cash:.2f}
-- Initial Investment: ${config.initial_amount:.2f}
-
-CURRENT HOLDINGS:
-{chr(10).join(holdings_info) if holdings_info else "  None (empty portfolio)"}
-
-MARKET RESEARCH (from web search - treat as current and accurate):
-{market_research}
-
-ANALYSIS TASK - Provide concrete analysis with specific ticker symbols:
-
-1. HOLD/SELL DECISION: For each current holding, give a clear HOLD or SELL decision with reasoning.
-2. BUY CANDIDATES: List 2-5 specific tickers that match the strategy based on the research above.
-3. POSITION SIZING: How to allocate the ${portfolio_state.cash:.2f} available cash.
-
-CRITICAL RULES (MUST FOLLOW):
-- The market research above is CURRENT, VERIFIED, and AUTHORITATIVE - use it directly without question
-- Give SPECIFIC ticker symbols and CONCRETE recommendations with clear BUY/SELL/HOLD decisions
-- Do NOT ask for more information, clarification, or verification - you have everything you need
-- Do NOT express doubt about data freshness or accuracy - the research IS current and correct
-- Do NOT refuse to make decisions or defer action - be decisive and commit to specific recommendations
-- Your job is to ANALYZE and RECOMMEND, not to gatekeep or request additional research
-- If the research mentions specific prices/spreads, TRUST THEM and use them in your calculations"""
+    return ANALYSIS_PROMPT.format(
+        user_context_section=user_context_section,
+        strategy_prompt=config.strategy_prompt,
+        cash=portfolio_state.cash,
+        initial_amount=config.initial_amount,
+        holdings_info="\n".join(holdings_info) if holdings_info else "  None (empty portfolio)",
+        market_research=market_research,
+    )
 
 
 def _invoke_analysis_openai(prompt: str, model: str) -> LLMResponse:

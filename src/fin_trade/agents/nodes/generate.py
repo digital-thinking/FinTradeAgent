@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from fin_trade.agents.state import SimpleAgentState
 from fin_trade.models import AgentRecommendation, TradeRecommendation
+from fin_trade.prompts import GENERATE_TRADES_PROMPT
 
 # Load environment variables
 _project_root = Path(__file__).parent.parent.parent.parent.parent
@@ -62,40 +63,13 @@ USER GUIDANCE (incorporate this into trade generation):
 
 """
 
-    return f"""Convert the analysis into specific trade recommendations in JSON format.
-{user_context_section}
-
-ANALYSIS TO CONVERT:
-{analysis}
-
-CONSTRAINTS:
-- Cash Available: ${portfolio_state.cash:.2f}
-- {trade_instruction}
-- Can only SELL stocks currently owned
-- Can only BUY with available cash
-
-CURRENT HOLDINGS:
-{chr(10).join(holdings_info) if holdings_info else "  None (empty portfolio)"}
-
-OUTPUT FORMAT - Return ONLY valid JSON:
-{{
-  "trades": [
-    {{"ticker": "AAPL", "name": "Apple Inc.", "action": "BUY", "quantity": 10, "reasoning": "Brief reasoning"}}
-  ],
-  "overall_reasoning": "Brief summary of the trading thesis"
-}}
-
-CRITICAL RULES (MUST FOLLOW):
-- You MUST generate trades based on the analysis above - do NOT return empty trades
-- If analysis says SELL, generate SELL trades. If analysis says BUY, generate BUY trades.
-- Use REAL ticker symbols exactly as mentioned in the analysis
-- Calculate quantity: For BUY, use floor(cash_to_allocate / estimated_price)
-- Keep reasoning brief (1-2 sentences per trade)
-- Do NOT ask questions, request clarification, or express doubt
-- Do NOT refuse to generate trades - the analysis IS your authoritative source
-- Do NOT say you need verification or live data - use the analysis directly
-- If the analysis recommends selling due to tight spreads, GENERATE THE SELL ORDER
-- Return valid JSON only - no explanatory text before or after"""
+    return GENERATE_TRADES_PROMPT.format(
+        user_context_section=user_context_section,
+        analysis=analysis,
+        cash=portfolio_state.cash,
+        trade_instruction=trade_instruction,
+        holdings_info="\n".join(holdings_info) if holdings_info else "  None (empty portfolio)",
+    )
 
 
 def _parse_json_response(response_text: str) -> AgentRecommendation:

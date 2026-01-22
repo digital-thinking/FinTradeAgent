@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from fin_trade.agents.state import SimpleAgentState
 from fin_trade.agents.tools.price_lookup import get_stock_prices
 from fin_trade.services.security import SecurityService
+from fin_trade.prompts import RESEARCH_PROMPT
 
 # Load environment variables
 _project_root = Path(__file__).parent.parent.parent.parent.parent
@@ -34,28 +35,10 @@ def _build_research_prompt(state) -> str:
     holdings_tickers = [h.ticker for h in portfolio_state.holdings]
     holdings_info = ", ".join(holdings_tickers) if holdings_tickers else "None"
 
-    return f"""You are a market research assistant. Your task is to gather current market information
-relevant to the following investment strategy:
-
-STRATEGY:
-{config.strategy_prompt}
-
-CURRENT HOLDINGS:
-{holdings_info}
-
-RESEARCH TASK:
-1. Search for current market conditions and relevant news
-2. Look up information about sectors or stocks relevant to this strategy
-3. Find any recent developments that could impact trading decisions
-4. Focus on actionable, current information (not general market education)
-
-Provide a concise summary of your findings organized by:
-- Overall market conditions
-- Sector-specific news (if relevant to strategy)
-- Individual stock news (for current holdings and potential opportunities)
-- Key risks or catalysts to watch
-
-Keep the summary focused and relevant to the strategy. No fluff."""
+    return RESEARCH_PROMPT.format(
+        strategy_prompt=config.strategy_prompt,
+        holdings_info=holdings_info,
+    )
 
 
 def _invoke_research_openai(prompt: str, model: str) -> LLMResponse:

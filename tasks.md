@@ -18,7 +18,7 @@
     - Create `LLMProvider` abstract base class.
     - Implement `OpenAIProvider` and `AnthropicProvider`.
     - Refactor `AgentService` to use these providers instead of hardcoded logic.
-- [ ] **Centralized Prompt Management**
+- [x] **Centralized Prompt Management**
     - Create a `prompts` module or directory.
     - Move all hardcoded prompts (from `agent.py`, `nodes/*.py`) into templates (simple strings).
 

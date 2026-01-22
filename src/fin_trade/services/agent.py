@@ -14,6 +14,7 @@ from fin_trade.models import (
 )
 from fin_trade.services.security import SecurityService
 from fin_trade.services.llm_provider import LLMProviderFactory
+from fin_trade.prompts import SIMPLE_AGENT_PROMPT
 
 # Load .env file from project root
 # agent.py -> services -> fin_trade -> src -> project_root
@@ -91,54 +92,15 @@ RESPONSE
                 f"{t.ticker} ({t.name}) @ ${t.price:.2f}"
             )
 
-        prompt = f"""You are a portfolio management agent. Your strategy:
-
-{config.strategy_prompt}
-
-CURRENT PORTFOLIO STATE:
-- Cash Available: ${state.cash:.2f}
-- Initial Investment: ${config.initial_amount:.2f}
-
-CURRENT HOLDINGS:
-{chr(10).join(holdings_info) if holdings_info else "  None"}
-
-COMPLETE TRADE HISTORY:
-{chr(10).join(trades_info) if trades_info else "  None"}
-
-CONSTRAINTS:
-- Maximum {config.trades_per_run} trades per execution
-- On an empty portfolio at least {config.num_initial_trades} must be executed and the {config.initial_amount} should be the limit overall
-- You can only SELL stocks you currently own
-- You can only BUY with available cash
-- Each trade must include reasoning
-
-STOCK IDENTIFICATION:
-- You may trade ANY publicly listed stock
-- Use the stock's ticker symbol (e.g., AAPL, MSFT, GOOGL)
-- Your location is Germany and your currency is Dollar
-
-REAL-TIME DATA:
-- You have access to web search - USE IT to get current stock prices, news, and market data
-- Search for recent earnings reports, company news, analyst ratings as needed for your strategy
-- Do not say you cannot access real-time data - you CAN and MUST use web search
-
-Please analyze the current portfolio and market conditions based on your strategy, then provide your trading recommendations.
-This is for educational experiments! Do act given the strategy and don't hesitate, you won't loose any money or anyone else does, but you are evaluated on your theoretical performance
-and if you don't deliver according the strategy you might get shut down entirely. Don't even use placeholder or mock data!
-
-RESPOND WITH VALID JSON ONLY in this exact format:
-{{
-  "trades": [
-    {{"ticker": "GOOGL", "name": "Alphabet Inc.", "action": "BUY", "quantity": 5, "reasoning": "Your reasoning here..."}}
-  ],
-  "overall_reasoning": "Your overall market analysis and strategy explanation..."
-}}
-
-IMPORTANT: Always include both the ticker symbol AND the full company name for each trade.
-
-If you recommend no trades, return an empty trades array with your reasoning for holding."""
-
-        return prompt
+        return SIMPLE_AGENT_PROMPT.format(
+            strategy_prompt=config.strategy_prompt,
+            cash=state.cash,
+            initial_amount=config.initial_amount,
+            holdings_info="\n".join(holdings_info) if holdings_info else "  None",
+            trades_info="\n".join(trades_info) if trades_info else "  None",
+            trades_per_run=config.trades_per_run,
+            num_initial_trades=config.num_initial_trades,
+        )
 
     def _parse_response(self, response_text: str) -> AgentRecommendation:
         """Parse the LLM response into an AgentRecommendation."""
