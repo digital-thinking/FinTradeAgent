@@ -7,6 +7,7 @@ import streamlit as st
 
 from fin_trade.models import AgentRecommendation, TradeRecommendation, Holding
 from fin_trade.services.security import SecurityService
+from fin_trade.components.skeleton import render_skeleton_table
 
 
 def render_trade_recommendations(
@@ -271,6 +272,11 @@ def render_trade_history(trades: list, security_service: SecurityService) -> Non
 
     st.subheader("Trade History")
 
+    # Show skeleton placeholder while building table
+    table_placeholder = st.empty()
+    with table_placeholder.container():
+        render_skeleton_table(rows=min(len(trades), 10), cols=8)
+
     # Build trade data for DataFrame
     trade_data = []
     for trade in trades:
@@ -290,18 +296,20 @@ def render_trade_history(trades: list, security_service: SecurityService) -> Non
     # Sort by date descending
     df = df.sort_values("Date", ascending=False)
 
-    st.dataframe(
-        df,
-        column_config={
-            "Date": st.column_config.DatetimeColumn("Date", format="YYYY-MM-DD HH:mm"),
-            "Action": st.column_config.TextColumn("Action", width="small"),
-            "Ticker": st.column_config.TextColumn("Ticker", width="small"),
-            "Name": st.column_config.TextColumn("Name", width="medium"),
-            "Shares": st.column_config.NumberColumn("Shares", format="%d"),
-            "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
-            "Total": st.column_config.NumberColumn("Total", format="$%.2f"),
-            "Reasoning": st.column_config.TextColumn("Reasoning", width="large"),
-        },
-        hide_index=True,
-        use_container_width=True,
-    )
+    # Replace skeleton with actual table
+    with table_placeholder.container():
+        st.dataframe(
+            df,
+            column_config={
+                "Date": st.column_config.DatetimeColumn("Date", format="YYYY-MM-DD HH:mm"),
+                "Action": st.column_config.TextColumn("Action", width="small"),
+                "Ticker": st.column_config.TextColumn("Ticker", width="small"),
+                "Name": st.column_config.TextColumn("Name", width="medium"),
+                "Shares": st.column_config.NumberColumn("Shares", format="%d"),
+                "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
+                "Total": st.column_config.NumberColumn("Total", format="$%.2f"),
+                "Reasoning": st.column_config.TextColumn("Reasoning", width="large"),
+            },
+            hide_index=True,
+            use_container_width=True,
+        )

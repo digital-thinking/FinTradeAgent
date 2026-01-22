@@ -13,7 +13,7 @@ from fin_trade.agents.service import (
     StepProgress,
     ExecutionMetrics,
 )
-from fin_trade.components import render_large_status_badge
+from fin_trade.components import render_large_status_badge, render_skeleton_table
 from fin_trade.components.trade_display import (
     render_trade_recommendations,
     render_trade_history,
@@ -123,6 +123,11 @@ def _render_holdings(state: PortfolioState, security_service: SecurityService) -
         st.info("No holdings. Execute the agent to start trading.")
         return
 
+    # Show skeleton while loading prices
+    table_placeholder = st.empty()
+    with table_placeholder.container():
+        render_skeleton_table(rows=len(state.holdings), cols=8)
+
     # Build holdings data for DataFrame
     holdings_data = []
     for holding in state.holdings:
@@ -151,21 +156,23 @@ def _render_holdings(state: PortfolioState, security_service: SecurityService) -
 
     df = pd.DataFrame(holdings_data)
 
-    st.dataframe(
-        df,
-        column_config={
-            "Ticker": st.column_config.TextColumn("Ticker", width="small"),
-            "Name": st.column_config.TextColumn("Name", width="medium"),
-            "Shares": st.column_config.NumberColumn("Shares", format="%d"),
-            "Avg Price": st.column_config.NumberColumn("Avg Price", format="$%.2f"),
-            "Current Price": st.column_config.NumberColumn("Current", format="$%.2f"),
-            "Value": st.column_config.NumberColumn("Value", format="$%.2f"),
-            "Gain/Loss": st.column_config.NumberColumn("Gain/Loss", format="$%.2f"),
-            "Gain %": st.column_config.NumberColumn("Gain %", format="%.1f%%"),
-        },
-        hide_index=True,
-        use_container_width=True,
-    )
+    # Replace skeleton with actual table
+    with table_placeholder.container():
+        st.dataframe(
+            df,
+            column_config={
+                "Ticker": st.column_config.TextColumn("Ticker", width="small"),
+                "Name": st.column_config.TextColumn("Name", width="medium"),
+                "Shares": st.column_config.NumberColumn("Shares", format="%d"),
+                "Avg Price": st.column_config.NumberColumn("Avg Price", format="$%.2f"),
+                "Current Price": st.column_config.NumberColumn("Current", format="$%.2f"),
+                "Value": st.column_config.NumberColumn("Value", format="$%.2f"),
+                "Gain/Loss": st.column_config.NumberColumn("Gain/Loss", format="$%.2f"),
+                "Gain %": st.column_config.NumberColumn("Gain %", format="%.1f%%"),
+            },
+            hide_index=True,
+            use_container_width=True,
+        )
 
 
 def _render_performance_chart(

@@ -31,7 +31,7 @@
     - Refactor `overview.py` and `portfolio_detail.py` to use them.
 - [x] **Consistent Button Hierarchy**
     - Define and apply primary/secondary/danger button styles consistently across the app.
-- [ ] **Loading Skeletons**
+- [x] **Loading Skeletons**
     - Create a skeleton loader component.
     - Replace blank states with skeletons during data fetching.
 - [x] **Use Dataframes for Tables**
@@ -58,7 +58,7 @@
     - Sometimes text is very large
     - It may contain links (html #section links) that don't work because they refer to sources not rendered.
 - [ ] **Detailed Transaction Logs**
-    - Store execution logs (tokens, latency, model) in SQLite.
+    - Store execution logs (tokens, latency, model) in SQLite or something similar.
     - Create a view to inspect these logs (System Health/Cost Analysis).
 - [x] **Paginate Trade History**
     - Add pagination or "Load More" to the trade history tab.
