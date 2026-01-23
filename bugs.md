@@ -11,22 +11,26 @@
 ---
 
 ## 📦 Bugs:
-- [x] **Error: Insufficient cash: trades require...**
-    - If a trade combines sell and buy, the total value is not considered correctly
-    - The behavior should be:
-      - if the SELL order is selected as included, the cash from this sell order should be considered as available for the buy options
-      - SELL order are executed first in the log so that everything works out
-    - **Fixed:** validate_node now accounts for SELL proceeds when checking BUY cash requirements.
-      trade_display.py processes SELL orders first to calculate available cash.
-      on_accept in portfolio_detail.py executes SELL orders before BUY orders.
-- [x] **Portfolio Charts**
-    - The Portfolio Overview and the Performance Tab should show the chart as a stacked chart
-    - The stacked chart consists of:
-      - The cash holding
-      - The stock holdings
-      - All correctly over time
-    - The Performance tab, of course, stays more detailed with Buy/Sell Indicators (...)
-    - **Fixed:** Both the Portfolio Overview mini charts and the Performance Tab now use stacked area charts
-      showing cash (green) and holdings (blue) over time. Trade markers preserved on Performance tab.
-  
+
+- [ ] **Pending Trades: Missing ticker correction UI**
+    - When a ticker is invalid/not found (e.g., wrong symbol, regional variant like "BASF" vs "BAS.DE"), the Pending Trades page cannot execute the trade
+    - The portfolio detail page has a ticker correction UI that allows users to:
+      - Correct the ticker symbol
+      - Add the ISIN manually
+    - This UI should be available in the Pending Trades page as well
+    - **Implementation notes:**
+      - Extract the ticker correction UI from `components/trade_display.py` into a reusable component
+      - Use the component in both `trade_display.py` and `pages/pending_trades.py`
+      - The component should handle: ticker input, verify button, ISIN input, price lookup feedback
+    - **Primary Files:** `src/fin_trade/components/ticker_correction.py` (new), `src/fin_trade/components/trade_display.py`, `src/fin_trade/pages/pending_trades.py`
+
+- [ ] **Error messages disappear too quickly**
+    - When an error occurs (e.g., ticker not found, trade execution fails), the error message flashes briefly and disappears almost instantly
+    - Users don't have time to read the error message
+    - The error should persist until the user takes action or navigates away
+    - **Implementation notes:**
+      - Likely caused by `st.rerun()` being called after showing the error
+      - Consider storing errors in session state and displaying them persistently
+      - Or remove/delay the rerun to let users see the message
+    - **Primary Files:** `src/fin_trade/pages/pending_trades.py`, potentially other pages with similar issues
 

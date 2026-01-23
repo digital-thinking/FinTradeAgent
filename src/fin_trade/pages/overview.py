@@ -9,10 +9,15 @@ from fin_trade.components import (
     render_skeleton_card,
     render_skeleton_metrics_row,
 )
-from fin_trade.services import PortfolioService
+from fin_trade.services import PortfolioService, SecurityService
+from fin_trade.agents.service import LangGraphAgentService, DebateAgentService
 
 
-def render_overview_page(portfolio_service: PortfolioService) -> str | None:
+def render_overview_page(
+    portfolio_service: PortfolioService,
+    agent_service=None,  # Not used, kept for compatibility
+    security_service: SecurityService | None = None,
+) -> str | None:
     """Render the overview page and return selected portfolio name if clicked."""
     st.title("Portfolio Overview")
 
@@ -75,7 +80,7 @@ llm_model: gpt-4o""",
 
     # Replace metrics skeleton with actual metrics
     with metrics_placeholder.container():
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
         with col1:
             st.metric("Total Value", f"${total_value:,.2f}")
         with col2:
@@ -83,6 +88,9 @@ llm_model: gpt-4o""",
             st.metric("Total Gain/Loss", f"${total_gain:,.2f}", delta=f"{gain_pct:+.1f}%")
         with col3:
             render_large_status_badge(overdue_count > 0, overdue_count)
+        with col4:
+            if security_service:
+                _render_run_all_button(portfolio_data, security_service)
 
     # Replace cards skeleton with actual portfolio tiles
     with cards_placeholder.container():
@@ -103,3 +111,81 @@ llm_model: gpt-4o""",
                         return filename
 
     return None
+
+
+def _render_run_all_button(
+    portfolio_data: list,
+    security_service: SecurityService,
+) -> None:
+    """Render the Run All Agents button and handle execution."""
+    if st.button("🚀 Run All", type="primary", use_container_width=True):
+        _execute_all_agents(portfolio_data, security_service)
+
+
+@st.dialog("Running All Agents", width="large")
+def _execute_all_agents(
+    portfolio_data: list,
+    security_service: SecurityService,
+) -> None:
+    """Execute agents for all portfolios and store recommendations."""
+    total = len(portfolio_data)
+
+    st.write(f"Running agents for {total} portfolio(s)...")
+
+    progress_bar = st.progress(0, text="Starting...")
+    status_text = st.empty()
+    results_container = st.container()
+
+    results = []
+
+    for i, (filename, config, state) in enumerate(portfolio_data):
+        progress = (i) / total
+        progress_bar.progress(progress, text=f"Running {config.name}...")
+        status_text.info(f"🔄 Running agent for **{config.name}** ({i + 1}/{total})...")
+
+        try:
+            # Determine which agent to use based on config
+            if config.debate_config:
+                agent = DebateAgentService(security_service=security_service)
+                recommendations, metrics = agent.execute(config, state)
+            else:
+                agent = LangGraphAgentService(security_service=security_service)
+                recommendations, metrics = agent.execute(config, state)
+
+            results.append({
+                "portfolio": config.name,
+                "success": True,
+                "num_trades": len(recommendations.trades) if recommendations else 0,
+            })
+
+        except Exception as e:
+            results.append({
+                "portfolio": config.name,
+                "success": False,
+                "error": str(e),
+            })
+
+    progress_bar.progress(1.0, text="Complete!")
+    status_text.empty()
+
+    # Show summary
+    with results_container:
+        successful = [r for r in results if r["success"]]
+        failed = [r for r in results if not r["success"]]
+
+        if successful:
+            total_trades = sum(r["num_trades"] for r in successful)
+            st.success(
+                f"✅ Ran {len(successful)} agent(s) - {total_trades} recommendations generated"
+            )
+            for r in successful:
+                st.write(f"  • {r['portfolio']}: {r['num_trades']} trades")
+
+        if failed:
+            st.error(f"❌ {len(failed)} agent(s) failed:")
+            for r in failed:
+                st.write(f"  • {r['portfolio']}: {r.get('error', 'Unknown error')}")
+
+    st.divider()
+    st.info("👉 Go to **Pending Trades** in the sidebar to review and apply recommendations.")
+    st.caption("Click outside this dialog or press ESC to close.")

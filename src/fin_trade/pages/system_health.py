@@ -45,7 +45,7 @@ def render_system_health_page() -> None:
     st.divider()
 
     # Tabs for different views
-    tab1, tab2, tab3 = st.tabs(["Execution History", "Analytics", "By Portfolio"])
+    tab1, tab2, tab3 = st.tabs(["📜 Execution History", "📈 Analytics", "📊 By Portfolio"])
 
     with tab1:
         _render_execution_history(log_service)
@@ -387,14 +387,14 @@ def _apply_pending_trades(
     log_service: ExecutionLogService,
 ) -> None:
     """Apply selected pending trades to the portfolio."""
-    portfolio_service = PortfolioService()
     security_service = SecurityService()
+    portfolio_service = PortfolioService(security_service=security_service)
 
     # Find the portfolio config file
     portfolios = portfolio_service.list_portfolios()
     portfolio_filename = None
     for filename in portfolios:
-        config = portfolio_service.load_config(filename)
+        config, _ = portfolio_service.load_portfolio(filename)
         if config.name == log.portfolio_name:
             portfolio_filename = filename
             break
