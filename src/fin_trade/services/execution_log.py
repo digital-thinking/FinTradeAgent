@@ -26,6 +26,8 @@ class ExecutionLogEntry:
     success: bool
     error_message: str | None
     step_details: str  # JSON string of per-step metrics
+    recommendations_json: str | None = None  # JSON string of trade recommendations
+    executed_trades_json: str | None = None  # JSON string of executed trade indices
 
 
 class ExecutionLogService:
@@ -53,9 +55,20 @@ class ExecutionLogService:
                     num_trades INTEGER NOT NULL,
                     success INTEGER NOT NULL,
                     error_message TEXT,
-                    step_details TEXT
+                    step_details TEXT,
+                    recommendations_json TEXT,
+                    executed_trades_json TEXT
                 )
             """)
+            # Add new columns if they don't exist (migration for existing DBs)
+            try:
+                conn.execute("ALTER TABLE execution_logs ADD COLUMN recommendations_json TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            try:
+                conn.execute("ALTER TABLE execution_logs ADD COLUMN executed_trades_json TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
             conn.commit()
 
     def log_execution(
@@ -70,8 +83,13 @@ class ExecutionLogService:
         success: bool,
         error_message: str | None = None,
         step_details: dict | None = None,
+        recommendations: list[dict] | None = None,
     ) -> int:
         """Log an execution to the database.
+
+        Args:
+            recommendations: List of trade recommendation dicts with keys:
+                ticker, name, action, quantity, reasoning
 
         Returns:
             The ID of the inserted log entry.
@@ -79,6 +97,7 @@ class ExecutionLogService:
         import json
 
         step_details_json = json.dumps(step_details) if step_details else "{}"
+        recommendations_json = json.dumps(recommendations) if recommendations else None
 
         with sqlite3.connect(_db_path) as conn:
             cursor = conn.execute(
@@ -86,8 +105,9 @@ class ExecutionLogService:
                 INSERT INTO execution_logs (
                     timestamp, portfolio_name, agent_mode, model,
                     duration_ms, input_tokens, output_tokens, total_tokens,
-                    num_trades, success, error_message, step_details
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    num_trades, success, error_message, step_details,
+                    recommendations_json, executed_trades_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     datetime.now().isoformat(),
@@ -102,10 +122,65 @@ class ExecutionLogService:
                     1 if success else 0,
                     error_message,
                     step_details_json,
+                    recommendations_json,
+                    None,  # executed_trades_json starts as None
                 ),
             )
             conn.commit()
             return cursor.lastrowid
+
+    def mark_trades_executed(self, log_id: int, executed_indices: list[int]) -> None:
+        """Mark specific trades as executed for a log entry.
+
+        Args:
+            log_id: The execution log ID
+            executed_indices: List of trade indices (0-based) that were executed
+        """
+        import json
+
+        with sqlite3.connect(_db_path) as conn:
+            conn.execute(
+                "UPDATE execution_logs SET executed_trades_json = ? WHERE id = ?",
+                (json.dumps(executed_indices), log_id),
+            )
+            conn.commit()
+
+    def get_log_by_id(self, log_id: int) -> ExecutionLogEntry | None:
+        """Get a single execution log by ID."""
+        with sqlite3.connect(_db_path) as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, timestamp, portfolio_name, agent_mode, model,
+                       duration_ms, input_tokens, output_tokens, total_tokens,
+                       num_trades, success, error_message, step_details,
+                       recommendations_json, executed_trades_json
+                FROM execution_logs
+                WHERE id = ?
+                """,
+                (log_id,),
+            )
+            row = cursor.fetchone()
+
+        if not row:
+            return None
+
+        return ExecutionLogEntry(
+            id=row[0],
+            timestamp=datetime.fromisoformat(row[1]),
+            portfolio_name=row[2],
+            agent_mode=row[3],
+            model=row[4],
+            duration_ms=row[5],
+            input_tokens=row[6],
+            output_tokens=row[7],
+            total_tokens=row[8],
+            num_trades=row[9],
+            success=bool(row[10]),
+            error_message=row[11],
+            step_details=row[12],
+            recommendations_json=row[13],
+            executed_trades_json=row[14],
+        )
 
     def get_logs(
         self,
@@ -114,7 +189,6 @@ class ExecutionLogService:
         offset: int = 0,
     ) -> list[ExecutionLogEntry]:
         """Get execution logs, optionally filtered by portfolio."""
-        import json
 
         with sqlite3.connect(_db_path) as conn:
             if portfolio_name:
@@ -122,7 +196,8 @@ class ExecutionLogService:
                     """
                     SELECT id, timestamp, portfolio_name, agent_mode, model,
                            duration_ms, input_tokens, output_tokens, total_tokens,
-                           num_trades, success, error_message, step_details
+                           num_trades, success, error_message, step_details,
+                           recommendations_json, executed_trades_json
                     FROM execution_logs
                     WHERE portfolio_name = ?
                     ORDER BY timestamp DESC
@@ -135,7 +210,8 @@ class ExecutionLogService:
                     """
                     SELECT id, timestamp, portfolio_name, agent_mode, model,
                            duration_ms, input_tokens, output_tokens, total_tokens,
-                           num_trades, success, error_message, step_details
+                           num_trades, success, error_message, step_details,
+                           recommendations_json, executed_trades_json
                     FROM execution_logs
                     ORDER BY timestamp DESC
                     LIMIT ? OFFSET ?
@@ -160,6 +236,8 @@ class ExecutionLogService:
                 success=bool(row[10]),
                 error_message=row[11],
                 step_details=row[12],
+                recommendations_json=row[13],
+                executed_trades_json=row[14],
             )
             for row in rows
         ]

@@ -8,6 +8,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from fin_trade.services.execution_log import ExecutionLogService
+from fin_trade.services import PortfolioService
+from fin_trade.services.security import SecurityService
 
 
 def render_system_health_page() -> None:
@@ -148,6 +150,9 @@ def _render_execution_history(log_service: ExecutionLogService) -> None:
             except json.JSONDecodeError:
                 st.caption("No step details available")
 
+        # Recommendations section
+        _render_recommendations_section(log, log_service)
+
 
 def _render_analytics(log_service: ExecutionLogService) -> None:
     """Render analytics charts."""
@@ -280,3 +285,167 @@ def _render_by_portfolio(log_service: ExecutionLogService) -> None:
         )
         fig_tokens.update_layout(template="plotly_dark", height=300)
         st.plotly_chart(fig_tokens, use_container_width=True)
+
+
+def _render_recommendations_section(
+    log,
+    log_service: ExecutionLogService,
+) -> None:
+    """Render recommendations from an execution log with execution status."""
+    if not log.recommendations_json:
+        st.caption("No recommendations stored for this execution.")
+        return
+
+    try:
+        recommendations = json.loads(log.recommendations_json)
+    except json.JSONDecodeError:
+        st.caption("Could not parse recommendations.")
+        return
+
+    if not recommendations:
+        st.caption("No trade recommendations in this execution.")
+        return
+
+    # Parse executed trades
+    executed_indices = set()
+    if log.executed_trades_json:
+        try:
+            executed_indices = set(json.loads(log.executed_trades_json))
+        except json.JSONDecodeError:
+            pass
+
+    st.markdown("**Trade Recommendations**")
+
+    # Build DataFrame for display
+    rec_data = []
+    for i, rec in enumerate(recommendations):
+        was_executed = i in executed_indices
+        rec_data.append({
+            "": "✓" if was_executed else "○",
+            "Action": rec.get("action", ""),
+            "Ticker": rec.get("ticker", ""),
+            "Name": rec.get("name", ""),
+            "Qty": rec.get("quantity", 0),
+            "Reasoning": rec.get("reasoning", "")[:100] + "..." if len(rec.get("reasoning", "")) > 100 else rec.get("reasoning", ""),
+            "Status": "Executed" if was_executed else "Pending",
+        })
+
+    df = pd.DataFrame(rec_data)
+    st.dataframe(
+        df,
+        column_config={
+            "": st.column_config.TextColumn("", width="small"),
+            "Action": st.column_config.TextColumn("Action", width="small"),
+            "Ticker": st.column_config.TextColumn("Ticker", width="small"),
+            "Name": st.column_config.TextColumn("Name", width="medium"),
+            "Qty": st.column_config.NumberColumn("Qty", format="%d", width="small"),
+            "Reasoning": st.column_config.TextColumn("Reasoning", width="large"),
+            "Status": st.column_config.TextColumn("Status", width="small"),
+        },
+        hide_index=True,
+        use_container_width=True,
+    )
+
+    # Check if there are pending trades to apply
+    pending_indices = [i for i in range(len(recommendations)) if i not in executed_indices]
+
+    if pending_indices:
+        st.markdown("---")
+        st.markdown("**Apply Pending Recommendations**")
+
+        # Let user select which pending trades to apply
+        selected_indices = []
+        for i in pending_indices:
+            rec = recommendations[i]
+            col1, col2 = st.columns([1, 5])
+            with col1:
+                if st.checkbox(
+                    "Select",
+                    key=f"apply_trade_{log.id}_{i}",
+                    label_visibility="collapsed",
+                ):
+                    selected_indices.append(i)
+            with col2:
+                action_color = "#00ff41" if rec.get("action") == "BUY" else "#ff0000"
+                st.markdown(
+                    f"<span style='color:{action_color}'>{rec.get('action')}</span> "
+                    f"**{rec.get('quantity')}** {rec.get('ticker')} - {rec.get('name')}",
+                    unsafe_allow_html=True,
+                )
+
+        if selected_indices:
+            if st.button("Apply Selected Trades", type="primary", key=f"apply_trades_{log.id}"):
+                _apply_pending_trades(log, recommendations, selected_indices, log_service)
+    else:
+        st.success("All recommendations from this execution have been applied.")
+
+
+def _apply_pending_trades(
+    log,
+    recommendations: list[dict],
+    selected_indices: list[int],
+    log_service: ExecutionLogService,
+) -> None:
+    """Apply selected pending trades to the portfolio."""
+    portfolio_service = PortfolioService()
+    security_service = SecurityService()
+
+    # Find the portfolio config file
+    portfolios = portfolio_service.list_portfolios()
+    portfolio_filename = None
+    for filename in portfolios:
+        config = portfolio_service.load_config(filename)
+        if config.name == log.portfolio_name:
+            portfolio_filename = filename
+            break
+
+    if not portfolio_filename:
+        st.error(f"Could not find portfolio '{log.portfolio_name}'")
+        return
+
+    config, state = portfolio_service.load_portfolio(portfolio_filename)
+
+    errors = []
+    applied_indices = []
+
+    for i in selected_indices:
+        rec = recommendations[i]
+        ticker = rec.get("ticker", "")
+        action = rec.get("action", "")
+        quantity = rec.get("quantity", 0)
+        reasoning = rec.get("reasoning", "")
+
+        try:
+            state = portfolio_service.execute_trade(
+                state,
+                ticker,
+                action,
+                quantity,
+                reasoning,
+            )
+            applied_indices.append(i)
+        except Exception as e:
+            errors.append(f"{action} {quantity} {ticker}: {str(e)}")
+
+    # Save state
+    portfolio_service.save_state(portfolio_filename, state)
+
+    # Update executed trades in log
+    existing_executed = set()
+    if log.executed_trades_json:
+        try:
+            existing_executed = set(json.loads(log.executed_trades_json))
+        except json.JSONDecodeError:
+            pass
+
+    all_executed = list(existing_executed | set(applied_indices))
+    log_service.mark_trades_executed(log.id, all_executed)
+
+    if applied_indices:
+        st.success(f"Successfully applied {len(applied_indices)} trade(s)!")
+
+    if errors:
+        for error in errors:
+            st.error(error)
+
+    st.rerun()

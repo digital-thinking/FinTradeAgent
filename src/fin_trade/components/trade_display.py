@@ -190,6 +190,14 @@ def render_trade_recommendations(
         # Matrix colors
         action_color = "#00ff41" if trade.action == "BUY" else "#ff0000"
 
+        # Auto-enable checkbox when a corrected ticker becomes valid
+        # This handles the case where user fixes an invalid ticker
+        checkbox_key = f"trade_{i}"
+        was_corrected = corrected_ticker != trade.ticker
+        if was_corrected and can_execute:
+            # Force checkbox to be checked when correction makes trade valid
+            st.session_state[checkbox_key] = True
+
         with st.container(border=True):
             # Header row with action and stock info
             col1, col2, col3 = st.columns([2, 2, 1])
@@ -212,13 +220,17 @@ def render_trade_recommendations(
                 include = st.checkbox(
                     "Include",
                     value=can_execute,
-                    key=f"trade_{i}",
+                    key=checkbox_key,
                     disabled=not can_execute,
                 )
 
             # Show warning if trade cannot be executed
             if not can_execute and cannot_execute_reason:
                 st.warning(f"⚠️ {cannot_execute_reason}")
+
+            # Show success message if ticker was corrected and is now valid
+            if was_corrected and can_execute:
+                st.success(f"✓ Ticker corrected to {corrected_ticker} - trade is now ready!")
 
             # Show error and correction UI if price fetch failed
             if price_error:

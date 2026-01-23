@@ -311,6 +311,20 @@ OVERALL REASONING
             for step_name, step_metrics in metrics.steps.items()
         }
 
+        # Convert recommendations to serializable format
+        recommendations_list = None
+        if recommendations:
+            recommendations_list = [
+                {
+                    "ticker": t.ticker,
+                    "name": t.name,
+                    "action": t.action,
+                    "quantity": t.quantity,
+                    "reasoning": t.reasoning,
+                }
+                for t in recommendations.trades
+            ]
+
         self.execution_log_service.log_execution(
             portfolio_name=config.name,
             agent_mode="langgraph",
@@ -322,6 +336,7 @@ OVERALL REASONING
             success=success,
             error_message=error_msg,
             step_details=step_details,
+            recommendations=recommendations_list,
         )
 
         # Store metrics on the recommendation for UI access
@@ -700,6 +715,20 @@ OVERALL REASONING
             for step_name, step_metrics in metrics.steps.items()
         }
 
+        # Convert recommendations to serializable format
+        recommendations_list = None
+        if recommendations:
+            recommendations_list = [
+                {
+                    "ticker": t.ticker,
+                    "name": t.name,
+                    "action": t.action,
+                    "quantity": t.quantity,
+                    "reasoning": t.reasoning,
+                }
+                for t in recommendations.trades
+            ]
+
         self.execution_log_service.log_execution(
             portfolio_name=config.name,
             agent_mode="debate",
@@ -711,6 +740,7 @@ OVERALL REASONING
             success=success,
             error_message=error_msg,
             step_details=step_details,
+            recommendations=recommendations_list,
         )
 
         # Store metrics for UI access
