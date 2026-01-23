@@ -74,13 +74,13 @@
     - Create `tests/` directory.
     - Add tests for `PortfolioService` and `validate_node`.
     - Create mocks for `SecurityService` and LLM calls.
-- [ ] **Improve Test Coverage to 60%**
-    - Current coverage: 39% (excluding UI components)
-    - Priority targets:
-        - `services/security.py` (18%) - Add tests for ticker lookup, price fetching, ISIN management
-        - `services/stock_data.py` (19%) - Add tests for price caching and data fetching
-        - `services/llm_provider.py` (28%) - Add tests for OpenAI/Anthropic providers with mocked API calls
-        - `services/execution_log.py` (41%) - Add tests for SQLite logging operations
+- [x] **Improve Test Coverage to 60%**
+    - Coverage improved: 39% → 55% (108 tests)
+    - Achieved coverage:
+        - `services/security.py`: 18% → 85%
+        - `services/stock_data.py`: 19% → 86%
+        - `services/llm_provider.py`: 28% → 91%
+        - `services/execution_log.py`: 41% → 100%
 - [x] **UI Caching**
     - Add `@st.cache_data` to expensive calculations (`calculate_value`, `calculate_gain`).
 - [ ] **Asynchronous Execution**
