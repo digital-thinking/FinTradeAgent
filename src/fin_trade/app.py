@@ -5,6 +5,7 @@ from fin_trade.services import PortfolioService, AgentService, SecurityService
 from fin_trade.pages.overview import render_overview_page
 from fin_trade.pages.portfolio_detail import render_portfolio_detail_page
 from fin_trade.pages.system_health import render_system_health_page
+from fin_trade.pages.dashboard import render_dashboard_page
 
 
 def load_css():
@@ -54,6 +55,14 @@ def main():
                 del st.session_state.recommendation
             st.rerun()
 
+        if st.button("📈 Summary Dashboard", use_container_width=True,
+                     type="primary" if st.session_state.current_page == "dashboard" else "secondary"):
+            st.session_state.current_page = "dashboard"
+            st.session_state.selected_portfolio = None
+            if "recommendation" in st.session_state:
+                del st.session_state.recommendation
+            st.rerun()
+
         if st.button("📊 System Health", use_container_width=True,
                      type="primary" if st.session_state.current_page == "system_health" else "secondary"):
             st.session_state.current_page = "system_health"
@@ -89,6 +98,9 @@ def main():
             st.session_state.selected_portfolio = selected
             st.session_state.current_page = "detail"
             st.rerun()
+
+    elif st.session_state.current_page == "dashboard":
+        render_dashboard_page(portfolio_service)
 
     elif st.session_state.current_page == "detail":
         if st.session_state.selected_portfolio:
