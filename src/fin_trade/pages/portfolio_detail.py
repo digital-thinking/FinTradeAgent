@@ -180,20 +180,71 @@ def _render_performance_chart(
     state: PortfolioState,
     security_service: SecurityService,
 ) -> None:
-    """Render the portfolio performance chart."""
+    """Render the portfolio performance chart with interactive features."""
+    from datetime import datetime, timedelta
+
     st.subheader("Performance")
 
     if not state.trades:
         st.info("No trade history to display.")
         return
 
-    # Calculate portfolio value at each trade point
-    # Track cash and holdings separately
-    timestamps = [None]  # Starting point
-    values = [config.initial_amount]  # Initial value
+    # Build performance data with trade details
+    performance_data = _calculate_performance_data(config, state, security_service)
+    timestamps = performance_data["timestamps"]
+    values = performance_data["values"]
+    trade_points = performance_data["trade_points"]
+
+    if not timestamps or not values:
+        st.info("Insufficient data for chart.")
+        return
+
+    # Calculate key metrics
+    metrics = _calculate_performance_metrics(config, values, timestamps)
+
+    # Time period selector
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        time_range = st.selectbox(
+            "Time Range",
+            options=["1W", "1M", "3M", "YTD", "All"],
+            index=4,
+            key="perf_time_range",
+        )
+
+    # Filter data by time range
+    filtered_timestamps, filtered_values, filtered_trades = _filter_by_time_range(
+        timestamps, values, trade_points, time_range
+    )
+
+    # Display metrics row
+    _render_performance_metrics(metrics, config.initial_amount)
+
+    # Build the interactive chart
+    fig = _build_performance_figure(
+        filtered_timestamps,
+        filtered_values,
+        filtered_trades,
+        config.initial_amount,
+    )
+
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
+
+
+def _calculate_performance_data(
+    config: PortfolioConfig,
+    state: PortfolioState,
+    security_service: SecurityService,
+) -> dict:
+    """Calculate portfolio value over time with trade markers."""
+    from datetime import datetime
+
+    timestamps = []
+    values = []
+    trade_points = []  # (timestamp, value, action, ticker, quantity)
 
     cash = config.initial_amount
-    holdings: dict[str, dict] = {}  # ticker -> {quantity, avg_price}
+    holdings: dict[str, dict] = {}
 
     for trade in state.trades:
         trade_cost = trade.price * trade.quantity
@@ -201,7 +252,6 @@ def _render_performance_chart(
         if trade.action == "BUY":
             cash -= trade_cost
             if trade.ticker in holdings:
-                # Update average price
                 existing = holdings[trade.ticker]
                 total_qty = existing["quantity"] + trade.quantity
                 avg_price = (
@@ -217,15 +267,20 @@ def _render_performance_chart(
                 if holdings[trade.ticker]["quantity"] <= 0:
                     del holdings[trade.ticker]
 
-        # Calculate total portfolio value at this point
-        # Use purchase prices for holdings (we don't have historical market prices)
-        holdings_value = sum(
-            h["quantity"] * h["avg_price"] for h in holdings.values()
-        )
+        # Calculate portfolio value at this point
+        holdings_value = sum(h["quantity"] * h["avg_price"] for h in holdings.values())
         total_value = cash + holdings_value
 
         timestamps.append(trade.timestamp)
         values.append(total_value)
+        trade_points.append({
+            "timestamp": trade.timestamp,
+            "value": total_value,
+            "action": trade.action,
+            "ticker": trade.ticker,
+            "quantity": trade.quantity,
+            "price": trade.price,
+        })
 
     # Add current value as final point
     try:
@@ -238,70 +293,290 @@ def _render_performance_chart(
                 current_holdings_value += h["quantity"] * h["avg_price"]
 
         current_total = cash + current_holdings_value
-        if current_total != values[-1]:
-            from datetime import datetime
-            timestamps.append(datetime.now())
-            values.append(current_total)
+        now = datetime.now()
+        timestamps.append(now)
+        values.append(current_total)
     except Exception:
         pass
 
-    # Remove the None placeholder if we have trades
-    if timestamps[0] is None and len(timestamps) > 1:
-        timestamps[0] = timestamps[1]
+    return {
+        "timestamps": timestamps,
+        "values": values,
+        "trade_points": trade_points,
+    }
 
+
+def _calculate_performance_metrics(
+    config: PortfolioConfig,
+    values: list[float],
+    timestamps: list,
+) -> dict:
+    """Calculate key performance metrics."""
+    if not values:
+        return {}
+
+    initial = config.initial_amount
+    current = values[-1]
+    abs_gain = current - initial
+    pct_gain = (abs_gain / initial) * 100 if initial > 0 else 0
+
+    # Calculate max drawdown
+    peak = initial
+    max_drawdown = 0
+    max_drawdown_pct = 0
+    for v in values:
+        if v > peak:
+            peak = v
+        drawdown = peak - v
+        drawdown_pct = (drawdown / peak) * 100 if peak > 0 else 0
+        if drawdown_pct > max_drawdown_pct:
+            max_drawdown = drawdown
+            max_drawdown_pct = drawdown_pct
+
+    # Calculate high/low
+    high = max(values) if values else initial
+    low = min(values) if values else initial
+
+    # Days active
+    if len(timestamps) >= 2 and timestamps[0] and timestamps[-1]:
+        days_active = (timestamps[-1] - timestamps[0]).days
+    else:
+        days_active = 0
+
+    return {
+        "current_value": current,
+        "abs_gain": abs_gain,
+        "pct_gain": pct_gain,
+        "max_drawdown": max_drawdown,
+        "max_drawdown_pct": max_drawdown_pct,
+        "high": high,
+        "low": low,
+        "days_active": days_active,
+    }
+
+
+def _filter_by_time_range(
+    timestamps: list,
+    values: list[float],
+    trade_points: list[dict],
+    time_range: str,
+) -> tuple[list, list[float], list[dict]]:
+    """Filter data by selected time range."""
+    from datetime import datetime, timedelta
+
+    if time_range == "All" or not timestamps:
+        return timestamps, values, trade_points
+
+    now = datetime.now()
+    if time_range == "1W":
+        cutoff = now - timedelta(weeks=1)
+    elif time_range == "1M":
+        cutoff = now - timedelta(days=30)
+    elif time_range == "3M":
+        cutoff = now - timedelta(days=90)
+    elif time_range == "YTD":
+        cutoff = datetime(now.year, 1, 1)
+    else:
+        return timestamps, values, trade_points
+
+    filtered_ts = []
+    filtered_vals = []
+    filtered_trades = []
+
+    for i, ts in enumerate(timestamps):
+        if ts and ts >= cutoff:
+            filtered_ts.append(ts)
+            filtered_vals.append(values[i])
+
+    for tp in trade_points:
+        if tp["timestamp"] and tp["timestamp"] >= cutoff:
+            filtered_trades.append(tp)
+
+    # If no data in range, return original
+    if not filtered_ts:
+        return timestamps, values, trade_points
+
+    return filtered_ts, filtered_vals, filtered_trades
+
+
+def _render_performance_metrics(metrics: dict, initial_amount: float) -> None:
+    """Render performance metrics row."""
+    if not metrics:
+        return
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        gain_delta = f"{metrics['pct_gain']:+.1f}%"
+        st.metric(
+            "Total Return",
+            f"${metrics['abs_gain']:+,.2f}",
+            delta=gain_delta,
+        )
+
+    with col2:
+        st.metric(
+            "Max Drawdown",
+            f"-${metrics['max_drawdown']:,.2f}",
+            delta=f"-{metrics['max_drawdown_pct']:.1f}%",
+            delta_color="inverse",
+        )
+
+    with col3:
+        st.metric("Period High", f"${metrics['high']:,.2f}")
+
+    with col4:
+        st.metric("Period Low", f"${metrics['low']:,.2f}")
+
+
+def _build_performance_figure(
+    timestamps: list,
+    values: list[float],
+    trade_points: list[dict],
+    initial_amount: float,
+) -> go.Figure:
+    """Build the interactive Plotly figure."""
     fig = go.Figure()
+
+    # Create hover text with detailed info
+    hover_texts = []
+    for i, (ts, val) in enumerate(zip(timestamps, values)):
+        gain = val - initial_amount
+        gain_pct = (gain / initial_amount) * 100 if initial_amount > 0 else 0
+        date_str = ts.strftime("%Y-%m-%d %H:%M") if ts else "Start"
+        hover_texts.append(
+            f"<b>{date_str}</b><br>"
+            f"Value: ${val:,.2f}<br>"
+            f"Gain: ${gain:+,.2f} ({gain_pct:+.1f}%)"
+        )
+
+    # Main value line
     fig.add_trace(
         go.Scatter(
             x=timestamps,
             y=values,
-            mode="lines+markers",
+            mode="lines",
             name="Portfolio Value",
-            line=dict(color="#008F11", width=2),  # Matrix Green
-            marker=dict(size=6, color="#008F11"),
+            line=dict(color="#008F11", width=2),
+            hovertemplate="%{customdata}<extra></extra>",
+            customdata=hover_texts,
         )
     )
 
+    # Determine fill color based on final value
+    final_value = values[-1] if values else initial_amount
+    fill_color = "rgba(0, 143, 17, 0.15)" if final_value >= initial_amount else "rgba(255, 0, 0, 0.15)"
+
+    fig.update_traces(fill="tozeroy", fillcolor=fill_color, selector=dict(name="Portfolio Value"))
+
+    # Add trade markers
+    if trade_points:
+        buy_trades = [tp for tp in trade_points if tp["action"] == "BUY"]
+        sell_trades = [tp for tp in trade_points if tp["action"] == "SELL"]
+
+        if buy_trades:
+            buy_hover = [
+                f"<b>BUY {tp['ticker']}</b><br>"
+                f"{tp['quantity']} shares @ ${tp['price']:.2f}<br>"
+                f"Portfolio: ${tp['value']:,.2f}"
+                for tp in buy_trades
+            ]
+            fig.add_trace(
+                go.Scatter(
+                    x=[tp["timestamp"] for tp in buy_trades],
+                    y=[tp["value"] for tp in buy_trades],
+                    mode="markers",
+                    name="Buy",
+                    marker=dict(
+                        symbol="triangle-up",
+                        size=12,
+                        color="#008F11",
+                        line=dict(color="#004d00", width=1),
+                    ),
+                    hovertemplate="%{customdata}<extra></extra>",
+                    customdata=buy_hover,
+                )
+            )
+
+        if sell_trades:
+            sell_hover = [
+                f"<b>SELL {tp['ticker']}</b><br>"
+                f"{tp['quantity']} shares @ ${tp['price']:.2f}<br>"
+                f"Portfolio: ${tp['value']:,.2f}"
+                for tp in sell_trades
+            ]
+            fig.add_trace(
+                go.Scatter(
+                    x=[tp["timestamp"] for tp in sell_trades],
+                    y=[tp["value"] for tp in sell_trades],
+                    mode="markers",
+                    name="Sell",
+                    marker=dict(
+                        symbol="triangle-down",
+                        size=12,
+                        color="#ff0000",
+                        line=dict(color="#990000", width=1),
+                    ),
+                    hovertemplate="%{customdata}<extra></extra>",
+                    customdata=sell_hover,
+                )
+            )
+
+    # Initial investment line
     fig.add_hline(
-        y=config.initial_amount,
+        y=initial_amount,
         line_dash="dash",
-        line_color="#003b00",  # Dark Green
-        annotation_text=f"Initial: ${config.initial_amount:,.0f}",
+        line_color="#666666",
+        annotation_text=f"Initial: ${initial_amount:,.0f}",
         annotation_font_color="#000000",
+        annotation_position="bottom right",
     )
 
-    # Color the area based on gain/loss
-    final_value = values[-1] if values else config.initial_amount
-    # Matrix style fill
-    fill_color = "rgba(0, 143, 17, 0.1)" if final_value >= config.initial_amount else "rgba(255, 0, 0, 0.1)"
-
-    fig.update_traces(fill="tozeroy", fillcolor=fill_color)
-
+    # Layout
     fig.update_layout(
-        title={
-            'text': '<span style="color: #000000;">Portfolio Value Over Time</span>',
-            'font': {'family': 'Segoe UI, Roboto, Helvetica Neue, sans-serif'}
-        },
         xaxis=dict(
             title="Date",
-            title_font=dict(color="#000000", family="Segoe UI, Roboto, Helvetica Neue, sans-serif"),
-            tickfont=dict(color="#000000", family="Segoe UI, Roboto, Helvetica Neue, sans-serif"),
-            gridcolor="#008F11",
-            zerolinecolor="#008F11"
+            title_font=dict(color="#000000", family="Segoe UI, Roboto, sans-serif"),
+            tickfont=dict(color="#000000", family="Segoe UI, Roboto, sans-serif"),
+            gridcolor="rgba(0, 143, 17, 0.2)",
+            showgrid=True,
+            rangeslider=dict(visible=True, thickness=0.05),
+            rangeselector=dict(
+                buttons=[
+                    dict(count=7, label="1W", step="day", stepmode="backward"),
+                    dict(count=1, label="1M", step="month", stepmode="backward"),
+                    dict(count=3, label="3M", step="month", stepmode="backward"),
+                    dict(step="all", label="All"),
+                ],
+                bgcolor="rgba(0, 143, 17, 0.1)",
+                activecolor="rgba(0, 143, 17, 0.3)",
+                font=dict(color="#000000"),
+            ),
         ),
         yaxis=dict(
             title="Value ($)",
-            title_font=dict(color="#000000", family="Segoe UI, Roboto, Helvetica Neue, sans-serif"),
-            tickfont=dict(color="#000000", family="Segoe UI, Roboto, Helvetica Neue, sans-serif"),
-            gridcolor="#008F11",
-            zerolinecolor="#008F11"
+            title_font=dict(color="#000000", family="Segoe UI, Roboto, sans-serif"),
+            tickfont=dict(color="#000000", family="Segoe UI, Roboto, sans-serif"),
+            gridcolor="rgba(0, 143, 17, 0.2)",
+            tickformat="$,.0f",
         ),
-        height=400,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(family="Segoe UI, Roboto, Helvetica Neue, sans-serif", color="#000000"),
+        height=500,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Segoe UI, Roboto, sans-serif", color="#000000"),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            font=dict(color="#000000"),
+        ),
+        hovermode="x unified",
+        margin=dict(t=50, b=80),
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    return fig
 
 
 def _render_agent_execution(

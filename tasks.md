@@ -36,7 +36,7 @@
     - Replace blank states with skeletons during data fetching.
 - [x] **Use Dataframes for Tables**
     - Replace divider-based row layouts in Holdings and Trade History with `st.dataframe()` for sorting/scanning.
-- [ ] **Improve the Performance chart**
+- [x] **Improve the Performance chart**
     - Fully rework it
     - Make it more interactive
 
