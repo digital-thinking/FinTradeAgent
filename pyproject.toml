@@ -34,3 +34,33 @@ packages = [{include = "fin_trade", from = "src"}]
 
 [tool.poetry.scripts]
 fin-trade = "fin_trade.app:main"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-cov = "^4.1.0"
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+
+[tool.coverage.run]
+source = ["src/fin_trade"]
+omit = [
+    "src/fin_trade/app.py",
+    "src/fin_trade/pages/*",
+    "src/fin_trade/components/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+fail_under = 35
+show_missing = true

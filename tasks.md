@@ -70,10 +70,17 @@
 *Focus: Quality assurance, performance, and stability.*
 *Primary Files: `tests/`, `src/fin_trade/services/stock_data.py`, `src/fin_trade/app.py`*
 
-- [ ] **Unit & Integration Tests**
+- [x] **Unit & Integration Tests**
     - Create `tests/` directory.
     - Add tests for `PortfolioService` and `validate_node`.
     - Create mocks for `SecurityService` and LLM calls.
+- [ ] **Improve Test Coverage to 60%**
+    - Current coverage: 39% (excluding UI components)
+    - Priority targets:
+        - `services/security.py` (18%) - Add tests for ticker lookup, price fetching, ISIN management
+        - `services/stock_data.py` (19%) - Add tests for price caching and data fetching
+        - `services/llm_provider.py` (28%) - Add tests for OpenAI/Anthropic providers with mocked API calls
+        - `services/execution_log.py` (41%) - Add tests for SQLite logging operations
 - [x] **UI Caching**
     - Add `@st.cache_data` to expensive calculations (`calculate_value`, `calculate_gain`).
 - [ ] **Asynchronous Execution**
