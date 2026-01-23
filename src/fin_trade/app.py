@@ -38,7 +38,7 @@ def main():
 
     # Initialize session state
     if "current_page" not in st.session_state:
-        st.session_state.current_page = "overview"
+        st.session_state.current_page = "dashboard"
     if "selected_portfolio" not in st.session_state:
         st.session_state.selected_portfolio = None
 
@@ -47,14 +47,6 @@ def main():
         st.title("📈 Trade Assistant")
         st.divider()
 
-        if st.button("🏠 Portfolio Overview", use_container_width=True,
-                     type="primary" if st.session_state.current_page == "overview" else "secondary"):
-            st.session_state.current_page = "overview"
-            st.session_state.selected_portfolio = None
-            if "recommendation" in st.session_state:
-                del st.session_state.recommendation
-            st.rerun()
-
         if st.button("📈 Summary Dashboard", use_container_width=True,
                      type="primary" if st.session_state.current_page == "dashboard" else "secondary"):
             st.session_state.current_page = "dashboard"
@@ -62,6 +54,15 @@ def main():
             if "recommendation" in st.session_state:
                 del st.session_state.recommendation
             st.rerun()
+
+        if st.button("🏠 Portfolios", use_container_width=True,
+                     type="primary" if st.session_state.current_page == "overview" else "secondary"):
+            st.session_state.current_page = "overview"
+            st.session_state.selected_portfolio = None
+            if "recommendation" in st.session_state:
+                del st.session_state.recommendation
+            st.rerun()
+
 
         if st.button("📊 System Health", use_container_width=True,
                      type="primary" if st.session_state.current_page == "system_health" else "secondary"):
