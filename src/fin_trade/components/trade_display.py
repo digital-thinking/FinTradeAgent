@@ -40,10 +40,8 @@ def render_trade_recommendations(
         with st.container(height=300):
             st.markdown(recommendation.overall_reasoning)
 
-    # Show available cash
-    st.caption(f"Available cash: **${available_cash:,.2f}**")
-
     if not recommendation.trades:
+        st.caption(f"Available cash: **${available_cash:,.2f}**")
         st.warning("The agent recommends no trades at this time.")
         if on_retry:
             if st.button("Retry", key="retry_no_trades", type="secondary"):
@@ -89,9 +87,93 @@ def render_trade_recommendations(
             "security_info": security_info,
         })
 
+    # Calculate potential cash from valid SELL orders for display
+    potential_sell_cash = 0.0
+    for info in trade_info:
+        trade = info["trade"]
+        if trade.action == "SELL" and info["price"] and info["price"] > 0:
+            held_qty = holdings_by_ticker.get(info["corrected_ticker"], 0)
+            if held_qty >= trade.quantity:
+                potential_sell_cash += info["cost"]
+
+    # Show available cash (including potential proceeds from sells)
+    if potential_sell_cash > 0:
+        total_available = available_cash + potential_sell_cash
+        st.caption(
+            f"Available cash: **${available_cash:,.2f}** + "
+            f"~${potential_sell_cash:,.2f} from sells = **${total_available:,.2f}**"
+        )
+    else:
+        st.caption(f"Available cash: **${available_cash:,.2f}**")
+
     # Calculate which trades are executable
-    remaining_cash = available_cash
+    # Process SELL orders first to determine available cash from sells,
+    # then check BUY orders against total available cash (current + from sells)
     simulated_holdings = holdings_by_ticker.copy()
+
+    # First pass: determine executability of SELL orders and calculate cash from sells
+    cash_from_sells = 0.0
+    for info in trade_info:
+        trade = info["trade"]
+        if trade.action != "SELL":
+            continue
+
+        corrected_ticker = info["corrected_ticker"]
+        price = info["price"]
+        cost = info["cost"]
+        price_error = info["price_error"]
+
+        can_execute = True
+        cannot_execute_reason = None
+
+        if price_error or price == 0:
+            can_execute = False
+            cannot_execute_reason = "Price unavailable"
+        else:
+            held_qty = simulated_holdings.get(corrected_ticker, 0)
+            if held_qty < trade.quantity:
+                can_execute = False
+                cannot_execute_reason = f"Insufficient holdings (need {trade.quantity}, have {held_qty})"
+            else:
+                # Valid SELL - add to available cash
+                cash_from_sells += cost
+                simulated_holdings[corrected_ticker] = held_qty - trade.quantity
+
+        info["can_execute"] = can_execute
+        info["cannot_execute_reason"] = cannot_execute_reason
+
+    # Second pass: determine executability of BUY orders using cash + proceeds from sells
+    remaining_cash = available_cash + cash_from_sells
+    for info in trade_info:
+        trade = info["trade"]
+        if trade.action != "BUY":
+            continue
+
+        corrected_ticker = info["corrected_ticker"]
+        price = info["price"]
+        cost = info["cost"]
+        price_error = info["price_error"]
+
+        can_execute = True
+        cannot_execute_reason = None
+
+        if price_error or price == 0:
+            can_execute = False
+            cannot_execute_reason = "Price unavailable"
+        elif cost > remaining_cash:
+            can_execute = False
+            cannot_execute_reason = f"Insufficient cash (need ${cost:,.2f}, have ${remaining_cash:,.2f})"
+        else:
+            # Valid BUY - deduct from remaining cash
+            remaining_cash -= cost
+            simulated_holdings[corrected_ticker] = simulated_holdings.get(corrected_ticker, 0) + trade.quantity
+
+        info["can_execute"] = can_execute
+        info["cannot_execute_reason"] = cannot_execute_reason
+
+    # Reset simulated state for UI rendering (will be updated based on user selections)
+    simulated_holdings = holdings_by_ticker.copy()
+    remaining_cash = available_cash
 
     selected_trades = []
     for info in trade_info:
@@ -102,26 +184,11 @@ def render_trade_recommendations(
         cost = info["cost"]
         price_error = info["price_error"]
         security_info = info["security_info"]
+        can_execute = info["can_execute"]
+        cannot_execute_reason = info["cannot_execute_reason"]
 
         # Matrix colors
         action_color = "#00ff41" if trade.action == "BUY" else "#ff0000"
-
-        # Determine if trade is executable
-        can_execute = True
-        cannot_execute_reason = None
-
-        if price_error or price == 0:
-            can_execute = False
-            cannot_execute_reason = "Price unavailable"
-        elif trade.action == "BUY":
-            if cost > remaining_cash:
-                can_execute = False
-                cannot_execute_reason = f"Insufficient cash (need ${cost:,.2f}, have ${remaining_cash:,.2f})"
-        elif trade.action == "SELL":
-            held_qty = simulated_holdings.get(corrected_ticker, 0)
-            if held_qty < trade.quantity:
-                can_execute = False
-                cannot_execute_reason = f"Insufficient holdings (need {trade.quantity}, have {held_qty})"
 
         with st.container(border=True):
             # Header row with action and stock info

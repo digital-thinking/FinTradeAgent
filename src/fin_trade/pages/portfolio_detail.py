@@ -193,6 +193,8 @@ def _render_performance_chart(
     performance_data = _calculate_performance_data(config, state, security_service)
     timestamps = performance_data["timestamps"]
     values = performance_data["values"]
+    cash_values = performance_data["cash_values"]
+    holdings_values = performance_data["holdings_values"]
     trade_points = performance_data["trade_points"]
 
     if not timestamps or not values:
@@ -213,8 +215,8 @@ def _render_performance_chart(
         )
 
     # Filter data by time range
-    filtered_timestamps, filtered_values, filtered_trades = _filter_by_time_range(
-        timestamps, values, trade_points, time_range
+    filtered_timestamps, filtered_values, filtered_cash, filtered_holdings, filtered_trades = _filter_by_time_range(
+        timestamps, values, cash_values, holdings_values, trade_points, time_range
     )
 
     # Display metrics row
@@ -224,6 +226,8 @@ def _render_performance_chart(
     fig = _build_performance_figure(
         filtered_timestamps,
         filtered_values,
+        filtered_cash,
+        filtered_holdings,
         filtered_trades,
         config.initial_amount,
     )
@@ -236,11 +240,13 @@ def _calculate_performance_data(
     state: PortfolioState,
     security_service: SecurityService,
 ) -> dict:
-    """Calculate portfolio value over time with trade markers."""
+    """Calculate portfolio value over time with trade markers and stacked data."""
     from datetime import datetime
 
     timestamps = []
     values = []
+    cash_values = []  # Track cash over time
+    holdings_values = []  # Track holdings value over time
     trade_points = []  # (timestamp, value, action, ticker, quantity)
 
     cash = config.initial_amount
@@ -273,6 +279,8 @@ def _calculate_performance_data(
 
         timestamps.append(trade.timestamp)
         values.append(total_value)
+        cash_values.append(cash)
+        holdings_values.append(holdings_value)
         trade_points.append({
             "timestamp": trade.timestamp,
             "value": total_value,
@@ -296,12 +304,16 @@ def _calculate_performance_data(
         now = datetime.now()
         timestamps.append(now)
         values.append(current_total)
+        cash_values.append(cash)
+        holdings_values.append(current_holdings_value)
     except Exception:
         pass
 
     return {
         "timestamps": timestamps,
         "values": values,
+        "cash_values": cash_values,
+        "holdings_values": holdings_values,
         "trade_points": trade_points,
     }
 
@@ -358,14 +370,16 @@ def _calculate_performance_metrics(
 def _filter_by_time_range(
     timestamps: list,
     values: list[float],
+    cash_values: list[float],
+    holdings_values: list[float],
     trade_points: list[dict],
     time_range: str,
-) -> tuple[list, list[float], list[dict]]:
+) -> tuple[list, list[float], list[float], list[float], list[dict]]:
     """Filter data by selected time range."""
     from datetime import datetime, timedelta
 
     if time_range == "All" or not timestamps:
-        return timestamps, values, trade_points
+        return timestamps, values, cash_values, holdings_values, trade_points
 
     now = datetime.now()
     if time_range == "1W":
@@ -377,16 +391,20 @@ def _filter_by_time_range(
     elif time_range == "YTD":
         cutoff = datetime(now.year, 1, 1)
     else:
-        return timestamps, values, trade_points
+        return timestamps, values, cash_values, holdings_values, trade_points
 
     filtered_ts = []
     filtered_vals = []
+    filtered_cash = []
+    filtered_holdings = []
     filtered_trades = []
 
     for i, ts in enumerate(timestamps):
         if ts and ts >= cutoff:
             filtered_ts.append(ts)
             filtered_vals.append(values[i])
+            filtered_cash.append(cash_values[i])
+            filtered_holdings.append(holdings_values[i])
 
     for tp in trade_points:
         if tp["timestamp"] and tp["timestamp"] >= cutoff:
@@ -394,9 +412,9 @@ def _filter_by_time_range(
 
     # If no data in range, return original
     if not filtered_ts:
-        return timestamps, values, trade_points
+        return timestamps, values, cash_values, holdings_values, trade_points
 
-    return filtered_ts, filtered_vals, filtered_trades
+    return filtered_ts, filtered_vals, filtered_cash, filtered_holdings, filtered_trades
 
 
 def _render_performance_metrics(metrics: dict, initial_amount: float) -> None:
@@ -432,44 +450,59 @@ def _render_performance_metrics(metrics: dict, initial_amount: float) -> None:
 def _build_performance_figure(
     timestamps: list,
     values: list[float],
+    cash_values: list[float],
+    holdings_values: list[float],
     trade_points: list[dict],
     initial_amount: float,
 ) -> go.Figure:
-    """Build the interactive Plotly figure."""
+    """Build the interactive stacked area Plotly figure."""
     fig = go.Figure()
 
-    # Create hover text with detailed info
-    hover_texts = []
-    for i, (ts, val) in enumerate(zip(timestamps, values)):
-        gain = val - initial_amount
-        gain_pct = (gain / initial_amount) * 100 if initial_amount > 0 else 0
-        date_str = ts.strftime("%Y-%m-%d %H:%M") if ts else "Start"
-        hover_texts.append(
-            f"<b>{date_str}</b><br>"
-            f"Value: ${val:,.2f}<br>"
-            f"Gain: ${gain:+,.2f} ({gain_pct:+.1f}%)"
-        )
+    # Create hover text for cash
+    cash_hover = [
+        f"<b>Cash</b><br>${c:,.2f}"
+        for c in cash_values
+    ]
 
-    # Main value line
+    # Create hover text for holdings
+    holdings_hover = [
+        f"<b>Holdings</b><br>${h:,.2f}"
+        for h in holdings_values
+    ]
+
+    # Stacked area chart - Cash (bottom layer)
     fig.add_trace(
         go.Scatter(
             x=timestamps,
-            y=values,
+            y=cash_values,
             mode="lines",
-            name="Portfolio Value",
-            line=dict(color="#008F11", width=2),
+            name="Cash",
+            line=dict(color="#4CAF50", width=0),
+            fill="tozeroy",
+            fillcolor="rgba(76, 175, 80, 0.6)",
             hovertemplate="%{customdata}<extra></extra>",
-            customdata=hover_texts,
+            customdata=cash_hover,
+            stackgroup="portfolio",
         )
     )
 
-    # Determine fill color based on final value
-    final_value = values[-1] if values else initial_amount
-    fill_color = "rgba(0, 143, 17, 0.15)" if final_value >= initial_amount else "rgba(255, 0, 0, 0.15)"
+    # Stacked area chart - Holdings (top layer)
+    fig.add_trace(
+        go.Scatter(
+            x=timestamps,
+            y=holdings_values,
+            mode="lines",
+            name="Holdings",
+            line=dict(color="#2196F3", width=0),
+            fill="tonexty",
+            fillcolor="rgba(33, 150, 243, 0.6)",
+            hovertemplate="%{customdata}<extra></extra>",
+            customdata=holdings_hover,
+            stackgroup="portfolio",
+        )
+    )
 
-    fig.update_traces(fill="tozeroy", fillcolor=fill_color, selector=dict(name="Portfolio Value"))
-
-    # Add trade markers
+    # Add trade markers on top of the stacked chart
     if trade_points:
         buy_trades = [tp for tp in trade_points if tp["action"] == "BUY"]
         sell_trades = [tp for tp in trade_points if tp["action"] == "SELL"]
@@ -490,7 +523,7 @@ def _build_performance_figure(
                     marker=dict(
                         symbol="triangle-up",
                         size=12,
-                        color="#008F11",
+                        color="#00ff41",
                         line=dict(color="#004d00", width=1),
                     ),
                     hovertemplate="%{customdata}<extra></extra>",
@@ -773,7 +806,11 @@ def _render_agent_execution(
         def on_accept(trades: list[TradeRecommendation]) -> None:
             nonlocal state
             try:
-                for trade in trades:
+                # Sort trades: SELL first, then BUY
+                # This ensures cash from sells is available for buys
+                sorted_trades = sorted(trades, key=lambda t: 0 if t.action == "SELL" else 1)
+
+                for trade in sorted_trades:
                     state = portfolio_service.execute_trade(
                         state,
                         trade.ticker,

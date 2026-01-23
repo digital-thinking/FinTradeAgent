@@ -82,12 +82,13 @@ def render_portfolio_tile(
 def _create_mini_chart(
     config: PortfolioConfig, state: PortfolioState, color: str
 ) -> go.Figure | None:
-    """Create a mini sparkline chart of portfolio performance."""
+    """Create a mini stacked sparkline chart of portfolio performance."""
     if not state.trades:
         return None
 
     # Calculate portfolio value at each trade point (same logic as detail page)
-    values = [config.initial_amount]
+    cash_values = [config.initial_amount]
+    holdings_values = [0.0]
     cash = config.initial_amount
     holdings: dict[str, dict] = {}
 
@@ -113,28 +114,42 @@ def _create_mini_chart(
                     del holdings[trade.ticker]
 
         holdings_value = sum(h["quantity"] * h["avg_price"] for h in holdings.values())
-        values.append(cash + holdings_value)
+        cash_values.append(cash)
+        holdings_values.append(holdings_value)
 
-    if len(values) < 2:
+    if len(cash_values) < 2:
         return None
 
-    # Convert hex color to rgba for fill
-    if color == "#00ff41":
-        fill_rgba = "rgba(0, 255, 65, 0.15)"
-    else:
-        fill_rgba = "rgba(255, 0, 0, 0.15)"
-
     fig = go.Figure()
+
+    # Stacked area - Cash (bottom layer)
     fig.add_trace(
         go.Scatter(
-            x=list(range(len(values))),
-            y=values,
+            x=list(range(len(cash_values))),
+            y=cash_values,
             mode="lines",
-            line=dict(color=color, width=2),
+            line=dict(color="#4CAF50", width=0),
             fill="tozeroy",
-            fillcolor=fill_rgba,
+            fillcolor="rgba(76, 175, 80, 0.6)",
+            stackgroup="portfolio",
+            showlegend=False,
         )
     )
+
+    # Stacked area - Holdings (top layer)
+    fig.add_trace(
+        go.Scatter(
+            x=list(range(len(holdings_values))),
+            y=holdings_values,
+            mode="lines",
+            line=dict(color="#2196F3", width=0),
+            fill="tonexty",
+            fillcolor="rgba(33, 150, 243, 0.6)",
+            stackgroup="portfolio",
+            showlegend=False,
+        )
+    )
+
     fig.update_layout(
         height=60,
         margin=dict(l=0, r=0, t=0, b=0),

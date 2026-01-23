@@ -42,8 +42,10 @@ def validate_node(state) -> dict:
 
     errors = []
     estimated_cash_needed = 0.0
+    estimated_cash_from_sells = 0.0
     security_service = SecurityService()
 
+    # First pass: validate all trades and calculate cash flows
     for trade in recommendations.trades:
         ticker = trade.ticker.upper()
 
@@ -66,6 +68,16 @@ def validate_node(state) -> dict:
                     f"{ticker}: Cannot SELL {trade.quantity} shares - only own "
                     f"{holdings_by_ticker[ticker].quantity}"
                 )
+            else:
+                # Valid SELL - estimate cash gained
+                price = price_data.get(ticker)
+                if price is None:
+                    try:
+                        price = get_stock_price(ticker, security_service)
+                    except Exception:
+                        # Use avg_price as fallback for estimation
+                        price = holdings_by_ticker[ticker].avg_price
+                estimated_cash_from_sells += price * trade.quantity
 
         elif trade.action == "BUY":
             # Estimate cost - use cached price or fetch
@@ -78,11 +90,12 @@ def validate_node(state) -> dict:
                     continue
             estimated_cash_needed += price * trade.quantity
 
-    # Check total cash requirement
-    if estimated_cash_needed > portfolio_state.cash:
+    # Check total cash requirement (current cash + proceeds from sells)
+    available_cash = portfolio_state.cash + estimated_cash_from_sells
+    if estimated_cash_needed > available_cash:
         errors.append(
             f"Insufficient cash: trades require ~${estimated_cash_needed:.2f}, "
-            f"but only ${portfolio_state.cash:.2f} available"
+            f"but only ~${available_cash:.2f} available (${portfolio_state.cash:.2f} cash + ~${estimated_cash_from_sells:.2f} from sells)"
         )
 
     duration_ms = int((time.time() - start_time) * 1000)

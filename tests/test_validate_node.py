@@ -203,8 +203,11 @@ class TestValidateNodeSellValidation:
         assert "only own 10" in result["error"]
 
     @patch("fin_trade.agents.nodes.validate.SecurityService")
-    def test_accepts_valid_sell(self, mock_security_class):
+    @patch("fin_trade.agents.nodes.validate.get_stock_price")
+    def test_accepts_valid_sell(self, mock_get_price, mock_security_class):
         """Test accepts valid SELL with sufficient holdings."""
+        mock_get_price.return_value = 150.0  # Price for cash estimation
+
         recommendation = AgentRecommendation(
             trades=[
                 TradeRecommendation(
@@ -479,3 +482,163 @@ class TestValidateNodeMetrics:
         # Validate node doesn't use tokens
         assert result["_metrics_validate"]["input_tokens"] == 0
         assert result["_metrics_validate"]["output_tokens"] == 0
+
+
+class TestValidateNodeSellProceeds:
+    """Tests for validate_node SELL proceeds counting towards BUY validation."""
+
+    @patch("fin_trade.agents.nodes.validate.SecurityService")
+    @patch("fin_trade.agents.nodes.validate.get_stock_price")
+    def test_sell_proceeds_count_toward_buy_cash(
+        self, mock_get_price, mock_security_class
+    ):
+        """Test that SELL proceeds are added to available cash for BUY validation."""
+        mock_get_price.return_value = 100.0  # $100 per share
+
+        holdings = [
+            Holding(
+                isin="US123",
+                ticker="MSFT",
+                name="Microsoft",
+                quantity=100,  # Can sell 50 shares = $5000
+                avg_price=100.0,
+            )
+        ]
+
+        # SELL 50 MSFT = +$5000, BUY 80 AAPL = -$8000
+        # With only $5000 cash, this would fail without SELL proceeds
+        # With SELL proceeds: $5000 + $5000 = $10000 available, enough for $8000 BUY
+        recommendation = AgentRecommendation(
+            trades=[
+                TradeRecommendation(
+                    ticker="AAPL",
+                    name="Apple",
+                    action="BUY",
+                    quantity=80,  # $8000
+                    reasoning="Test",
+                ),
+                TradeRecommendation(
+                    ticker="MSFT",
+                    name="Microsoft",
+                    action="SELL",
+                    quantity=50,  # $5000
+                    reasoning="Test",
+                ),
+            ]
+        )
+
+        state = {
+            "recommendations": recommendation,
+            "portfolio_state": PortfolioState(cash=5000.0, holdings=holdings),
+            "price_data": {},
+            "retry_count": 0,
+        }
+
+        result = validate_node(state)
+
+        # Should pass because SELL proceeds ($5000) + cash ($5000) = $10000 >= $8000 BUY
+        assert result["error"] is None
+        assert result["retry_count"] == 0
+
+    @patch("fin_trade.agents.nodes.validate.SecurityService")
+    @patch("fin_trade.agents.nodes.validate.get_stock_price")
+    def test_still_fails_when_sell_proceeds_not_enough(
+        self, mock_get_price, mock_security_class
+    ):
+        """Test that validation still fails when SELL proceeds + cash not enough."""
+        mock_get_price.return_value = 100.0
+
+        holdings = [
+            Holding(
+                isin="US123",
+                ticker="MSFT",
+                name="Microsoft",
+                quantity=20,  # Can only sell 20 shares = $2000
+                avg_price=100.0,
+            )
+        ]
+
+        # SELL 20 MSFT = +$2000, BUY 80 AAPL = -$8000
+        # Cash $1000 + SELL $2000 = $3000, not enough for $8000
+        recommendation = AgentRecommendation(
+            trades=[
+                TradeRecommendation(
+                    ticker="AAPL",
+                    name="Apple",
+                    action="BUY",
+                    quantity=80,  # $8000
+                    reasoning="Test",
+                ),
+                TradeRecommendation(
+                    ticker="MSFT",
+                    name="Microsoft",
+                    action="SELL",
+                    quantity=20,  # $2000
+                    reasoning="Test",
+                ),
+            ]
+        )
+
+        state = {
+            "recommendations": recommendation,
+            "portfolio_state": PortfolioState(cash=1000.0, holdings=holdings),
+            "price_data": {},
+            "retry_count": 0,
+        }
+
+        result = validate_node(state)
+
+        # Should fail: $1000 cash + $2000 sell = $3000 < $8000 needed
+        assert result["error"] is not None
+        assert "Insufficient cash" in result["error"]
+        assert "$3000.00 available" in result["error"]
+
+    @patch("fin_trade.agents.nodes.validate.SecurityService")
+    @patch("fin_trade.agents.nodes.validate.get_stock_price")
+    def test_invalid_sell_does_not_count_toward_cash(
+        self, mock_get_price, mock_security_class
+    ):
+        """Test that invalid SELL orders don't count toward available cash."""
+        mock_get_price.return_value = 100.0
+
+        holdings = [
+            Holding(
+                isin="US123",
+                ticker="MSFT",
+                name="Microsoft",
+                quantity=10,  # Only 10 shares, trying to sell 50
+                avg_price=100.0,
+            )
+        ]
+
+        recommendation = AgentRecommendation(
+            trades=[
+                TradeRecommendation(
+                    ticker="AAPL",
+                    name="Apple",
+                    action="BUY",
+                    quantity=80,  # $8000
+                    reasoning="Test",
+                ),
+                TradeRecommendation(
+                    ticker="MSFT",
+                    name="Microsoft",
+                    action="SELL",
+                    quantity=50,  # Invalid - only have 10
+                    reasoning="Test",
+                ),
+            ]
+        )
+
+        state = {
+            "recommendations": recommendation,
+            "portfolio_state": PortfolioState(cash=5000.0, holdings=holdings),
+            "price_data": {},
+            "retry_count": 0,
+        }
+
+        result = validate_node(state)
+
+        # Should have error for invalid SELL
+        assert result["error"] is not None
+        assert "Cannot SELL 50 shares" in result["error"]
