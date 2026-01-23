@@ -44,7 +44,7 @@
 *Focus: High-level application structure and portfolio management views.*
 *Primary Files: `src/fin_trade/pages/overview.py`, `src/fin_trade/pages/dashboard.py` (new), `src/fin_trade/app.py`*
 
-- [ ] **Summary Dashboard**
+- [x] **Summary Dashboard**
     - Create a new tab/view showing total value across all strategies.
     - Show best/worst performers and upcoming scheduled runs.
 - [x] **Ticker Correction UI**
