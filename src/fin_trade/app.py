@@ -1,9 +1,17 @@
 import streamlit as st
+from pathlib import Path
 
 from fin_trade.services import PortfolioService, AgentService, SecurityService
 from fin_trade.pages.overview import render_overview_page
 from fin_trade.pages.portfolio_detail import render_portfolio_detail_page
 from fin_trade.pages.system_health import render_system_health_page
+
+
+def load_css():
+    """Load the external CSS file."""
+    css_path = Path(__file__).parent / "style.css"
+    with open(css_path, "r") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
 
 def main():
@@ -14,31 +22,8 @@ def main():
         initial_sidebar_state="collapsed",
     )
 
-    # Custom CSS for better styling
-    st.markdown(
-        """
-        <style>
-        .block-container {
-            padding-top: 2rem;
-        }
-        .stButton > button {
-            transition: all 0.2s ease;
-        }
-        .stButton > button:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }
-        div[data-testid="stMetricValue"] {
-            font-size: 1.5rem;
-        }
-        /* Hide sidebar navigation items */
-        [data-testid="stSidebarNav"] {
-            display: none;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    # Load custom CSS
+    load_css()
 
     # Initialize services (cached for performance)
     @st.cache_resource
@@ -79,14 +64,14 @@ def main():
 
         # Show available portfolios in sidebar
         st.divider()
-        st.caption("PORTFOLIOS")
+        st.markdown("### PORTFOLIOS")
         for portfolio_name in portfolio_service.list_portfolios():
             is_selected = (
                 st.session_state.current_page == "detail"
                 and st.session_state.selected_portfolio == portfolio_name
             )
             if st.button(
-                f"📊 {portfolio_name}",
+                f"{portfolio_name}",
                 key=f"sidebar_{portfolio_name}",
                 use_container_width=True,
                 type="primary" if is_selected else "secondary",

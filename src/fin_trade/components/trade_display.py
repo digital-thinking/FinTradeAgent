@@ -103,7 +103,8 @@ def render_trade_recommendations(
         price_error = info["price_error"]
         security_info = info["security_info"]
 
-        action_color = "green" if trade.action == "BUY" else "red"
+        # Matrix colors
+        action_color = "#00ff41" if trade.action == "BUY" else "#ff0000"
 
         # Determine if trade is executable
         can_execute = True
@@ -127,7 +128,7 @@ def render_trade_recommendations(
             col1, col2, col3 = st.columns([2, 2, 1])
 
             with col1:
-                st.markdown(f"### :{action_color}[{trade.action}]")
+                st.markdown(f"### <span style='color:{action_color}'>{trade.action}</span>", unsafe_allow_html=True)
                 st.markdown(f"**{corrected_ticker}**")
                 st.caption(trade.name)
 

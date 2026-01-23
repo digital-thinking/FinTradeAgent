@@ -256,30 +256,49 @@ def _render_performance_chart(
             y=values,
             mode="lines+markers",
             name="Portfolio Value",
-            line=dict(color="#00d4ff", width=2),
-            marker=dict(size=6),
+            line=dict(color="#008F11", width=2),  # Matrix Green
+            marker=dict(size=6, color="#008F11"),
         )
     )
 
     fig.add_hline(
         y=config.initial_amount,
         line_dash="dash",
-        line_color="gray",
+        line_color="#003b00",  # Dark Green
         annotation_text=f"Initial: ${config.initial_amount:,.0f}",
+        annotation_font_color="#000000",
     )
 
     # Color the area based on gain/loss
     final_value = values[-1] if values else config.initial_amount
-    fill_color = "rgba(0, 212, 255, 0.1)" if final_value >= config.initial_amount else "rgba(255, 75, 75, 0.1)"
+    # Matrix style fill
+    fill_color = "rgba(0, 143, 17, 0.1)" if final_value >= config.initial_amount else "rgba(255, 0, 0, 0.1)"
 
     fig.update_traces(fill="tozeroy", fillcolor=fill_color)
 
     fig.update_layout(
-        title="Portfolio Value Over Time",
-        xaxis_title="Date",
-        yaxis_title="Value ($)",
+        title={
+            'text': '<span style="color: #000000;">Portfolio Value Over Time</span>',
+            'font': {'family': 'Segoe UI, Roboto, Helvetica Neue, sans-serif'}
+        },
+        xaxis=dict(
+            title="Date",
+            title_font=dict(color="#000000", family="Segoe UI, Roboto, Helvetica Neue, sans-serif"),
+            tickfont=dict(color="#000000", family="Segoe UI, Roboto, Helvetica Neue, sans-serif"),
+            gridcolor="#008F11",
+            zerolinecolor="#008F11"
+        ),
+        yaxis=dict(
+            title="Value ($)",
+            title_font=dict(color="#000000", family="Segoe UI, Roboto, Helvetica Neue, sans-serif"),
+            tickfont=dict(color="#000000", family="Segoe UI, Roboto, Helvetica Neue, sans-serif"),
+            gridcolor="#008F11",
+            zerolinecolor="#008F11"
+        ),
         height=400,
-        template="plotly_dark",
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(family="Segoe UI, Roboto, Helvetica Neue, sans-serif", color="#000000"),
     )
 
     st.plotly_chart(fig, use_container_width=True)

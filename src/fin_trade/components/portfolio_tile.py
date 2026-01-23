@@ -28,7 +28,8 @@ def render_portfolio_tile(
     is_overdue = portfolio_service.is_execution_overdue(config, state)
     num_holdings = len(state.holdings)
 
-    gain_color = "#51cf66" if abs_gain >= 0 else "#ff6b6b"
+    # Matrix colors
+    gain_color = "#00ff41" if abs_gain >= 0 else "#ff0000"
 
     with st.container(border=True):
         # Header with name and status badge
@@ -118,10 +119,10 @@ def _create_mini_chart(
         return None
 
     # Convert hex color to rgba for fill
-    if color == "#51cf66":
-        fill_rgba = "rgba(81, 207, 102, 0.15)"
+    if color == "#00ff41":
+        fill_rgba = "rgba(0, 255, 65, 0.15)"
     else:
-        fill_rgba = "rgba(255, 107, 107, 0.15)"
+        fill_rgba = "rgba(255, 0, 0, 0.15)"
 
     fig = go.Figure()
     fig.add_trace(

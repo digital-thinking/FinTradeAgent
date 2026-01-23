@@ -1,0 +1,193 @@
+/* Global Theme Overrides */
+:root {
+    --primary-color: #008F11; /* Matrix Green */
+    --text-color: #000000;
+    --font: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+}
+
+/* Main Background - Default Streamlit background */
+.stApp {
+    font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+    color: #008F11; /* Default text (Markdown/Agent Output) remains Green */
+}
+
+/* Headers - Black */
+h1, h2, h3, h4, h5, h6 {
+    color: #000000 !important;
+    font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif !important;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+}
+
+/* Buttons - Black Text */
+.stButton > button {
+    background-color: transparent !important;
+    color: #000000 !important;
+    border: 1px solid #008F11 !important;
+    border-radius: 0px !important; /* Sharp edges */
+    font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all 0.3s ease;
+}
+.stButton > button:hover {
+    background-color: rgba(0, 143, 17, 0.1) !important;
+    box-shadow: 0 0 5px #008F11;
+    transform: translateY(-1px);
+}
+.stButton > button:active {
+    background-color: #008F11 !important;
+    color: #fff !important;
+}
+/* Primary Button Override */
+.stButton > button[kind="primary"] {
+    background-color: rgba(0, 143, 17, 0.1) !important;
+    box-shadow: 0 0 3px #008F11;
+}
+
+/* Metrics - Black */
+div[data-testid="stMetricValue"] {
+    font-size: 1.8rem !important;
+    color: #000000 !important;
+    font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif !important;
+    font-weight: 300;
+}
+div[data-testid="stMetricLabel"] {
+    color: #000000 !important;
+    font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif !important;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 0.5px;
+}
+
+/* Dataframes/Tables - Black */
+div[data-testid="stDataFrame"] {
+    border: 1px solid #008F11;
+}
+div[data-testid="stDataFrame"] div[role="columnheader"] {
+    color: #000000 !important;
+    font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif !important;
+    border-bottom: 1px solid #008F11 !important;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+}
+div[data-testid="stDataFrame"] div[role="gridcell"] {
+    color: #000000 !important;
+    font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif !important;
+}
+
+/* Inputs - Black */
+.stTextInput > div > div > input {
+    color: #000000 !important;
+    border: 1px solid #008F11 !important;
+    border-radius: 0px !important;
+    font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif !important;
+}
+.stTextArea > div > div > textarea {
+    color: #000000 !important;
+    border: 1px solid #008F11 !important;
+    border-radius: 0px !important;
+    font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif !important;
+}
+/* Widget Labels - Black */
+div[data-testid="stWidgetLabel"] p {
+    color: #000000 !important;
+    font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif !important;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+}
+
+/* Tabs - Black */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px;
+}
+.stTabs [data-baseweb="tab"] {
+    height: 50px;
+    white-space: pre-wrap;
+    border-radius: 0px;
+    color: #000000;
+    font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+    border: 1px solid #008F11;
+    background-color: transparent;
+    padding: 0 16px;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.stTabs [aria-selected="true"] {
+    background-color: rgba(0, 143, 17, 0.1) !important;
+    color: #000000 !important;
+    border: 1px solid #008F11 !important;
+    border-bottom: 2px solid #008F11 !important;
+}
+
+/* Captions - Black */
+div[data-testid="stCaptionContainer"] {
+    color: #000000 !important;
+    font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif !important;
+}
+
+/* Sidebar - Black */
+section[data-testid="stSidebar"] {
+    color: #000000 !important;
+}
+section[data-testid="stSidebar"] h1 {
+    color: #000000 !important;
+}
+section[data-testid="stSidebar"] p {
+    color: #000000 !important;
+}
+section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"] {
+    color: #000000 !important;
+}
+
+/* Expanders - Black */
+.stExpander {
+    border: 1px solid #008F11 !important;
+    border-radius: 0px !important;
+}
+.stExpander p {
+    color: #000000 !important;
+}
+.stExpander div[data-testid="stMarkdownContainer"] p {
+    color: #000000 !important;
+}
+
+/* Hide sidebar navigation items */
+[data-testid="stSidebarNav"] {
+    display: none;
+}
+
+/* Skeleton Animation */
+@keyframes skeleton-pulse {
+    0% { opacity: 0.3; background-color: rgba(0, 143, 17, 0.1); }
+    50% { opacity: 0.6; background-color: rgba(0, 143, 17, 0.3); }
+    100% { opacity: 0.3; background-color: rgba(0, 143, 17, 0.1); }
+}
+.skeleton {
+    background-color: rgba(0, 143, 17, 0.1);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+    border: 1px solid #008F11;
+    border-radius: 0px;
+}
+.skeleton-text {
+    height: 1em;
+    margin: 0.5em 0;
+}
+.skeleton-title {
+    height: 1.5em;
+    width: 60%;
+    margin: 0.5em 0;
+}
+.skeleton-metric {
+    height: 2.5em;
+    margin: 0.25em 0;
+}
+.skeleton-card {
+    padding: 1rem;
+    border: 1px solid #008F11;
+    border-radius: 0px;
+    margin-bottom: 1rem;
+    background-color: rgba(0, 143, 17, 0.05);
+}
