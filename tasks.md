@@ -31,7 +31,7 @@
 *Focus: High-level application structure and portfolio management views.*
 *Primary Files: `src/fin_trade/pages/overview.py`, `src/fin_trade/pages/dashboard.py` (new), `src/fin_trade/app.py`*
 
-- [ ] **Performance Attribution**
+- [x] **Performance Attribution**
     - Create a new analysis module to calculate contribution to return by sector and ticker.
     - Visualize attribution in the dashboard (e.g., "Tech sector +5%, Energy -2%").
     - Use the industry/sector information from the already existent json of the ISIN stock data
@@ -51,10 +51,6 @@
 
 - [ ] **Asynchronous Execution**
     - Optimize backend processing to ensure UI responsiveness.
-- [ ] **Backtesting Framework**
-    - Create a `BacktestService` to simulate portfolio state over historical data.
-    - Implement a "Time Machine" mode where the agent sees data only up to a specific past date.
-    - Generate a report comparing agent performance vs. buy-and-hold SPY.
 
 ## 📦 Package G: Data & Intelligence (New)
 *Focus: Expanding data sources and agent intelligence.*
