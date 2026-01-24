@@ -155,6 +155,7 @@ def analysis_node(state: SimpleAgentState) -> dict:
 
     return {
         "analysis": response.text,
+        "_prompt_analysis": prompt,
         "_metrics_analysis": {
             "duration_ms": duration_ms,
             "input_tokens": response.input_tokens,

@@ -114,6 +114,13 @@ class LangGraphAgentService:
         recommendations = result.get("recommendations")
         error = result.get("error")
         retry_count = result.get("retry_count", 0)
+        
+        # Extract prompt if available (it might be in the state or constructed)
+        # For LangGraph, the prompt is usually embedded in the graph nodes, 
+        # but we can capture the user context and portfolio config which form the basis.
+        config = state.get("portfolio_config")
+        user_context = state.get("user_context")
+        strategy_prompt = config.strategy_prompt if config else "N/A"
 
         recs_str = "None"
         if recommendations:
@@ -133,12 +140,29 @@ class LangGraphAgentService:
             )
         metrics_str = "\n".join(metrics_lines) if metrics_lines else "  No metrics collected"
 
+        # Extract prompts from result
+        prompt_research = result.get("_prompt_research", "N/A")
+        prompt_analysis = result.get("_prompt_analysis", "N/A")
+        prompt_generate = result.get("_prompt_generate", "N/A")
+
         log_content = f"""# LangGraph Agent Log - {datetime.now().isoformat()}
 
 **Portfolio:** {portfolio_name}
 **Agent Mode:** langgraph (simple)
 **Retry Count:** {retry_count}
 **Error:** {error or 'None'}
+
+## Configuration & Context
+
+### Strategy Prompt
+```text
+{strategy_prompt}
+```
+
+### User Context
+```text
+{user_context or "None"}
+```
 
 ## Metrics
 
@@ -147,6 +171,23 @@ class LangGraphAgentService:
 
 ### Per-Step Breakdown
 {metrics_str}
+
+## Prompts Sent to Agent
+
+### Research Prompt
+```text
+{prompt_research}
+```
+
+### Analysis Prompt
+```text
+{prompt_analysis}
+```
+
+### Generate Trades Prompt
+```text
+{prompt_generate}
+```
 
 ## Market Research
 
@@ -420,6 +461,7 @@ class DebateAgentService:
     def _save_log(
         self,
         portfolio_name: str,
+        state: dict,
         result: dict,
         metrics: ExecutionMetrics,
     ) -> None:
@@ -435,6 +477,11 @@ class DebateAgentService:
         moderator_analysis = result.get("moderator_analysis", "N/A")
         recommendations = result.get("recommendations")
         error = result.get("error")
+        
+        # Extract prompt info
+        config = state.get("portfolio_config")
+        user_context = state.get("user_context")
+        strategy_prompt = config.strategy_prompt if config else "N/A"
 
         # Format debate history
         debate_str = ""
@@ -459,11 +506,32 @@ class DebateAgentService:
             )
         metrics_str = "\n".join(metrics_lines) if metrics_lines else "  No metrics collected"
 
+        # Extract prompts from result
+        prompt_research = result.get("_prompt_research", "N/A")
+        prompt_bull = result.get("_prompt_bull_pitch", "N/A")
+        prompt_bear = result.get("_prompt_bear_pitch", "N/A")
+        prompt_neutral = result.get("_prompt_neutral_pitch", "N/A")
+        prompt_debate = result.get("_prompt_debate", "N/A")
+        prompt_moderator = result.get("_prompt_moderator", "N/A")
+        prompt_generate = result.get("_prompt_generate", "N/A")
+
         log_content = f"""# Debate Agent Log - {datetime.now().isoformat()}
 
 **Portfolio:** {portfolio_name}
 **Agent Mode:** debate
 **Error:** {error or 'None'}
+
+## Configuration & Context
+
+### Strategy Prompt
+```text
+{strategy_prompt}
+```
+
+### User Context
+```text
+{user_context or "None"}
+```
 
 ## Metrics
 
@@ -472,6 +540,43 @@ class DebateAgentService:
 
 ### Per-Step Breakdown
 {metrics_str}
+
+## Prompts Sent to Agent
+
+### Research Prompt
+```text
+{prompt_research}
+```
+
+### Bull Pitch Prompt
+```text
+{prompt_bull}
+```
+
+### Bear Pitch Prompt
+```text
+{prompt_bear}
+```
+
+### Neutral Pitch Prompt
+```text
+{prompt_neutral}
+```
+
+### Debate Prompt
+```text
+{prompt_debate}
+```
+
+### Moderator Prompt
+```text
+{prompt_moderator}
+```
+
+### Generate Trades Prompt
+```text
+{prompt_generate}
+```
 
 ## Bull Case
 
@@ -687,7 +792,7 @@ class DebateAgentService:
         )
 
         # Save log with metrics (text file)
-        self._save_log(config.name, result, metrics)
+        self._save_log(config.name, initial_state, result, metrics)
 
         # Save to SQLite for analytics
         recommendations = result.get("recommendations")

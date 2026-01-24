@@ -146,6 +146,7 @@ def bull_pitch_node(state) -> dict:
 
     return {
         "bull_pitch": response.text,
+        "_prompt_bull_pitch": prompt,
         "_metrics_bull_pitch": {
             "duration_ms": duration_ms,
             "input_tokens": response.input_tokens,
@@ -171,6 +172,7 @@ def bear_pitch_node(state) -> dict:
 
     return {
         "bear_pitch": response.text,
+        "_prompt_bear_pitch": prompt,
         "_metrics_bear_pitch": {
             "duration_ms": duration_ms,
             "input_tokens": response.input_tokens,
@@ -196,6 +198,7 @@ def neutral_pitch_node(state) -> dict:
 
     return {
         "neutral_pitch": response.text,
+        "_prompt_neutral_pitch": prompt,
         "_metrics_neutral_pitch": {
             "duration_ms": duration_ms,
             "input_tokens": response.input_tokens,
@@ -266,6 +269,7 @@ NEUTRAL's initial analysis:
     return {
         "debate_history": debate_history + new_messages,
         "current_round": current_round + 1,
+        "_prompt_debate": f"BULL prompt:\n{bull_prompt}\n\nBEAR prompt:\n{bear_prompt}",
         "_metrics_debate": {
             "duration_ms": duration_ms,
             "input_tokens": total_input_tokens,
@@ -311,6 +315,7 @@ PORTFOLIO MANAGER GUIDANCE (incorporate this into your decision):
     return {
         "moderator_analysis": response.text,
         "final_verdict": response.text,  # The full analysis serves as the verdict
+        "_prompt_moderator": prompt,
         "_metrics_moderator": {
             "duration_ms": duration_ms,
             "input_tokens": response.input_tokens,

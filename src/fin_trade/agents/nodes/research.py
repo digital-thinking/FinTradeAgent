@@ -170,6 +170,7 @@ def research_node(state) -> dict:
     return {
         "market_research": response.text,
         "price_data": price_data,
+        "_prompt_research": prompt,
         "_metrics_research": {
             "duration_ms": duration_ms,
             "input_tokens": response.input_tokens,

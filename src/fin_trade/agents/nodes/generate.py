@@ -212,11 +212,13 @@ def generate_trades_node(state) -> dict:
         return {
             "recommendations": recommendations,
             "error": None,
+            "_prompt_generate": prompt,
             "_metrics_generate": metrics,
         }
     except (json.JSONDecodeError, KeyError, ValueError) as e:
         return {
             "recommendations": None,
             "error": f"Failed to parse response: {e}. Response was: {response.text[:500]}",
+            "_prompt_generate": prompt,
             "_metrics_generate": metrics,
         }
