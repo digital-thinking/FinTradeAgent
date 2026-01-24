@@ -17,13 +17,14 @@ COMPLETE TRADE HISTORY:
 
 CONSTRAINTS:
 - Maximum {trades_per_run} trades per execution
-- On an empty portfolio at least {num_initial_trades} must be executed and the {initial_amount} should be the limit overall
+- On an empty portfolio, aim for up to {num_initial_trades} DIFFERENT stocks if good opportunities exist
 - You can only SELL stocks you currently own
 - You can only BUY with available cash
-- Each trade must include reasoning
+- TRANSACTION COSTS: Assume 1% cost per trade (buy or sell). Only trade if expected return exceeds this friction. Avoid frequent small trades.
+- Each trade must have genuine conviction - NEVER add filler trades just to meet a number
 - Every trade MUST have quantity > 0 (no zero-share trades allowed)
-- If fewer good opportunities exist, return fewer trades - do NOT pad with 0-quantity placeholder trades
-- NO DUPLICATE TRADES: Each ticker can appear ONLY ONCE per action. If you want to buy 300 shares of LCID, submit ONE trade for 300 shares, NOT multiple trades of 50 shares each
+- QUALITY OVER QUANTITY: If only 1-2 great opportunities exist, return only 1-2 trades. Do NOT add weak trades just to hit a target number. Phrases like "to satisfy the requirement" or "minimal position" indicate a filler trade - DO NOT DO THIS.
+- CRITICAL - NO DUPLICATE TICKERS: Each ticker can appear ONLY ONCE. NEVER split a position into multiple trades.
 
 STOCK IDENTIFICATION - CRITICAL:
 - You may ONLY trade stocks that ACTUALLY EXIST on real exchanges
@@ -46,12 +47,18 @@ and if you don't deliver according the strategy you might get shut down entirely
 RESPOND WITH VALID JSON ONLY in this exact format:
 {{
   "trades": [
-    {{"ticker": "GOOGL", "name": "Alphabet Inc.", "action": "BUY", "quantity": 5, "reasoning": "Your reasoning here..."}}
+    {{"ticker": "GOOGL", "name": "Alphabet Inc.", "action": "BUY", "quantity": 5, "reasoning": "Your reasoning here...", "stop_loss_price": 145.00, "take_profit_price": 185.00}},
+    {{"ticker": "AAPL", "name": "Apple Inc.", "action": "SELL", "quantity": 10, "reasoning": "Your reasoning here..."}}
   ],
   "overall_reasoning": "Your overall market analysis and strategy explanation..."
 }}
 
-IMPORTANT: Always include both the ticker symbol AND the full company name for each trade.
+IMPORTANT:
+- Always include both the ticker symbol AND the full company name for each trade
+- For BUY orders: MUST include stop_loss_price and take_profit_price (actual dollar prices, not percentages)
+- stop_loss_price should be below current price (e.g., 5-15% below) - the price at which to sell to limit losses
+- take_profit_price should be above current price (e.g., 10-30% above) - the price at which to sell to lock in gains
+- SELL orders do not need stop_loss_price or take_profit_price
 
 If you recommend no trades, return an empty trades array with your reasoning for holding."""
 
@@ -110,6 +117,8 @@ ANALYSIS TASK - Provide concrete analysis with specific ticker symbols:
 2. BUY CANDIDATES: List 2-5 specific tickers that match the strategy based on the research above.
 3. POSITION SIZING: How to allocate the ${cash:.2f} available cash.
 
+TRANSACTION COSTS: Assume 1% cost per trade. Only recommend trades where expected return exceeds this friction. Avoid churning positions for small gains.
+
 CRITICAL RULES (MUST FOLLOW):
 - The market research above is CURRENT, VERIFIED, and AUTHORITATIVE - use it directly without question
 - Give SPECIFIC ticker symbols and CONCRETE recommendations with clear BUY/SELL/HOLD decisions
@@ -147,25 +156,28 @@ CURRENT HOLDINGS:
 OUTPUT FORMAT - Return ONLY valid JSON:
 {{
   "trades": [
-    {{"ticker": "AAPL", "name": "Apple Inc.", "action": "BUY", "quantity": 10, "reasoning": "Brief reasoning"}}
+    {{"ticker": "AAPL", "name": "Apple Inc.", "action": "BUY", "quantity": 10, "reasoning": "Brief reasoning", "stop_loss_price": 170.00, "take_profit_price": 210.00}},
+    {{"ticker": "MSFT", "name": "Microsoft Corp.", "action": "SELL", "quantity": 5, "reasoning": "Brief reasoning"}}
   ],
   "overall_reasoning": "Brief summary of the trading thesis"
 }}
 
+STOP-LOSS & TAKE-PROFIT (Required for BUY orders):
+- stop_loss_price: Price to sell at to limit losses (typically 5-15% below entry price)
+- take_profit_price: Price to sell at to lock in gains (typically 10-30% above entry price)
+- These must be actual dollar prices based on current market price, NOT percentages
+- SELL orders do not need these fields
+
 CRITICAL RULES (MUST FOLLOW):
-- You MUST generate trades based on the analysis above - do NOT return empty trades
+- Generate trades based on the analysis - if analysis shows no opportunities, return empty trades array
 - If analysis says SELL, generate SELL trades. If analysis says BUY, generate BUY trades.
 - Use REAL ticker symbols exactly as mentioned in the analysis
 - Calculate quantity: For BUY, use floor(cash_to_allocate / estimated_price)
-- Keep reasoning brief (1-2 sentences per trade)
-- Do NOT ask questions, request clarification, or express doubt
-- Do NOT refuse to generate trades - the analysis IS your authoritative source
-- Do NOT say you need verification or live data - use the analysis directly
-- If the analysis recommends selling due to tight spreads, GENERATE THE SELL ORDER
+- Keep reasoning brief (1-2 sentences per trade) - genuine conviction only
 - Return valid JSON only - no explanatory text before or after
-- EVERY trade MUST have quantity > 0 - zero-share trades are INVALID and will be rejected
-- Do NOT include trades with quantity 0 just to meet a trade count requirement - only include real trades
-- NO DUPLICATE TICKERS: Each ticker can appear ONLY ONCE. Combine all shares into ONE trade (e.g., buy 300 LCID once, not 6x50 LCID)
+- EVERY trade MUST have quantity > 0 - zero-share trades are INVALID
+- NO FILLER TRADES: Never add trades just to meet a count. Reasoning like "to satisfy requirement", "minimal position", "starter position to meet target" = FILLER = FORBIDDEN
+- ABSOLUTELY NO DUPLICATE TICKERS: Each ticker can appear ONLY ONCE. If you only find 2 good stocks, output 2 trades only.
 
 TICKER VALIDATION - EXTREMELY IMPORTANT:
 - ONLY use ticker symbols for stocks that ACTUALLY EXIST (e.g., AAPL, MSFT, NVDA, GOOGL, AMZN)

@@ -48,11 +48,13 @@ def render_trade_recommendations(
                 on_retry()
         return None
 
-    # Initialize session state for ticker corrections
+    # Initialize session state for ticker corrections and quantity adjustments
     if "ticker_corrections" not in st.session_state:
         st.session_state.ticker_corrections = {}
     if "isin_inputs" not in st.session_state:
         st.session_state.isin_inputs = {}
+    if "quantity_adjustments" not in st.session_state:
+        st.session_state.quantity_adjustments = {}
 
     # Build holdings lookup
     holdings_by_ticker = {h.ticker: h.quantity for h in holdings}
@@ -209,8 +211,33 @@ def render_trade_recommendations(
 
             with col2:
                 if price and price > 0:
-                    st.metric("Price", f"${price:.2f}", label_visibility="collapsed")
-                    st.write(f"{trade.quantity} shares × ${price:.2f} = **${cost:,.2f}**")
+                    st.caption(f"${price:.2f} per share")
+                    # Editable quantity input
+                    qty_key = f"qty_{i}"
+                    adjusted_qty = st.number_input(
+                        "Shares",
+                        min_value=0,
+                        value=st.session_state.quantity_adjustments.get(i, trade.quantity),
+                        step=1,
+                        key=qty_key,
+                        label_visibility="collapsed",
+                    )
+                    st.session_state.quantity_adjustments[i] = adjusted_qty
+                    adjusted_cost = price * adjusted_qty
+                    if adjusted_qty != trade.quantity:
+                        st.caption(f"~~{trade.quantity}~~ → **{adjusted_qty}** shares = **${adjusted_cost:,.2f}**")
+                    else:
+                        st.caption(f"{adjusted_qty} shares = **${adjusted_cost:,.2f}**")
+                    # Show stop-loss and take-profit for BUY orders
+                    if trade.action == "BUY" and (trade.stop_loss_price or trade.take_profit_price):
+                        sl_tp_parts = []
+                        if trade.stop_loss_price:
+                            sl_pct = ((trade.stop_loss_price - price) / price) * 100
+                            sl_tp_parts.append(f"🛑 SL: ${trade.stop_loss_price:.2f} ({sl_pct:+.1f}%)")
+                        if trade.take_profit_price:
+                            tp_pct = ((trade.take_profit_price - price) / price) * 100
+                            sl_tp_parts.append(f"🎯 TP: ${trade.take_profit_price:.2f} ({tp_pct:+.1f}%)")
+                        st.caption(" | ".join(sl_tp_parts))
                 else:
                     st.write(f"{trade.quantity} shares")
                     if price_error:
@@ -274,18 +301,29 @@ def render_trade_recommendations(
 
             # Track selected trades and update simulated state
             if include and can_execute:
+                # Get adjusted quantity (default to original if not adjusted)
+                adjusted_qty = st.session_state.quantity_adjustments.get(i, trade.quantity)
+                if adjusted_qty <= 0:
+                    continue  # Skip trades with 0 quantity
+
                 modified_trade = trade
-                if corrected_ticker != trade.ticker:
-                    modified_trade = replace(trade, ticker=corrected_ticker)
+                # Apply ticker correction and/or quantity adjustment
+                if corrected_ticker != trade.ticker or adjusted_qty != trade.quantity:
+                    modified_trade = replace(
+                        trade,
+                        ticker=corrected_ticker,
+                        quantity=adjusted_qty,
+                    )
                 selected_trades.append(modified_trade)
 
-                # Update simulated cash/holdings for subsequent trades
+                # Update simulated cash/holdings for subsequent trades (using adjusted values)
+                adjusted_cost = price * adjusted_qty if price else 0
                 if trade.action == "BUY":
-                    remaining_cash -= cost
-                    simulated_holdings[corrected_ticker] = simulated_holdings.get(corrected_ticker, 0) + trade.quantity
+                    remaining_cash -= adjusted_cost
+                    simulated_holdings[corrected_ticker] = simulated_holdings.get(corrected_ticker, 0) + adjusted_qty
                 elif trade.action == "SELL":
-                    remaining_cash += cost
-                    simulated_holdings[corrected_ticker] = simulated_holdings.get(corrected_ticker, 0) - trade.quantity
+                    remaining_cash += adjusted_cost
+                    simulated_holdings[corrected_ticker] = simulated_holdings.get(corrected_ticker, 0) - adjusted_qty
 
     st.divider()
 
@@ -322,17 +360,19 @@ def render_trade_recommendations(
                         except Exception:
                             pass  # Ignore errors, the trade will still work
 
-                # Clear corrections from session state
+                # Clear corrections and adjustments from session state
                 st.session_state.ticker_corrections = {}
                 st.session_state.isin_inputs = {}
+                st.session_state.quantity_adjustments = {}
                 on_accept(selected_trades)
                 return selected_trades
 
     with col2:
         if st.button("↻ Retry", key="retry_trades", type="secondary"):
-            # Clear corrections
+            # Clear corrections and adjustments
             st.session_state.ticker_corrections = {}
             st.session_state.isin_inputs = {}
+            st.session_state.quantity_adjustments = {}
             if on_retry:
                 on_retry()
 
@@ -369,6 +409,8 @@ def render_trade_history(trades: list, security_service: SecurityService) -> Non
             "Shares": trade.quantity,
             "Price": trade.price,
             "Total": total,
+            "Stop Loss": getattr(trade, 'stop_loss_price', None),
+            "Take Profit": getattr(trade, 'take_profit_price', None),
             "Reasoning": trade.reasoning,
         })
 
@@ -388,6 +430,8 @@ def render_trade_history(trades: list, security_service: SecurityService) -> Non
                 "Shares": st.column_config.NumberColumn("Shares", format="%d"),
                 "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
                 "Total": st.column_config.NumberColumn("Total", format="$%.2f"),
+                "Stop Loss": st.column_config.NumberColumn("Stop Loss", format="$%.2f"),
+                "Take Profit": st.column_config.NumberColumn("Take Profit", format="$%.2f"),
                 "Reasoning": st.column_config.TextColumn("Reasoning", width="large"),
             },
             hide_index=True,

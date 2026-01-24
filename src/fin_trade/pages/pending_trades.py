@@ -123,7 +123,11 @@ def _render_pending_trades_for_log(
     security_service: SecurityService,
 ) -> None:
     """Render pending trades for a single execution log."""
-    
+
+    # Initialize quantity adjustments in session state
+    if "pending_qty_adjustments" not in st.session_state:
+        st.session_state.pending_qty_adjustments = {}
+
     # Load portfolio state for cash validation
     portfolio_service = PortfolioService(security_service=security_service)
     portfolios = portfolio_service.list_portfolios()
@@ -178,9 +182,23 @@ def _render_pending_trades_for_log(
                 "error": str(e),
             }
 
-    # Select all checkbox (only selects valid trades)
+    # Select all checkbox with proper toggle behavior
     select_all_key = f"select_all_{log.id}"
+    prev_select_all_key = f"prev_select_all_{log.id}"
+
+    # Get previous state of select_all
+    prev_select_all = st.session_state.get(prev_select_all_key, False)
     select_all = st.checkbox("Select all valid trades", key=select_all_key)
+
+    # Detect if select_all was just toggled
+    if select_all != prev_select_all:
+        # Update all valid trade checkboxes based on new select_all state
+        for i in pending_indices:
+            if trade_validity[i]["is_valid"]:
+                checkbox_key = f"pending_{log.id}_{i}"
+                st.session_state[checkbox_key] = select_all
+        st.session_state[prev_select_all_key] = select_all
+        st.rerun()
 
     for i in pending_indices:
         rec = recommendations[i]
@@ -197,12 +215,9 @@ def _render_pending_trades_for_log(
 
             with col1:
                 checkbox_key = f"pending_{log.id}_{i}"
-                # If select all is checked and trade is valid, check it
-                if select_all and is_valid:
-                    st.session_state[checkbox_key] = True
                 # Auto-enable if ticker was corrected and is now valid
                 was_corrected = corrected_ticker != ticker
-                if was_corrected and is_valid:
+                if was_corrected and is_valid and checkbox_key not in st.session_state:
                     st.session_state[checkbox_key] = True
 
                 is_selected = st.checkbox(
@@ -225,13 +240,43 @@ def _render_pending_trades_for_log(
                     st.caption(f"(was: {ticker})")
 
             with col4:
-                quantity = rec.get("quantity", 0)
+                original_quantity = rec.get("quantity", 0)
+                qty_key = f"pending_qty_{log.id}_{i}"
+
                 if price:
-                    cost = price * quantity
-                    st.write(f"{quantity} × ${price:.2f} = ${cost:,.2f}")
+                    st.caption(f"${price:.2f}/share")
+                    # Editable quantity input
+                    adjusted_qty = st.number_input(
+                        "Shares",
+                        min_value=0,
+                        value=st.session_state.pending_qty_adjustments.get(qty_key, original_quantity),
+                        step=1,
+                        key=qty_key,
+                        label_visibility="collapsed",
+                        disabled=not is_valid,
+                    )
+                    st.session_state.pending_qty_adjustments[qty_key] = adjusted_qty
+                    cost = price * adjusted_qty
+                    if adjusted_qty != original_quantity:
+                        st.caption(f"~~{original_quantity}~~ → **{adjusted_qty}** = ${cost:,.2f}")
+                    else:
+                        st.caption(f"= ${cost:,.2f}")
+                    # Show stop-loss and take-profit for BUY orders
+                    action = rec.get("action", "")
+                    stop_loss = rec.get("stop_loss_price")
+                    take_profit = rec.get("take_profit_price")
+                    if action == "BUY" and (stop_loss or take_profit):
+                        sl_tp_parts = []
+                        if stop_loss:
+                            sl_pct = ((stop_loss - price) / price) * 100
+                            sl_tp_parts.append(f"🛑 ${stop_loss:.2f} ({sl_pct:+.1f}%)")
+                        if take_profit:
+                            tp_pct = ((take_profit - price) / price) * 100
+                            sl_tp_parts.append(f"🎯 ${take_profit:.2f} ({tp_pct:+.1f}%)")
+                        st.caption(" | ".join(sl_tp_parts))
                 else:
-                    st.write(f"{quantity} shares")
-            
+                    st.write(f"{original_quantity} shares")
+
             with col5:
                 # Delete button
                 if st.button("🗑️", key=f"delete_{log.id}_{i}", help="Reject this trade"):
@@ -255,15 +300,20 @@ def _render_pending_trades_for_log(
 
     st.markdown("---")
 
-    # Calculate cash totals for selected trades
+    # Calculate cash totals for selected trades (using adjusted quantities)
     total_buy_cost = 0.0
     total_sell_proceeds = 0.0
     for i in selected_indices:
         rec = recommendations[i]
         validity = trade_validity.get(i, {})
         price = validity.get("price", 0) or 0
-        quantity = rec.get("quantity", 0)
+        original_quantity = rec.get("quantity", 0)
+        qty_key = f"pending_qty_{log.id}_{i}"
+        quantity = st.session_state.pending_qty_adjustments.get(qty_key, original_quantity)
         action = rec.get("action", "")
+
+        if quantity <= 0:
+            continue  # Skip trades with 0 quantity
 
         if action == "BUY" and price > 0:
             total_buy_cost += price * quantity
@@ -284,12 +334,7 @@ def _render_pending_trades_for_log(
             summary_parts.append(f"-${total_buy_cost:,.2f} (buys)")
 
         if summary_parts:
-            cash_color = "#00ff41" if cash_after_trades >= 0 else "#ff6b6b"
-            after_trades_html = (
-                f"**After trades:** {' '.join(summary_parts)} = "
-                f"<span style='color:{cash_color};font-weight:bold'>${cash_after_trades:,.2f}</span>"
-            )
-            st.markdown(after_trades_html, unsafe_allow_html=True)
+            st.write(f"**After trades:** {' '.join(summary_parts)} = ${cash_after_trades:,.2f}")
 
         if not has_sufficient_cash:
             st.error(f"⚠️ Insufficient cash! Need ${-cash_after_trades:,.2f} more.")
@@ -313,6 +358,13 @@ def _render_pending_trades_for_log(
                 if correction_key in st.session_state:
                     ticker_corrections[i] = st.session_state[correction_key]
 
+            # Build quantity adjustments map
+            quantity_adjustments = {}
+            for i in selected_indices:
+                qty_key = f"pending_qty_{log.id}_{i}"
+                if qty_key in st.session_state.pending_qty_adjustments:
+                    quantity_adjustments[i] = st.session_state.pending_qty_adjustments[qty_key]
+
             # Apply ISIN corrections before executing
             apply_isin_corrections(
                 key_prefixes=[f"pending_{log.id}_{i}" for i in selected_indices],
@@ -322,11 +374,15 @@ def _render_pending_trades_for_log(
 
             _apply_pending_trades(
                 log, recommendations, selected_indices, log_service, ticker_corrections,
+                quantity_adjustments=quantity_adjustments,
                 increase_cash_if_needed=is_empty_portfolio,
             )
 
-            # Clear ticker corrections after applying
+            # Clear ticker corrections and quantity adjustments after applying
             clear_ticker_corrections([f"pending_{log.id}_{i}" for i in pending_indices])
+            for i in pending_indices:
+                qty_key = f"pending_qty_{log.id}_{i}"
+                st.session_state.pending_qty_adjustments.pop(qty_key, None)
 
     with col2:
         if len(selected_indices) == 0:
@@ -364,6 +420,7 @@ def _apply_pending_trades(
     selected_indices: list[int],
     log_service: ExecutionLogService,
     ticker_corrections: dict[int, str] | None = None,
+    quantity_adjustments: dict[int, int] | None = None,
     increase_cash_if_needed: bool = False,
 ) -> None:
     """Apply selected pending trades to the portfolio.
@@ -374,10 +431,13 @@ def _apply_pending_trades(
         selected_indices: Indices of trades to apply
         log_service: Service for updating execution logs
         ticker_corrections: Optional dict mapping trade index to corrected ticker
+        quantity_adjustments: Optional dict mapping trade index to adjusted quantity
         increase_cash_if_needed: If True, increase cash for initial portfolio setup
     """
     if ticker_corrections is None:
         ticker_corrections = {}
+    if quantity_adjustments is None:
+        quantity_adjustments = {}
 
     security_service = SecurityService()
     portfolio_service = PortfolioService(security_service=security_service)
@@ -399,13 +459,15 @@ def _apply_pending_trades(
 
     # If this is an empty portfolio and we need more cash, increase it
     if increase_cash_if_needed:
-        # Calculate total cost of BUY trades
+        # Calculate total cost of BUY trades (using adjusted quantities)
         total_buy_cost = 0.0
         for i in selected_indices:
             rec = recommendations[i]
             if rec.get("action") == "BUY":
                 ticker = ticker_corrections.get(i, rec.get("ticker", ""))
-                quantity = rec.get("quantity", 0)
+                quantity = quantity_adjustments.get(i, rec.get("quantity", 0))
+                if quantity <= 0:
+                    continue
                 try:
                     price = security_service.get_price(ticker)
                     if price:
@@ -435,8 +497,15 @@ def _apply_pending_trades(
         # Use corrected ticker if available, otherwise use original
         ticker = ticker_corrections.get(i, rec.get("ticker", ""))
         action = rec.get("action", "")
-        quantity = rec.get("quantity", 0)
+        # Use adjusted quantity if available, otherwise use original
+        quantity = quantity_adjustments.get(i, rec.get("quantity", 0))
         reasoning = rec.get("reasoning", "")
+        stop_loss_price = rec.get("stop_loss_price")
+        take_profit_price = rec.get("take_profit_price")
+
+        # Skip trades with 0 quantity
+        if quantity <= 0:
+            continue
 
         try:
             state = portfolio_service.execute_trade(
@@ -445,6 +514,8 @@ def _apply_pending_trades(
                 action,
                 quantity,
                 reasoning,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price,
             )
             applied_indices.append(i)
         except Exception as e:

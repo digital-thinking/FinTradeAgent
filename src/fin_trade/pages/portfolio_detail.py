@@ -152,6 +152,8 @@ def _render_holdings(state: PortfolioState, security_service: SecurityService) -
             "Value": current_value,
             "Gain/Loss": gain,
             "Gain %": gain_pct,
+            "Stop Loss": holding.stop_loss_price,
+            "Take Profit": holding.take_profit_price,
         })
 
     df = pd.DataFrame(holdings_data)
@@ -169,6 +171,8 @@ def _render_holdings(state: PortfolioState, security_service: SecurityService) -
                 "Value": st.column_config.NumberColumn("Value", format="$%.2f"),
                 "Gain/Loss": st.column_config.NumberColumn("Gain/Loss", format="$%.2f"),
                 "Gain %": st.column_config.NumberColumn("Gain %", format="%.1f%%"),
+                "Stop Loss": st.column_config.NumberColumn("Stop Loss", format="$%.2f"),
+                "Take Profit": st.column_config.NumberColumn("Take Profit", format="$%.2f"),
             },
             hide_index=True,
             use_container_width=True,
@@ -823,6 +827,8 @@ def _render_agent_execution(
                         trade.action,
                         trade.quantity,
                         trade.reasoning,
+                        stop_loss_price=trade.stop_loss_price,
+                        take_profit_price=trade.take_profit_price,
                     )
                 portfolio_service.save_state(portfolio_name, state)
                 st.session_state.recommendation = None

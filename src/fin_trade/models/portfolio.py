@@ -14,6 +14,8 @@ class Holding:
     name: str
     quantity: int
     avg_price: float
+    stop_loss_price: float | None = None
+    take_profit_price: float | None = None
 
 
 @dataclass
@@ -28,6 +30,8 @@ class Trade:
     quantity: int
     price: float
     reasoning: str
+    stop_loss_price: float | None = None
+    take_profit_price: float | None = None
 
 
 @dataclass

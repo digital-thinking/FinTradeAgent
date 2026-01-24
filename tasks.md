@@ -40,7 +40,7 @@
 *Focus: The user experience of running agents and reviewing results.*
 *Primary Files: `src/fin_trade/pages/portfolio_detail.py`, `src/fin_trade/agents/`, `src/fin_trade/services/agent.py`*
 
-- [ ] **Stop-Loss & Take-Profit**
+- [x] **Stop-Loss & Take-Profit**
     - Update `TradeRecommendation` model to include `stop_loss_price` and `take_profit_price`.
     - Update agent prompts to require these fields for every BUY order.
     - Visualize these levels on the trade review card.

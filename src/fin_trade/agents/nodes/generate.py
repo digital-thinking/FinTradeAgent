@@ -94,6 +94,8 @@ def _parse_json_response(response_text: str) -> AgentRecommendation:
             action=t["action"].upper(),
             quantity=int(t["quantity"]),
             reasoning=t["reasoning"],
+            stop_loss_price=float(t["stop_loss_price"]) if t.get("stop_loss_price") else None,
+            take_profit_price=float(t["take_profit_price"]) if t.get("take_profit_price") else None,
         )
         for t in data.get("trades", [])
     ]

@@ -434,6 +434,8 @@ def _apply_pending_trades(
         action = rec.get("action", "")
         quantity = rec.get("quantity", 0)
         reasoning = rec.get("reasoning", "")
+        stop_loss_price = rec.get("stop_loss_price")
+        take_profit_price = rec.get("take_profit_price")
 
         try:
             state = portfolio_service.execute_trade(
@@ -442,6 +444,8 @@ def _apply_pending_trades(
                 action,
                 quantity,
                 reasoning,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price,
             )
             applied_indices.append(i)
         except Exception as e:

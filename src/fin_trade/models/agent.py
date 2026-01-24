@@ -13,6 +13,8 @@ class TradeRecommendation:
     action: Literal["BUY", "SELL"]
     quantity: int
     reasoning: str
+    stop_loss_price: float | None = None  # Required for BUY orders
+    take_profit_price: float | None = None  # Required for BUY orders
 
 
 @dataclass

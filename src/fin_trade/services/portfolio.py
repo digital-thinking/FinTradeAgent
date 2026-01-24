@@ -100,6 +100,8 @@ class PortfolioService:
                 name=h.get("name", h["isin"]),
                 quantity=int(h["quantity"]),
                 avg_price=float(h["avg_price"]),
+                stop_loss_price=h.get("stop_loss_price"),
+                take_profit_price=h.get("take_profit_price"),
             )
             for h in data.get("holdings", [])
         ]
@@ -114,6 +116,8 @@ class PortfolioService:
                 quantity=int(t["quantity"]),
                 price=float(t["price"]),
                 reasoning=t["reasoning"],
+                stop_loss_price=t.get("stop_loss_price"),
+                take_profit_price=t.get("take_profit_price"),
             )
             for t in data.get("trades", [])
         ]
@@ -161,6 +165,8 @@ class PortfolioService:
                     "name": h.name,
                     "quantity": h.quantity,
                     "avg_price": h.avg_price,
+                    "stop_loss_price": h.stop_loss_price,
+                    "take_profit_price": h.take_profit_price,
                 }
                 for h in state.holdings
             ],
@@ -174,6 +180,8 @@ class PortfolioService:
                     "quantity": t.quantity,
                     "price": t.price,
                     "reasoning": t.reasoning,
+                    "stop_loss_price": t.stop_loss_price,
+                    "take_profit_price": t.take_profit_price,
                 }
                 for t in state.trades
             ],
@@ -234,6 +242,8 @@ class PortfolioService:
         action: Literal["BUY", "SELL"],
         quantity: int,
         reasoning: str,
+        stop_loss_price: float | None = None,
+        take_profit_price: float | None = None,
     ) -> PortfolioState:
         """Execute a trade and return updated state."""
         if quantity <= 0:
@@ -260,12 +270,15 @@ class PortfolioService:
                     (existing.avg_price * existing.quantity) + (price * quantity)
                 ) / total_qty
                 holdings = [h for h in holdings if h.ticker != ticker]
+                # Use new SL/TP if provided, otherwise keep existing
                 holdings.append(Holding(
                     isin=security.isin,
                     ticker=security.ticker,
                     name=security.name,
                     quantity=total_qty,
                     avg_price=avg_price,
+                    stop_loss_price=stop_loss_price or existing.stop_loss_price,
+                    take_profit_price=take_profit_price or existing.take_profit_price,
                 ))
             else:
                 holdings.append(Holding(
@@ -274,6 +287,8 @@ class PortfolioService:
                     name=security.name,
                     quantity=quantity,
                     avg_price=price,
+                    stop_loss_price=stop_loss_price,
+                    take_profit_price=take_profit_price,
                 ))
 
         elif action == "SELL":
@@ -293,6 +308,8 @@ class PortfolioService:
                     name=existing.name,
                     quantity=new_qty,
                     avg_price=existing.avg_price,
+                    stop_loss_price=existing.stop_loss_price,
+                    take_profit_price=existing.take_profit_price,
                 ))
 
         trade = Trade(
@@ -304,6 +321,8 @@ class PortfolioService:
             quantity=quantity,
             price=price,
             reasoning=reasoning,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
         )
         trades.append(trade)
 
