@@ -24,7 +24,7 @@ strategy_prompt: |
   - AVOID: Structural News or High Debt.
 
 initial_amount: 1000.0
-num_initial_trades: 5
+num_initial_trades: 3
 trades_per_run: 3
 run_frequency: daily
 llm_provider: openai

@@ -49,7 +49,7 @@ strategy_prompt: |
   - Speculative infrastructure play: 5-10%
 
 initial_amount: 1000.0
-num_initial_trades: 5
+num_initial_trades: 3
 trades_per_run: 3
 run_frequency: weekly
 llm_provider: openai
