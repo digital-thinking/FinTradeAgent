@@ -2,6 +2,7 @@
 
 import json
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -564,3 +565,341 @@ class TestExecuteTrade:
 
         # Avg price: (10 * 150 + 10 * 200) / 20 = 3500 / 20 = 175
         assert holding.avg_price == 175.0
+
+    def test_buy_with_stop_loss_and_take_profit(
+        self, temp_data_dir, mock_security_service, empty_portfolio_state
+    ):
+        """Test BUY trade records stop-loss and take-profit prices."""
+        mock_security_service.force_update_price.return_value = 100.0
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        new_state = service.execute_trade(
+            empty_portfolio_state,
+            ticker="AAPL",
+            action="BUY",
+            quantity=10,
+            reasoning="Test buy",
+            stop_loss_price=90.0,
+            take_profit_price=120.0,
+        )
+
+        holding = new_state.holdings[0]
+        assert holding.stop_loss_price == 90.0
+        assert holding.take_profit_price == 120.0
+
+        # Also check the trade record
+        trade = new_state.trades[0]
+        assert trade.stop_loss_price == 90.0
+        assert trade.take_profit_price == 120.0
+
+    def test_buy_updates_stop_loss_on_existing_holding(
+        self, temp_data_dir, mock_security_service
+    ):
+        """Test BUY updates stop-loss/take-profit when adding to position."""
+        mock_security_service.force_update_price.return_value = 100.0
+
+        # Start with a holding that has SL/TP
+        initial_state = PortfolioState(
+            cash=5000.0,
+            holdings=[
+                Holding(
+                    isin="US0378331005",
+                    ticker="AAPL",
+                    name="Apple Inc.",
+                    quantity=10,
+                    avg_price=90.0,
+                    stop_loss_price=80.0,
+                    take_profit_price=110.0,
+                )
+            ],
+            trades=[],
+        )
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        new_state = service.execute_trade(
+            initial_state,
+            ticker="AAPL",
+            action="BUY",
+            quantity=5,
+            reasoning="Adding to position",
+            stop_loss_price=85.0,  # New SL/TP
+            take_profit_price=130.0,
+        )
+
+        holding = new_state.holdings[0]
+        # New SL/TP should override
+        assert holding.stop_loss_price == 85.0
+        assert holding.take_profit_price == 130.0
+
+    def test_buy_preserves_existing_stop_loss_when_not_provided(
+        self, temp_data_dir, mock_security_service
+    ):
+        """Test BUY preserves existing SL/TP when not provided in new trade."""
+        mock_security_service.force_update_price.return_value = 100.0
+
+        # Start with a holding that has SL/TP
+        initial_state = PortfolioState(
+            cash=5000.0,
+            holdings=[
+                Holding(
+                    isin="US0378331005",
+                    ticker="AAPL",
+                    name="Apple Inc.",
+                    quantity=10,
+                    avg_price=90.0,
+                    stop_loss_price=80.0,
+                    take_profit_price=110.0,
+                )
+            ],
+            trades=[],
+        )
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        new_state = service.execute_trade(
+            initial_state,
+            ticker="AAPL",
+            action="BUY",
+            quantity=5,
+            reasoning="Adding to position",
+            # Not providing SL/TP
+        )
+
+        holding = new_state.holdings[0]
+        # Existing SL/TP should be preserved
+        assert holding.stop_loss_price == 80.0
+        assert holding.take_profit_price == 110.0
+
+    def test_sell_preserves_stop_loss_on_remaining_shares(
+        self, temp_data_dir, mock_security_service
+    ):
+        """Test partial SELL preserves SL/TP on remaining shares."""
+        mock_security_service.force_update_price.return_value = 100.0
+        mock_security_service.lookup_ticker.return_value = MagicMock(
+            isin="US0378331005", ticker="AAPL", name="Apple Inc."
+        )
+
+        initial_state = PortfolioState(
+            cash=5000.0,
+            holdings=[
+                Holding(
+                    isin="US0378331005",
+                    ticker="AAPL",
+                    name="Apple Inc.",
+                    quantity=10,
+                    avg_price=90.0,
+                    stop_loss_price=80.0,
+                    take_profit_price=120.0,
+                )
+            ],
+            trades=[],
+        )
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        new_state = service.execute_trade(
+            initial_state,
+            ticker="AAPL",
+            action="SELL",
+            quantity=5,
+            reasoning="Taking partial profits",
+        )
+
+        holding = new_state.holdings[0]
+        assert holding.quantity == 5
+        # SL/TP should still be on remaining shares
+        assert holding.stop_loss_price == 80.0
+        assert holding.take_profit_price == 120.0
+
+    def test_rejects_zero_quantity(
+        self, temp_data_dir, mock_security_service, empty_portfolio_state
+    ):
+        """Test that zero quantity is rejected."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        with pytest.raises(ValueError, match="Invalid quantity"):
+            service.execute_trade(
+                empty_portfolio_state,
+                ticker="AAPL",
+                action="BUY",
+                quantity=0,
+                reasoning="Test",
+            )
+
+    def test_rejects_negative_quantity(
+        self, temp_data_dir, mock_security_service, empty_portfolio_state
+    ):
+        """Test that negative quantity is rejected."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        with pytest.raises(ValueError, match="Invalid quantity"):
+            service.execute_trade(
+                empty_portfolio_state,
+                ticker="AAPL",
+                action="BUY",
+                quantity=-5,
+                reasoning="Test",
+            )
+
+
+class TestLoadPortfolio:
+    """Tests for load_portfolio method."""
+
+    def test_loads_config_and_state(
+        self, temp_data_dir, mock_security_service, sample_yaml_config
+    ):
+        """Test load_portfolio returns both config and state."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        config, state = service.load_portfolio("test_portfolio")
+
+        assert config.name == "Test Portfolio"
+        assert state.cash == 10000.0  # Default from config
+
+    def test_creates_new_state_for_new_portfolio(
+        self, temp_data_dir, mock_security_service, sample_yaml_config
+    ):
+        """Test creates fresh state when no state file exists."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        config, state = service.load_portfolio("test_portfolio")
+
+        assert state.holdings == []
+        assert state.trades == []
+        assert state.last_execution is None
+
+    def test_loads_existing_state_file(
+        self, temp_data_dir, mock_security_service, sample_yaml_config
+    ):
+        """Test loads state from existing JSON file."""
+        # Create a state file
+        state_data = {
+            "cash": 7500.0,
+            "holdings": [
+                {
+                    "isin": "US0378331005",
+                    "ticker": "AAPL",
+                    "name": "Apple Inc.",
+                    "quantity": 15,
+                    "avg_price": 165.0,
+                }
+            ],
+            "trades": [],
+            "last_execution": "2024-01-20T14:00:00",
+        }
+        state_path = temp_data_dir["state"] / "test_portfolio.json"
+        state_path.write_text(json.dumps(state_data))
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        config, state = service.load_portfolio("test_portfolio")
+
+        assert state.cash == 7500.0
+        assert len(state.holdings) == 1
+        assert state.holdings[0].ticker == "AAPL"
+        assert state.holdings[0].quantity == 15
+
+
+class TestLoadStateStopLoss:
+    """Tests for loading state with stop-loss/take-profit."""
+
+    def test_loads_stop_loss_from_state(self, temp_data_dir, mock_security_service):
+        """Test that stop-loss values are loaded from state file."""
+        state_data = {
+            "cash": 5000.0,
+            "holdings": [
+                {
+                    "isin": "US123",
+                    "ticker": "AAPL",
+                    "name": "Apple",
+                    "quantity": 10,
+                    "avg_price": 150.0,
+                    "stop_loss_price": 135.0,
+                    "take_profit_price": 180.0,
+                }
+            ],
+            "trades": [],
+        }
+        state_path = temp_data_dir["state"] / "test.json"
+        state_path.write_text(json.dumps(state_data))
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        state = service._load_state("test", initial_amount=10000.0)
+
+        assert state.holdings[0].stop_loss_price == 135.0
+        assert state.holdings[0].take_profit_price == 180.0
+
+    def test_handles_missing_stop_loss_in_state(
+        self, temp_data_dir, mock_security_service
+    ):
+        """Test graceful handling of missing stop-loss in older state files."""
+        state_data = {
+            "cash": 5000.0,
+            "holdings": [
+                {
+                    "isin": "US123",
+                    "ticker": "AAPL",
+                    "name": "Apple",
+                    "quantity": 10,
+                    "avg_price": 150.0,
+                    # No stop_loss_price or take_profit_price
+                }
+            ],
+            "trades": [],
+        }
+        state_path = temp_data_dir["state"] / "test.json"
+        state_path.write_text(json.dumps(state_data))
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        state = service._load_state("test", initial_amount=10000.0)
+
+        assert state.holdings[0].stop_loss_price is None
+        assert state.holdings[0].take_profit_price is None
