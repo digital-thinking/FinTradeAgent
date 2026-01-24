@@ -202,7 +202,7 @@ def _render_performance_chart(
         return
 
     # Calculate key metrics
-    metrics = _calculate_performance_metrics(config, values, timestamps)
+    metrics = _calculate_performance_metrics(config, state, values, timestamps)
 
     # Time period selector
     col1, col2 = st.columns([3, 1])
@@ -219,8 +219,11 @@ def _render_performance_chart(
         timestamps, values, cash_values, holdings_values, trade_points, time_range
     )
 
+    # Use actual initial investment if recorded, otherwise fall back to config
+    initial_investment = state.initial_investment or config.initial_amount
+
     # Display metrics row
-    _render_performance_metrics(metrics, config.initial_amount)
+    _render_performance_metrics(metrics, initial_investment)
 
     # Build the interactive chart
     fig = _build_performance_figure(
@@ -229,7 +232,7 @@ def _render_performance_chart(
         filtered_cash,
         filtered_holdings,
         filtered_trades,
-        config.initial_amount,
+        initial_investment,
     )
 
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
@@ -249,7 +252,8 @@ def _calculate_performance_data(
     holdings_values = []  # Track holdings value over time
     trade_points = []  # (timestamp, value, action, ticker, quantity)
 
-    cash = config.initial_amount
+    # Use actual initial investment if recorded, otherwise fall back to config
+    cash = state.initial_investment or config.initial_amount
     holdings: dict[str, dict] = {}
 
     for trade in state.trades:
@@ -320,6 +324,7 @@ def _calculate_performance_data(
 
 def _calculate_performance_metrics(
     config: PortfolioConfig,
+    state: PortfolioState,
     values: list[float],
     timestamps: list,
 ) -> dict:
@@ -327,7 +332,8 @@ def _calculate_performance_metrics(
     if not values:
         return {}
 
-    initial = config.initial_amount
+    # Use actual initial investment if recorded, otherwise fall back to config
+    initial = state.initial_investment or config.initial_amount
     current = values[-1]
     abs_gain = current - initial
     pct_gain = (abs_gain / initial) * 100 if initial > 0 else 0

@@ -8,12 +8,37 @@ import pandas as pd
 from fin_trade.services.execution_log import ExecutionLogService
 from fin_trade.services import PortfolioService
 from fin_trade.services.security import SecurityService
+from fin_trade.components.ticker_correction import (
+    render_ticker_correction,
+    apply_isin_corrections,
+    clear_ticker_corrections,
+)
+
+
+def _display_persistent_messages() -> None:
+    """Display and clear persistent messages from session state."""
+    messages = st.session_state.pop("pending_trades_messages", None)
+    if not messages:
+        return
+
+    for msg in messages:
+        if msg["type"] == "success":
+            st.success(msg["text"])
+        elif msg["type"] == "error":
+            st.error(msg["text"])
+        elif msg["type"] == "warning":
+            st.warning(msg["text"])
+        elif msg["type"] == "info":
+            st.info(msg["text"])
 
 
 def render_pending_trades_page() -> None:
     """Render the pending trades page."""
     st.title("📋 Pending Trades")
     st.caption("Review and apply trade recommendations from agent executions.")
+
+    # Display persistent messages from previous actions
+    _display_persistent_messages()
 
     log_service = ExecutionLogService()
 
@@ -31,20 +56,29 @@ def render_pending_trades_page() -> None:
             executed = set()
             if log.executed_trades_json:
                 executed = set(json.loads(log.executed_trades_json))
+            
+            rejected = set()
+            if log.rejected_trades_json:
+                rejected = set(json.loads(log.rejected_trades_json))
 
-            pending_count = len([i for i in range(len(recommendations)) if i not in executed])
-            if pending_count > 0:
-                logs_with_pending.append((log, recommendations, executed, pending_count))
+            # Pending = not executed AND not rejected
+            pending_indices = [
+                i for i in range(len(recommendations)) 
+                if i not in executed and i not in rejected
+            ]
+            
+            if pending_indices:
+                logs_with_pending.append((log, recommendations, executed, rejected, pending_indices))
         except json.JSONDecodeError:
             continue
 
     if not logs_with_pending:
-        st.info("🎉 No pending trades! All recommendations have been applied or there are no recent executions.")
+        st.info("🎉 No pending trades! All recommendations have been applied or rejected.")
         st.caption("Run agents from the Portfolios page to generate new recommendations.")
         return
 
     # Summary metrics
-    total_pending = sum(count for _, _, _, count in logs_with_pending)
+    total_pending = sum(len(indices) for _, _, _, _, indices in logs_with_pending)
     total_executions = len(logs_with_pending)
 
     col1, col2, col3 = st.columns(3)
@@ -56,85 +90,247 @@ def render_pending_trades_page() -> None:
         # Count by action type
         total_buys = 0
         total_sells = 0
-        for _, recs, executed, _ in logs_with_pending:
-            for i, rec in enumerate(recs):
-                if i not in executed:
-                    if rec.get("action") == "BUY":
-                        total_buys += 1
-                    else:
-                        total_sells += 1
+        for _, recs, _, _, indices in logs_with_pending:
+            for i in indices:
+                rec = recs[i]
+                if rec.get("action") == "BUY":
+                    total_buys += 1
+                else:
+                    total_sells += 1
         st.metric("BUY / SELL", f"{total_buys} / {total_sells}")
 
     st.divider()
 
+    # Initialize security service for ticker lookups
+    security_service = SecurityService()
+
     # Render each execution's pending trades
-    for log, recommendations, executed, pending_count in logs_with_pending:
+    for log, recommendations, executed, rejected, pending_indices in logs_with_pending:
         with st.expander(
-            f"**{log.portfolio_name}** — {log.timestamp.strftime('%Y-%m-%d %H:%M')} — {pending_count} pending",
+            f"**{log.portfolio_name}** — {log.timestamp.strftime('%Y-%m-%d %H:%M')} — {len(pending_indices)} pending",
             expanded=True,
         ):
-            _render_pending_trades_for_log(log, recommendations, executed, log_service)
+            _render_pending_trades_for_log(
+                log, recommendations, pending_indices, log_service, security_service
+            )
 
 
 def _render_pending_trades_for_log(
     log,
     recommendations: list[dict],
-    executed: set,
+    pending_indices: list[int],
     log_service: ExecutionLogService,
+    security_service: SecurityService,
 ) -> None:
     """Render pending trades for a single execution log."""
-    pending_indices = [i for i in range(len(recommendations)) if i not in executed]
+    
+    # Load portfolio state for cash validation
+    portfolio_service = PortfolioService(security_service=security_service)
+    portfolios = portfolio_service.list_portfolios()
+    portfolio_filename = None
+    portfolio_state = None
+    
+    for filename in portfolios:
+        config, state = portfolio_service.load_portfolio(filename)
+        if config.name == log.portfolio_name:
+            portfolio_filename = filename
+            portfolio_state = state
+            break
+
+    available_cash = portfolio_state.cash if portfolio_state else 0.0
+    is_empty_portfolio = (
+        portfolio_state is not None
+        and len(portfolio_state.holdings) == 0
+        and len(portfolio_state.trades) == 0
+    )
 
     # Build selection UI
     selected_indices = []
+    trade_validity = {}  # Track which trades are valid (ticker found)
+    key_prefixes = []  # Track key prefixes for ISIN application
 
-    # Select all checkbox
+    # First pass: check all tickers and collect validity info
+    for i in pending_indices:
+        rec = recommendations[i]
+        ticker = rec.get("ticker", "")
+        key_prefix = f"pending_{log.id}_{i}"
+        key_prefixes.append(key_prefix)
+
+        # Check if ticker has been corrected
+        correction_key = f"{key_prefix}_ticker_correction"
+        corrected_ticker = st.session_state.get(correction_key, ticker)
+
+        # Try to get price
+        try:
+            price = security_service.get_price(corrected_ticker)
+            is_valid = price is not None and price > 0
+            trade_validity[i] = {
+                "is_valid": is_valid,
+                "corrected_ticker": corrected_ticker,
+                "price": price,
+                "error": None,
+            }
+        except Exception as e:
+            trade_validity[i] = {
+                "is_valid": False,
+                "corrected_ticker": corrected_ticker,
+                "price": None,
+                "error": str(e),
+            }
+
+    # Select all checkbox (only selects valid trades)
     select_all_key = f"select_all_{log.id}"
-    select_all = st.checkbox("Select all", key=select_all_key)
+    select_all = st.checkbox("Select all valid trades", key=select_all_key)
 
     for i in pending_indices:
         rec = recommendations[i]
-        col1, col2, col3, col4, col5 = st.columns([0.5, 1, 1.5, 1, 4])
+        ticker = rec.get("ticker", "")
+        key_prefix = f"pending_{log.id}_{i}"
+        validity = trade_validity[i]
+        corrected_ticker = validity["corrected_ticker"]
+        is_valid = validity["is_valid"]
+        price = validity["price"]
+        error = validity["error"]
 
-        with col1:
-            checkbox_key = f"pending_{log.id}_{i}"
-            # If select all is checked, this should be checked too
-            if select_all:
-                st.session_state[checkbox_key] = True
-            is_selected = st.checkbox("Select trade", key=checkbox_key, label_visibility="collapsed")
-            if is_selected:
-                selected_indices.append(i)
+        with st.container(border=True):
+            col1, col2, col3, col4, col5 = st.columns([0.5, 1, 2, 1, 0.5])
 
-        with col2:
-            action = rec.get("action", "")
-            action_color = "#00ff41" if action == "BUY" else "#ff0000"
-            st.markdown(f"<span style='color:{action_color};font-weight:bold'>{action}</span>", unsafe_allow_html=True)
+            with col1:
+                checkbox_key = f"pending_{log.id}_{i}"
+                # If select all is checked and trade is valid, check it
+                if select_all and is_valid:
+                    st.session_state[checkbox_key] = True
+                # Auto-enable if ticker was corrected and is now valid
+                was_corrected = corrected_ticker != ticker
+                if was_corrected and is_valid:
+                    st.session_state[checkbox_key] = True
 
-        with col3:
-            st.markdown(f"**{rec.get('ticker', '')}**")
+                is_selected = st.checkbox(
+                    "Select trade",
+                    key=checkbox_key,
+                    label_visibility="collapsed",
+                    disabled=not is_valid,
+                )
+                if is_selected and is_valid:
+                    selected_indices.append(i)
 
-        with col4:
-            st.write(f"{rec.get('quantity', 0)} shares")
+            with col2:
+                action = rec.get("action", "")
+                action_color = "#00ff41" if action == "BUY" else "#ff0000"
+                st.markdown(f"<span style='color:{action_color};font-weight:bold'>{action}</span>", unsafe_allow_html=True)
 
-        with col5:
+            with col3:
+                st.markdown(f"**{corrected_ticker}**")
+                if corrected_ticker != ticker:
+                    st.caption(f"(was: {ticker})")
+
+            with col4:
+                quantity = rec.get("quantity", 0)
+                if price:
+                    cost = price * quantity
+                    st.write(f"{quantity} × ${price:.2f} = ${cost:,.2f}")
+                else:
+                    st.write(f"{quantity} shares")
+            
+            with col5:
+                # Delete button
+                if st.button("🗑️", key=f"delete_{log.id}_{i}", help="Reject this trade"):
+                    _reject_trade(log, i, log_service)
+
+            # Show reasoning
             reasoning = rec.get("reasoning", "")
-            st.caption(reasoning[:80] + "..." if len(reasoning) > 80 else reasoning)
+            st.caption(f"💭 {reasoning[:120]}..." if len(reasoning) > 120 else f"💭 {reasoning}")
+
+            # Show ticker correction UI if invalid
+            if not is_valid:
+                result = render_ticker_correction(
+                    original_ticker=ticker,
+                    key_prefix=key_prefix,
+                    security_service=security_service,
+                    show_isin_input=True,
+                )
+                # If correction made it valid, show success
+                if result.is_valid and result.corrected_ticker != ticker:
+                    st.success(f"✓ Ticker corrected to {result.corrected_ticker} - trade is now ready!")
 
     st.markdown("---")
 
+    # Calculate cash totals for selected trades
+    total_buy_cost = 0.0
+    total_sell_proceeds = 0.0
+    for i in selected_indices:
+        rec = recommendations[i]
+        validity = trade_validity.get(i, {})
+        price = validity.get("price", 0) or 0
+        quantity = rec.get("quantity", 0)
+        action = rec.get("action", "")
+
+        if action == "BUY" and price > 0:
+            total_buy_cost += price * quantity
+        elif action == "SELL" and price > 0:
+            total_sell_proceeds += price * quantity
+
+    net_cash_change = total_sell_proceeds - total_buy_cost
+    cash_after_trades = available_cash + net_cash_change
+    has_sufficient_cash = cash_after_trades >= 0 or is_empty_portfolio
+
+    # Show cash summary
+    st.markdown(f"**Available Cash:** ${available_cash:,.2f}")
+    if len(selected_indices) > 0:
+        summary_parts = []
+        if total_sell_proceeds > 0:
+            summary_parts.append(f"+${total_sell_proceeds:,.2f} (sells)")
+        if total_buy_cost > 0:
+            summary_parts.append(f"-${total_buy_cost:,.2f} (buys)")
+
+        if summary_parts:
+            cash_color = "#00ff41" if cash_after_trades >= 0 else "#ff6b6b"
+            after_trades_html = (
+                f"**After trades:** {' '.join(summary_parts)} = "
+                f"<span style='color:{cash_color};font-weight:bold'>${cash_after_trades:,.2f}</span>"
+            )
+            st.markdown(after_trades_html, unsafe_allow_html=True)
+
+        if not has_sufficient_cash:
+            st.error(f"⚠️ Insufficient cash! Need ${-cash_after_trades:,.2f} more.")
+        elif is_empty_portfolio and cash_after_trades < 0:
+            st.info(f"ℹ️ Initial portfolio setup - cash will be increased by ${-cash_after_trades:,.2f}")
+
     col1, col2 = st.columns([1, 3])
     with col1:
+        button_disabled = len(selected_indices) == 0 or not has_sufficient_cash
         if st.button(
             f"✓ Apply {len(selected_indices)} Trade(s)",
             key=f"apply_pending_{log.id}",
             type="primary",
-            disabled=len(selected_indices) == 0,
+            disabled=button_disabled,
         ):
-            _apply_pending_trades(log, recommendations, selected_indices, log_service)
+            # Build ticker corrections map
+            ticker_corrections = {}
+            for i in pending_indices:
+                key_prefix = f"pending_{log.id}_{i}"
+                correction_key = f"{key_prefix}_ticker_correction"
+                if correction_key in st.session_state:
+                    ticker_corrections[i] = st.session_state[correction_key]
+
+            # Apply ISIN corrections before executing
+            apply_isin_corrections(
+                key_prefixes=[f"pending_{log.id}_{i}" for i in selected_indices],
+                tickers=[recommendations[i].get("ticker", "") for i in selected_indices],
+                security_service=security_service,
+            )
+
+            _apply_pending_trades(
+                log, recommendations, selected_indices, log_service, ticker_corrections,
+                increase_cash_if_needed=is_empty_portfolio,
+            )
+
+            # Clear ticker corrections after applying
+            clear_ticker_corrections([f"pending_{log.id}_{i}" for i in pending_indices])
 
     with col2:
         if len(selected_indices) == 0:
-            st.caption("Select trades to apply")
+            st.caption("Select valid trades to apply")
         else:
             # Show summary
             buys = sum(1 for i in selected_indices if recommendations[i].get("action") == "BUY")
@@ -142,13 +338,47 @@ def _render_pending_trades_for_log(
             st.caption(f"Selected: {buys} BUY, {sells} SELL")
 
 
+def _reject_trade(log, trade_index: int, log_service: ExecutionLogService) -> None:
+    """Reject a single trade."""
+    # Get existing rejected trades
+    rejected = set()
+    if log.rejected_trades_json:
+        try:
+            rejected = set(json.loads(log.rejected_trades_json))
+        except json.JSONDecodeError:
+            pass
+    
+    rejected.add(trade_index)
+    log_service.mark_trades_rejected(log.id, list(rejected))
+    
+    st.session_state["pending_trades_messages"] = [{
+        "type": "info",
+        "text": "Trade rejected.",
+    }]
+    st.rerun()
+
+
 def _apply_pending_trades(
     log,
     recommendations: list[dict],
     selected_indices: list[int],
     log_service: ExecutionLogService,
+    ticker_corrections: dict[int, str] | None = None,
+    increase_cash_if_needed: bool = False,
 ) -> None:
-    """Apply selected pending trades to the portfolio."""
+    """Apply selected pending trades to the portfolio.
+
+    Args:
+        log: The execution log entry
+        recommendations: List of trade recommendations
+        selected_indices: Indices of trades to apply
+        log_service: Service for updating execution logs
+        ticker_corrections: Optional dict mapping trade index to corrected ticker
+        increase_cash_if_needed: If True, increase cash for initial portfolio setup
+    """
+    if ticker_corrections is None:
+        ticker_corrections = {}
+
     security_service = SecurityService()
     portfolio_service = PortfolioService(security_service=security_service)
 
@@ -167,6 +397,30 @@ def _apply_pending_trades(
 
     config, state = portfolio_service.load_portfolio(portfolio_filename)
 
+    # If this is an empty portfolio and we need more cash, increase it
+    if increase_cash_if_needed:
+        # Calculate total cost of BUY trades
+        total_buy_cost = 0.0
+        for i in selected_indices:
+            rec = recommendations[i]
+            if rec.get("action") == "BUY":
+                ticker = ticker_corrections.get(i, rec.get("ticker", ""))
+                quantity = rec.get("quantity", 0)
+                try:
+                    price = security_service.get_price(ticker)
+                    if price:
+                        total_buy_cost += price * quantity
+                except Exception:
+                    pass
+
+        # If we need more cash, increase it
+        if total_buy_cost > state.cash:
+            cash_needed = total_buy_cost - state.cash
+            state.cash += cash_needed + 100  # Add a small buffer
+
+        # Record actual initial investment (cash before first trades)
+        state.initial_investment = state.cash
+
     errors = []
     applied_indices = []
 
@@ -178,7 +432,8 @@ def _apply_pending_trades(
 
     for i in sorted_indices:
         rec = recommendations[i]
-        ticker = rec.get("ticker", "")
+        # Use corrected ticker if available, otherwise use original
+        ticker = ticker_corrections.get(i, rec.get("ticker", ""))
         action = rec.get("action", "")
         quantity = rec.get("quantity", 0)
         reasoning = rec.get("reasoning", "")
@@ -209,11 +464,22 @@ def _apply_pending_trades(
     all_executed = list(existing_executed | set(applied_indices))
     log_service.mark_trades_executed(log.id, all_executed)
 
+    # Store messages in session state for persistence across rerun
+    messages = []
     if applied_indices:
-        st.success(f"Successfully applied {len(applied_indices)} trade(s)!")
+        messages.append({
+            "type": "success",
+            "text": f"Successfully applied {len(applied_indices)} trade(s)!",
+        })
 
     if errors:
         for error in errors:
-            st.error(error)
+            messages.append({
+                "type": "error",
+                "text": error,
+            })
+
+    if messages:
+        st.session_state["pending_trades_messages"] = messages
 
     st.rerun()

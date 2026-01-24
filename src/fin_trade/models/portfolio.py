@@ -62,3 +62,4 @@ class PortfolioState:
     holdings: list[Holding] = field(default_factory=list)
     trades: list[Trade] = field(default_factory=list)
     last_execution: datetime | None = None
+    initial_investment: float | None = None  # Actual amount invested (set on first trades)

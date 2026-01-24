@@ -122,11 +122,24 @@ class PortfolioService:
         if data.get("last_execution"):
             last_execution = self._to_naive_datetime(datetime.fromisoformat(data["last_execution"]))
 
+        # Calculate initial_investment from trade history if not recorded
+        initial_investment = data.get("initial_investment")
+        if initial_investment is None and trades:
+            # Reverse trades to find initial cash
+            reconstructed_cash = float(data["cash"])
+            for trade in trades:
+                if trade.action == "BUY":
+                    reconstructed_cash += trade.price * trade.quantity
+                else:  # SELL
+                    reconstructed_cash -= trade.price * trade.quantity
+            initial_investment = reconstructed_cash
+
         return PortfolioState(
             cash=float(data["cash"]),
             holdings=holdings,
             trades=trades,
             last_execution=last_execution,
+            initial_investment=initial_investment,
         )
 
     def load_portfolio(self, name: str) -> tuple[PortfolioConfig, PortfolioState]:
@@ -167,6 +180,7 @@ class PortfolioService:
             "last_execution": (
                 state.last_execution.isoformat() if state.last_execution else None
             ),
+            "initial_investment": state.initial_investment,
         }
 
         with open(state_path, "w", encoding="utf-8") as f:
@@ -188,7 +202,8 @@ class PortfolioService:
     ) -> tuple[float, float]:
         """Calculate absolute and percentage gain/loss."""
         current_value = self.calculate_value(state)
-        initial = config.initial_amount
+        # Use actual initial investment if recorded, otherwise fall back to config
+        initial = state.initial_investment or config.initial_amount
         absolute_gain = current_value - initial
         percentage_gain = (absolute_gain / initial) * 100 if initial > 0 else 0
         return absolute_gain, percentage_gain
@@ -221,6 +236,8 @@ class PortfolioService:
         reasoning: str,
     ) -> PortfolioState:
         """Execute a trade and return updated state."""
+        if quantity <= 0:
+            raise ValueError(f"Invalid quantity: {quantity}. Must be greater than 0.")
         # Lookup security info from ticker
         security = self.security_service.lookup_ticker(ticker)
         # Force update price when executing trades to ensure fresh data

@@ -86,10 +86,13 @@ def _create_mini_chart(
     if not state.trades:
         return None
 
+    # Use actual initial investment if recorded, otherwise fall back to config
+    initial = state.initial_investment or config.initial_amount
+
     # Calculate portfolio value at each trade point (same logic as detail page)
-    cash_values = [config.initial_amount]
+    cash_values = [initial]
     holdings_values = [0.0]
-    cash = config.initial_amount
+    cash = initial
     holdings: dict[str, dict] = {}
 
     for trade in state.trades[-20:]:  # Last 20 trades for mini chart

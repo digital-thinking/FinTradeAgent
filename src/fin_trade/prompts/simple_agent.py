@@ -21,11 +21,18 @@ CONSTRAINTS:
 - You can only SELL stocks you currently own
 - You can only BUY with available cash
 - Each trade must include reasoning
+- Every trade MUST have quantity > 0 (no zero-share trades allowed)
+- If fewer good opportunities exist, return fewer trades - do NOT pad with 0-quantity placeholder trades
+- NO DUPLICATE TRADES: Each ticker can appear ONLY ONCE per action. If you want to buy 300 shares of LCID, submit ONE trade for 300 shares, NOT multiple trades of 50 shares each
 
-STOCK IDENTIFICATION:
-- You may trade ANY publicly listed stock
-- Use the stock's ticker symbol (e.g., AAPL, MSFT, GOOGL)
+STOCK IDENTIFICATION - CRITICAL:
+- You may ONLY trade stocks that ACTUALLY EXIST on real exchanges
+- Use REAL ticker symbols (e.g., AAPL for Apple, MSFT for Microsoft, GOOGL for Alphabet)
+- NEVER invent or make up ticker symbols - all tickers will be verified against real market data
+- If a ticker cannot be found, the trade will be REJECTED
+- Do NOT use placeholder names like "COMA", "COMC", "Company A", etc. - use REAL companies only
 - Your location is Germany and your currency is Dollar
+- For German stocks, use the correct exchange suffix (e.g., BAS.DE for BASF, SAP.DE for SAP)
 
 REAL-TIME DATA:
 - You have access to web search - USE IT to get current stock prices, news, and market data
@@ -64,12 +71,18 @@ RESEARCH TASK:
 2. Look up information about sectors or stocks relevant to this strategy
 3. Find any recent developments that could impact trading decisions
 4. Focus on actionable, current information (not general market education)
+5. Identify REAL, specific stock opportunities with their ACTUAL ticker symbols
 
 Provide a concise summary of your findings organized by:
 - Overall market conditions
 - Sector-specific news (if relevant to strategy)
 - Individual stock news (for current holdings and potential opportunities)
+- Specific BUY candidates with their REAL ticker symbols (e.g., AAPL, NVDA, MSFT)
 - Key risks or catalysts to watch
+
+IMPORTANT: Only mention stocks that ACTUALLY EXIST with their REAL ticker symbols.
+Do NOT use placeholder names like "Company A" or made-up tickers like "COMA".
+All stocks must be verifiable on real exchanges (NYSE, NASDAQ, XETRA, etc.).
 
 Keep the summary focused and relevant to the strategy. No fluff."""
 
@@ -104,7 +117,15 @@ CRITICAL RULES (MUST FOLLOW):
 - Do NOT express doubt about data freshness or accuracy - the research IS current and correct
 - Do NOT refuse to make decisions or defer action - be decisive and commit to specific recommendations
 - Your job is to ANALYZE and RECOMMEND, not to gatekeep or request additional research
-- If the research mentions specific prices/spreads, TRUST THEM and use them in your calculations"""
+- If the research mentions specific prices/spreads, TRUST THEM and use them in your calculations
+
+TICKER VALIDATION - EXTREMELY IMPORTANT:
+- ONLY recommend stocks that ACTUALLY EXIST on real stock exchanges
+- Use REAL ticker symbols (e.g., AAPL, MSFT, NVDA, AMZN, META, TSLA, JPM, V, etc.)
+- NEVER invent fictional tickers - all tickers will be verified and fake ones will be REJECTED
+- Do NOT use placeholders like "COMA", "COMC", "XYZ", "Company A/B/C" - these do not exist
+- For German/European stocks, use correct suffixes (e.g., BAS.DE, SAP.DE, VOW3.DE)
+- If you're unsure if a ticker exists, choose a well-known stock you're confident about"""
 
 
 # Generate trades prompt - converts analysis to JSON trade recommendations
@@ -141,4 +162,14 @@ CRITICAL RULES (MUST FOLLOW):
 - Do NOT refuse to generate trades - the analysis IS your authoritative source
 - Do NOT say you need verification or live data - use the analysis directly
 - If the analysis recommends selling due to tight spreads, GENERATE THE SELL ORDER
-- Return valid JSON only - no explanatory text before or after"""
+- Return valid JSON only - no explanatory text before or after
+- EVERY trade MUST have quantity > 0 - zero-share trades are INVALID and will be rejected
+- Do NOT include trades with quantity 0 just to meet a trade count requirement - only include real trades
+- NO DUPLICATE TICKERS: Each ticker can appear ONLY ONCE. Combine all shares into ONE trade (e.g., buy 300 LCID once, not 6x50 LCID)
+
+TICKER VALIDATION - EXTREMELY IMPORTANT:
+- ONLY use ticker symbols for stocks that ACTUALLY EXIST (e.g., AAPL, MSFT, NVDA, GOOGL, AMZN)
+- NEVER invent or make up tickers - all tickers are validated against real market data
+- Fake tickers like "COMA", "COMC", "XYZ", "ABC" will be REJECTED and cause execution failure
+- If the analysis mentions a dubious ticker, replace it with a real, well-known alternative
+- Use official exchange tickers only (NYSE, NASDAQ, XETRA, etc.)"""
