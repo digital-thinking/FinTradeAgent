@@ -23,10 +23,10 @@ strategy_prompt: |
   - BUY SIGNAL: 2+ Insiders buying >€50k total + Price is near support.
   - SELL SIGNAL: Significant insider selling (excluding tax-related sales).
 
-initial_amount: 10000.0
+initial_amount: 1000.0
 num_initial_trades: 5
 trades_per_run: 3
 run_frequency: weekly
 llm_provider: openai
-llm_model: gpt-4o
+llm_model: gpt-5.2
 agent_mode: langgraph

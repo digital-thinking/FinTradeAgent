@@ -61,7 +61,7 @@ strategy_prompt: |
 
   IMPORTANT: Always research the CURRENT status of any deal before recommending. Deals can be amended, extended, or terminated. Use web search to verify latest news.
 
-initial_amount: 10000.0
+initial_amount: 1000.0
 num_initial_trades: 3
 trades_per_run: 3
 run_frequency: daily

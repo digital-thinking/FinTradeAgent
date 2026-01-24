@@ -44,23 +44,22 @@ class AgentService:
     ) -> None:
         """Save prompt and response to log file for debugging."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = _logs_dir / f"{portfolio_name}_{timestamp}.log"
+        log_file = _logs_dir / f"{portfolio_name}_{timestamp}.md"
 
-        log_content = f"""================================================================================
-AGENT LOG - {datetime.now().isoformat()}
-================================================================================
-Portfolio: {portfolio_name}
-Provider: {provider}
-Model: {model}
+        log_content = f"""# Agent Log - {datetime.now().isoformat()}
 
-================================================================================
-PROMPT
-================================================================================
+**Portfolio:** {portfolio_name}
+**Provider:** {provider}
+**Model:** {model}
+
+## Prompt
+
+```text
 {prompt}
+```
 
-================================================================================
-RESPONSE
-================================================================================
+## Response
+
 {response}
 """
         with open(log_file, "w", encoding="utf-8") as f:

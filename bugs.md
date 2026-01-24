@@ -12,7 +12,7 @@
 
 ## 📦 Bugs:
 
-- [ ] **Pending Trades: Missing ticker correction UI**
+- [x] **Pending Trades: Missing ticker correction UI** ✅ Fixed
     - When a ticker is invalid/not found (e.g., wrong symbol, regional variant like "BASF" vs "BAS.DE"), the Pending Trades page cannot execute the trade
     - The portfolio detail page has a ticker correction UI that allows users to:
       - Correct the ticker symbol
@@ -23,8 +23,9 @@
       - Use the component in both `trade_display.py` and `pages/pending_trades.py`
       - The component should handle: ticker input, verify button, ISIN input, price lookup feedback
     - **Primary Files:** `src/fin_trade/components/ticker_correction.py` (new), `src/fin_trade/components/trade_display.py`, `src/fin_trade/pages/pending_trades.py`
+    - **Resolution:** Created `ticker_correction.py` component with `render_ticker_correction()`, `apply_isin_corrections()`, and `clear_ticker_corrections()` functions. Integrated into `pending_trades.py`.
 
-- [ ] **Error messages disappear too quickly**
+- [x] **Error messages disappear too quickly** ✅ Fixed
     - When an error occurs (e.g., ticker not found, trade execution fails), the error message flashes briefly and disappears almost instantly
     - Users don't have time to read the error message
     - The error should persist until the user takes action or navigates away
@@ -33,4 +34,14 @@
       - Consider storing errors in session state and displaying them persistently
       - Or remove/delay the rerun to let users see the message
     - **Primary Files:** `src/fin_trade/pages/pending_trades.py`, potentially other pages with similar issues
+    - **Resolution:** Store messages in session state before `st.rerun()` and display them via `_display_persistent_messages()` at the top of each page. Applied to both `pending_trades.py` and `system_health.py`.
 
+- [x] **Pending Trades: Cannot delete trades** ✅ Fixed
+    - Users should be able to delete/reject pending trades that they do not wish to execute.
+    - Currently, trades just sit in the "Pending" state until executed.
+    - **Implementation notes:**
+      - Add a "Delete" or "Reject" button next to each pending trade in the list.
+      - Upon clicking, remove the trade from the `PortfolioState.pending_trades` list.
+      - Save the updated state.
+    - **Primary Files:** `src/fin_trade/pages/pending_trades.py`, `src/fin_trade/services/portfolio.py`
+    - **Resolution:** Added a delete button to the pending trades UI. Implemented `_reject_trade` function to mark trades as rejected in the execution log, effectively removing them from the pending list.

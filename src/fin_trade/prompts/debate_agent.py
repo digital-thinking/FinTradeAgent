@@ -24,7 +24,10 @@ CURRENT HOLDINGS:
 CASH AVAILABLE: ${cash:.2f}
 
 Provide your BULL CASE analysis. Be specific about which stocks to BUY and why.
-Focus on opportunities that match the strategy."""
+Focus on opportunities that match the strategy.
+
+IMPORTANT: Only recommend stocks that ACTUALLY EXIST with REAL ticker symbols (e.g., AAPL, MSFT, NVDA).
+NEVER use placeholder names like "Company A" or made-up tickers like "COMA" - they will be rejected."""
 
 
 # Bear agent prompt - identifies risks and reasons to sell
@@ -51,7 +54,10 @@ CURRENT HOLDINGS:
 CASH AVAILABLE: ${cash:.2f}
 
 Provide your BEAR CASE analysis. Identify risks in current holdings and reasons
-to avoid or reduce positions. Be specific about concerns."""
+to avoid or reduce positions. Be specific about concerns.
+
+IMPORTANT: Only discuss stocks that ACTUALLY EXIST with REAL ticker symbols (e.g., AAPL, MSFT, NVDA).
+NEVER use placeholder names like "Company A" or made-up tickers - they will be rejected."""
 
 
 # Neutral analyst prompt - provides balanced, objective analysis
@@ -77,7 +83,10 @@ CURRENT HOLDINGS:
 CASH AVAILABLE: ${cash:.2f}
 
 Provide your NEUTRAL analysis. Assess fair values, risk/reward, and appropriate
-position sizes. Be objective and data-driven."""
+position sizes. Be objective and data-driven.
+
+IMPORTANT: Only analyze stocks that ACTUALLY EXIST with REAL ticker symbols (e.g., AAPL, MSFT, NVDA).
+NEVER use placeholder names like "Company A" or made-up tickers - they will be rejected."""
 
 
 # Debate round prompt - for rebuttals between agents
@@ -123,4 +132,11 @@ Synthesize the debate and make a final decision. Consider:
 4. What position size is appropriate given conviction level?
 
 Deliver a clear verdict with specific reasoning. Your analysis should conclude with
-concrete BUY/SELL/HOLD recommendations for specific tickers mentioned in the debate."""
+concrete BUY/SELL/HOLD recommendations for specific tickers mentioned in the debate.
+
+CRITICAL - TICKER VALIDATION:
+- ONLY recommend stocks that ACTUALLY EXIST on real exchanges with REAL ticker symbols
+- Examples of valid tickers: AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA, JPM, V, MA
+- NEVER use placeholder names like "Company A/B/C" or made-up tickers like "COMA", "COMC", "XYZ"
+- All tickers will be verified against real market data - fake tickers will be REJECTED
+- If debate participants mentioned invalid tickers, substitute with real alternatives"""

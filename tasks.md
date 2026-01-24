@@ -14,28 +14,15 @@
 *Focus: Code structure, maintainability, and resilience.*
 *Primary Files: `src/fin_trade/services/agent.py`, `src/fin_trade/services/llm_provider.py` (new), `src/fin_trade/prompts/` (new)*
 
-- [x] **Dependency Injection for LLM Providers**
-    - Create `LLMProvider` abstract base class.
-    - Implement `OpenAIProvider` and `AnthropicProvider`.
-    - Refactor `AgentService` to use these providers instead of hardcoded logic.
-- [x] **Centralized Prompt Management**
-    - Create a `prompts` module or directory.
-    - Move all hardcoded prompts (from `agent.py`, `nodes/*.py`) into templates (simple strings).
+- [ ] **Scheduled Execution**
+    - Implement background job runner (e.g., APScheduler) to run agents automatically at defined intervals (daily/weekly).
+    - Create a `SchedulerService` to manage job persistence and execution.
+    - Add UI controls to enable/disable auto-execution per portfolio.
 
 ## 📦 Package B: UI Foundation (Components & Style)
 *Focus: Visual consistency, reusable components, and basic UI elements.*
 *Primary Files: `src/fin_trade/components/`, `src/fin_trade/pages/` (visual tweaks), `src/fin_trade/app.py` (CSS)*
 
-- [x] **Extract Reusable Components**
-    - Create shared components for Status Badges, Trade Action colors, and Portfolio Metrics.
-    - Refactor `overview.py` and `portfolio_detail.py` to use them.
-- [x] **Consistent Button Hierarchy**
-    - Define and apply primary/secondary/danger button styles consistently across the app.
-- [x] **Loading Skeletons**
-    - Create a skeleton loader component.
-    - Replace blank states with skeletons during data fetching.
-- [x] **Use Dataframes for Tables**
-    - Replace divider-based row layouts in Holdings and Trade History with `st.dataframe()` for sorting/scanning.
 - [x] **Improve the Performance chart**
     - Fully rework it
     - Make it more interactive
@@ -44,44 +31,36 @@
 *Focus: High-level application structure and portfolio management views.*
 *Primary Files: `src/fin_trade/pages/overview.py`, `src/fin_trade/pages/dashboard.py` (new), `src/fin_trade/app.py`*
 
-- [x] **Summary Dashboard**
-    - Create a new tab/view showing total value across all strategies.
-    - Show best/worst performers and upcoming scheduled runs.
-- [x] **Ticker Correction UI**
-    - Improve the UI for handling unknown tickers (move from expander to inline).
+- [ ] **Performance Attribution**
+    - Create a new analysis module to calculate contribution to return by sector and ticker.
+    - Visualize attribution in the dashboard (e.g., "Tech sector +5%, Energy -2%").
+    - Use the industry/sector information from the already existent json of the ISIN stock data
 
 ## 📦 Package E: Agent Interaction Flow
 *Focus: The user experience of running agents and reviewing results.*
 *Primary Files: `src/fin_trade/pages/portfolio_detail.py`, `src/fin_trade/agents/`, `src/fin_trade/services/agent.py`*
 
-- [x] **User Feedback Loop**
-    - Add UI to inject user feedback *during* the debate or before generation.
-    - Update agent graph to accept user input node.
-- [x] **Fix the formatting issues from the markdown agent output **
-    - Sometimes text is very large
-    - It may contain links (html #section links) that don't work because they refer to sources not rendered.
-- [x] **Detailed Transaction Logs**
-    - Store execution logs (tokens, latency, model) in SQLite or something similar.
-    - Create a view to inspect these logs (System Health/Cost Analysis).
-- [x] **Paginate Trade History**
-    - Add pagination or "Load More" to the trade history tab.
+- [ ] **Stop-Loss & Take-Profit**
+    - Update `TradeRecommendation` model to include `stop_loss_price` and `take_profit_price`.
+    - Update agent prompts to require these fields for every BUY order.
+    - Visualize these levels on the trade review card.
 
 ## 📦 Package F: Testing & Optimization
 *Focus: Quality assurance, performance, and stability.*
 *Primary Files: `tests/`, `src/fin_trade/services/stock_data.py`, `src/fin_trade/app.py`*
 
-- [x] **Unit & Integration Tests**
-    - Create `tests/` directory.
-    - Add tests for `PortfolioService` and `validate_node`.
-    - Create mocks for `SecurityService` and LLM calls.
-- [x] **Improve Test Coverage to 60%**
-    - Coverage improved: 39% → 55% (108 tests)
-    - Achieved coverage:
-        - `services/security.py`: 18% → 85%
-        - `services/stock_data.py`: 19% → 86%
-        - `services/llm_provider.py`: 28% → 91%
-        - `services/execution_log.py`: 41% → 100%
-- [x] **UI Caching**
-    - Add `@st.cache_data` to expensive calculations (`calculate_value`, `calculate_gain`).
 - [ ] **Asynchronous Execution**
     - Optimize backend processing to ensure UI responsiveness.
+- [ ] **Backtesting Framework**
+    - Create a `BacktestService` to simulate portfolio state over historical data.
+    - Implement a "Time Machine" mode where the agent sees data only up to a specific past date.
+    - Generate a report comparing agent performance vs. buy-and-hold SPY.
+
+## 📦 Package G: Data & Intelligence (New)
+*Focus: Expanding data sources and agent intelligence.*
+*Primary Files: `src/fin_trade/services/stock_data.py`, `src/fin_trade/services/agent.py`*
+
+- [ ] **Data Source Expansion**
+    - **Earnings**: Integrate an earnings calendar API to warn agents of upcoming volatility.
+    - **SEC Filings**: Fetch recent 8-K/10-Q summaries for held companies.
+    - **Sentiment**: Scrape and aggregate sentiment scores from news headlines.

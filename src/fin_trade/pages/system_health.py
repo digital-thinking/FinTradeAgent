@@ -12,9 +12,29 @@ from fin_trade.services import PortfolioService
 from fin_trade.services.security import SecurityService
 
 
+def _display_persistent_messages() -> None:
+    """Display and clear persistent messages from session state."""
+    messages = st.session_state.pop("system_health_messages", None)
+    if not messages:
+        return
+
+    for msg in messages:
+        if msg["type"] == "success":
+            st.success(msg["text"])
+        elif msg["type"] == "error":
+            st.error(msg["text"])
+        elif msg["type"] == "warning":
+            st.warning(msg["text"])
+        elif msg["type"] == "info":
+            st.info(msg["text"])
+
+
 def render_system_health_page() -> None:
     """Render the system health and analytics page."""
     st.title("System Health & Analytics")
+
+    # Display persistent messages from previous actions
+    _display_persistent_messages()
 
     log_service = ExecutionLogService()
 
@@ -441,11 +461,22 @@ def _apply_pending_trades(
     all_executed = list(existing_executed | set(applied_indices))
     log_service.mark_trades_executed(log.id, all_executed)
 
+    # Store messages in session state for persistence across rerun
+    messages = []
     if applied_indices:
-        st.success(f"Successfully applied {len(applied_indices)} trade(s)!")
+        messages.append({
+            "type": "success",
+            "text": f"Successfully applied {len(applied_indices)} trade(s)!",
+        })
 
     if errors:
         for error in errors:
-            st.error(error)
+            messages.append({
+                "type": "error",
+                "text": error,
+            })
+
+    if messages:
+        st.session_state["system_health_messages"] = messages
 
     st.rerun()

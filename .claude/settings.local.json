@@ -6,7 +6,8 @@
       "Bash(poetry lock:*)",
       "Bash(poetry run python:*)",
       "Bash(python -c:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(poetry run pytest:*)"
     ]
   }
 }

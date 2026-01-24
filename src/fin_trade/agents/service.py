@@ -106,7 +106,7 @@ class LangGraphAgentService:
     ) -> None:
         """Save workflow execution to log file for debugging."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = _logs_dir / f"{portfolio_name}_{timestamp}_langgraph.log"
+        log_file = _logs_dir / f"{portfolio_name}_{timestamp}_langgraph.md"
 
         # Extract relevant info from state
         market_research = result.get("market_research", "N/A")
@@ -128,46 +128,42 @@ class LangGraphAgentService:
         metrics_lines = []
         for step_name, step_metrics in metrics.steps.items():
             metrics_lines.append(
-                f"  {step_name}: {step_metrics.duration_ms}ms, "
+                f"  - **{step_name}**: {step_metrics.duration_ms}ms, "
                 f"{step_metrics.input_tokens} in / {step_metrics.output_tokens} out tokens"
             )
         metrics_str = "\n".join(metrics_lines) if metrics_lines else "  No metrics collected"
 
-        log_content = f"""================================================================================
-LANGGRAPH AGENT LOG - {datetime.now().isoformat()}
-================================================================================
-Portfolio: {portfolio_name}
-Agent Mode: langgraph (simple)
-Retry Count: {retry_count}
-Error: {error or 'None'}
+        log_content = f"""# LangGraph Agent Log - {datetime.now().isoformat()}
 
-================================================================================
-METRICS
-================================================================================
-Total Duration: {metrics.total_duration_ms}ms
-Total Tokens: {metrics.total_tokens} ({metrics.total_input_tokens} in / {metrics.total_output_tokens} out)
+**Portfolio:** {portfolio_name}
+**Agent Mode:** langgraph (simple)
+**Retry Count:** {retry_count}
+**Error:** {error or 'None'}
 
-Per-Step Breakdown:
+## Metrics
+
+- **Total Duration:** {metrics.total_duration_ms}ms
+- **Total Tokens:** {metrics.total_tokens} ({metrics.total_input_tokens} in / {metrics.total_output_tokens} out)
+
+### Per-Step Breakdown
 {metrics_str}
 
-================================================================================
-MARKET RESEARCH
-================================================================================
+## Market Research
+
 {market_research}
 
-================================================================================
-ANALYSIS
-================================================================================
+## Analysis
+
 {analysis}
 
-================================================================================
-RECOMMENDATIONS
-================================================================================
-{recs_str}
+## Recommendations
 
-================================================================================
-OVERALL REASONING
-================================================================================
+```text
+{recs_str}
+```
+
+## Overall Reasoning
+
 {recommendations.overall_reasoning if recommendations else 'N/A'}
 """
         with open(log_file, "w", encoding="utf-8") as f:
@@ -429,7 +425,7 @@ class DebateAgentService:
     ) -> None:
         """Save debate workflow execution to log file for debugging."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = _logs_dir / f"{portfolio_name}_{timestamp}_debate.log"
+        log_file = _logs_dir / f"{portfolio_name}_{timestamp}_debate.md"
 
         # Extract debate info
         bull_pitch = result.get("bull_pitch", "N/A")
@@ -443,7 +439,7 @@ class DebateAgentService:
         # Format debate history
         debate_str = ""
         for msg in debate_history:
-            debate_str += f"\n[Round {msg['round']}] {msg['agent'].upper()}:\n{msg['message']}\n"
+            debate_str += f"\n**[Round {msg['round']}] {msg['agent'].upper()}:**\n\n{msg['message']}\n"
 
         recs_str = "None"
         if recommendations:
@@ -458,60 +454,53 @@ class DebateAgentService:
         metrics_lines = []
         for step_name, step_metrics in metrics.steps.items():
             metrics_lines.append(
-                f"  {step_name}: {step_metrics.duration_ms}ms, "
+                f"  - **{step_name}**: {step_metrics.duration_ms}ms, "
                 f"{step_metrics.input_tokens} in / {step_metrics.output_tokens} out tokens"
             )
         metrics_str = "\n".join(metrics_lines) if metrics_lines else "  No metrics collected"
 
-        log_content = f"""================================================================================
-DEBATE AGENT LOG - {datetime.now().isoformat()}
-================================================================================
-Portfolio: {portfolio_name}
-Agent Mode: debate
-Error: {error or 'None'}
+        log_content = f"""# Debate Agent Log - {datetime.now().isoformat()}
 
-================================================================================
-METRICS
-================================================================================
-Total Duration: {metrics.total_duration_ms}ms
-Total Tokens: {metrics.total_tokens} ({metrics.total_input_tokens} in / {metrics.total_output_tokens} out)
+**Portfolio:** {portfolio_name}
+**Agent Mode:** debate
+**Error:** {error or 'None'}
 
-Per-Step Breakdown:
+## Metrics
+
+- **Total Duration:** {metrics.total_duration_ms}ms
+- **Total Tokens:** {metrics.total_tokens} ({metrics.total_input_tokens} in / {metrics.total_output_tokens} out)
+
+### Per-Step Breakdown
 {metrics_str}
 
-================================================================================
-BULL CASE
-================================================================================
+## Bull Case
+
 {bull_pitch}
 
-================================================================================
-BEAR CASE
-================================================================================
+## Bear Case
+
 {bear_pitch}
 
-================================================================================
-NEUTRAL ANALYSIS
-================================================================================
+## Neutral Analysis
+
 {neutral_pitch}
 
-================================================================================
-DEBATE ROUNDS
-================================================================================
+## Debate Rounds
+
 {debate_str or "No debate rounds"}
 
-================================================================================
-MODERATOR VERDICT
-================================================================================
+## Moderator Verdict
+
 {moderator_analysis}
 
-================================================================================
-RECOMMENDATIONS
-================================================================================
-{recs_str}
+## Recommendations
 
-================================================================================
-OVERALL REASONING
-================================================================================
+```text
+{recs_str}
+```
+
+## Overall Reasoning
+
 {recommendations.overall_reasoning if recommendations else 'N/A'}
 """
         with open(log_file, "w", encoding="utf-8") as f:

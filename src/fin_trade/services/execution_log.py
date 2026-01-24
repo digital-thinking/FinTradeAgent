@@ -28,6 +28,7 @@ class ExecutionLogEntry:
     step_details: str  # JSON string of per-step metrics
     recommendations_json: str | None = None  # JSON string of trade recommendations
     executed_trades_json: str | None = None  # JSON string of executed trade indices
+    rejected_trades_json: str | None = None  # JSON string of rejected trade indices
 
 
 class ExecutionLogService:
@@ -57,7 +58,8 @@ class ExecutionLogService:
                     error_message TEXT,
                     step_details TEXT,
                     recommendations_json TEXT,
-                    executed_trades_json TEXT
+                    executed_trades_json TEXT,
+                    rejected_trades_json TEXT
                 )
             """)
             # Add new columns if they don't exist (migration for existing DBs)
@@ -67,6 +69,10 @@ class ExecutionLogService:
                 pass  # Column already exists
             try:
                 conn.execute("ALTER TABLE execution_logs ADD COLUMN executed_trades_json TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            try:
+                conn.execute("ALTER TABLE execution_logs ADD COLUMN rejected_trades_json TEXT")
             except sqlite3.OperationalError:
                 pass  # Column already exists
             conn.commit()
@@ -106,8 +112,8 @@ class ExecutionLogService:
                     timestamp, portfolio_name, agent_mode, model,
                     duration_ms, input_tokens, output_tokens, total_tokens,
                     num_trades, success, error_message, step_details,
-                    recommendations_json, executed_trades_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    recommendations_json, executed_trades_json, rejected_trades_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     datetime.now().isoformat(),
@@ -124,6 +130,7 @@ class ExecutionLogService:
                     step_details_json,
                     recommendations_json,
                     None,  # executed_trades_json starts as None
+                    None,  # rejected_trades_json starts as None
                 ),
             )
             conn.commit()
@@ -145,6 +152,22 @@ class ExecutionLogService:
             )
             conn.commit()
 
+    def mark_trades_rejected(self, log_id: int, rejected_indices: list[int]) -> None:
+        """Mark specific trades as rejected for a log entry.
+
+        Args:
+            log_id: The execution log ID
+            rejected_indices: List of trade indices (0-based) that were rejected
+        """
+        import json
+
+        with sqlite3.connect(_db_path) as conn:
+            conn.execute(
+                "UPDATE execution_logs SET rejected_trades_json = ? WHERE id = ?",
+                (json.dumps(rejected_indices), log_id),
+            )
+            conn.commit()
+
     def get_log_by_id(self, log_id: int) -> ExecutionLogEntry | None:
         """Get a single execution log by ID."""
         with sqlite3.connect(_db_path) as conn:
@@ -153,7 +176,7 @@ class ExecutionLogService:
                 SELECT id, timestamp, portfolio_name, agent_mode, model,
                        duration_ms, input_tokens, output_tokens, total_tokens,
                        num_trades, success, error_message, step_details,
-                       recommendations_json, executed_trades_json
+                       recommendations_json, executed_trades_json, rejected_trades_json
                 FROM execution_logs
                 WHERE id = ?
                 """,
@@ -180,6 +203,7 @@ class ExecutionLogService:
             step_details=row[12],
             recommendations_json=row[13],
             executed_trades_json=row[14],
+            rejected_trades_json=row[15],
         )
 
     def get_logs(
@@ -197,7 +221,7 @@ class ExecutionLogService:
                     SELECT id, timestamp, portfolio_name, agent_mode, model,
                            duration_ms, input_tokens, output_tokens, total_tokens,
                            num_trades, success, error_message, step_details,
-                           recommendations_json, executed_trades_json
+                           recommendations_json, executed_trades_json, rejected_trades_json
                     FROM execution_logs
                     WHERE portfolio_name = ?
                     ORDER BY timestamp DESC
@@ -211,7 +235,7 @@ class ExecutionLogService:
                     SELECT id, timestamp, portfolio_name, agent_mode, model,
                            duration_ms, input_tokens, output_tokens, total_tokens,
                            num_trades, success, error_message, step_details,
-                           recommendations_json, executed_trades_json
+                           recommendations_json, executed_trades_json, rejected_trades_json
                     FROM execution_logs
                     ORDER BY timestamp DESC
                     LIMIT ? OFFSET ?
@@ -238,6 +262,7 @@ class ExecutionLogService:
                 step_details=row[12],
                 recommendations_json=row[13],
                 executed_trades_json=row[14],
+                rejected_trades_json=row[15],
             )
             for row in rows
         ]

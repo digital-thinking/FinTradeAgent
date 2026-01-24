@@ -23,11 +23,11 @@ strategy_prompt: |
   - BUY SIGNAL: Transitory News + Quality Balance Sheet + Drop > 10%.
   - AVOID: Structural News or High Debt.
 
-initial_amount: 10000.0
+initial_amount: 1000.0
 num_initial_trades: 5
 trades_per_run: 3
-run_frequency: weekly
+run_frequency: daily
 llm_provider: openai
-llm_model: gpt-4o
+llm_model: gpt-5.2
 agent_mode: langgraph
 

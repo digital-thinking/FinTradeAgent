@@ -24,10 +24,10 @@ strategy_prompt: |
   - BUY SIGNAL: High Short Interest + Thesis-Breaking News.
   - AVOID: High Short Interest + No News (Price will likely keep drifting down).
 
-initial_amount: 10000.0
+initial_amount: 1000.0
 num_initial_trades: 10
 trades_per_run: 5
 run_frequency: weekly
 llm_provider: openai
-llm_model: gpt-4o
+llm_model: gpt-5.2
 agent_mode: langgraph

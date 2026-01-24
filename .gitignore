@@ -45,3 +45,4 @@ data/logs/*.log
 # OS
 .DS_Store
 Thumbs.db
+/data/execution_logs.db

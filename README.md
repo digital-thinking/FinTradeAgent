@@ -26,6 +26,43 @@ Each agent is defined by a **strategy prompt** - a detailed persona that tells t
 
 This is **human-in-the-loop AI trading research**, not automated execution.
 
+## Key Features
+
+### 🧠 Multi-Agent Architectures
+The platform supports different modes of agent reasoning:
+- **Simple Mode**: A single agent analyzes the portfolio and market data to make decisions.
+- **Debate Mode**: Three agents (Bull, Bear, Neutral) debate the strategy before a Moderator makes the final decision.
+- **LangGraph Mode**: A structured workflow where agents perform specific sub-tasks (Research -> Analyze -> Decide).
+
+### 🔎 Real-Time Market Research
+Agents aren't limited to training data. They actively use **web search** to fetch:
+- Current stock prices and technical indicators.
+- Recent news and earnings reports.
+- Analyst ratings and sentiment.
+- Macroeconomic data.
+
+### 📊 Portfolio Dashboard
+A centralized command center to monitor all your active strategies:
+- **Total AUM & Performance**: Aggregated metrics across all portfolios.
+- **Leaderboard**: Instantly see which strategies are outperforming.
+- **Schedule**: Track upcoming execution times for each agent.
+
+### 🛡️ Human-in-the-Loop Control
+AI suggests, you decide.
+- **Review Interface**: Inspect every recommended trade, reasoning, and price data before execution.
+- **Ticker Correction**: Fix hallucinated or incorrect ticker symbols on the fly.
+- **Guidance**: Inject specific context or instructions (e.g., "Avoid tech stocks today") before the agent runs.
+
+### 📈 Interactive Analytics
+- **Performance Charts**: Zoomable, interactive Plotly charts tracking portfolio value over time.
+- **Holdings Breakdown**: Detailed views of current positions, cost basis, and unrealized gains.
+- **Trade History**: Searchable, paginated history of all executed transactions.
+
+### ⚙️ System Health & Observability
+- **Execution Logs**: Full visibility into LLM prompts and responses for debugging.
+- **Recommendation Tracking**: Monitor acceptance rates of agent suggestions.
+- **Cost & Latency**: Track token usage and execution times.
+
 ## Example Agents
 
 ### Take-Private Arbitrage Agent
@@ -120,11 +157,17 @@ src/fin_trade/
 ├── services/
 │   ├── agent.py          # LLM invocation, web search, prompt building
 │   ├── security.py       # Ticker/price resolution
-│   └── portfolio.py      # State management (for agent context)
+│   ├── portfolio.py      # State management (for agent context)
+│   └── llm_provider.py   # Abstracted LLM provider logic
 ├── components/
-│   └── trade_display.py  # Recommendation UI with validation
-└── pages/
-    └── portfolio_detail.py  # Agent execution interface
+│   ├── trade_display.py  # Recommendation UI with validation
+│   ├── skeleton.py       # Loading state components
+│   └── status_badge.py   # UI badges
+├── pages/
+│   ├── dashboard.py      # Summary dashboard
+│   ├── portfolio_detail.py # Agent execution interface
+│   └── system_health.py  # System monitoring
+└── style.css             # Global styling (Matrix theme)
 
 data/
 ├── portfolios/           # Agent configurations (YAML)
@@ -140,40 +183,6 @@ Every agent interaction is logged to `data/logs/`:
 - Timestamp, model, provider
 
 Use these logs to understand why an agent made specific recommendations and iterate on your strategy prompts.
-
----
-
-## Future Ideas
-
-### Agent Capabilities
-- [ ] Multi-agent debates (bull vs bear personas)
-- [ ] Confidence scoring for each recommendation
-- [ ] Position sizing suggestions based on conviction
-- [ ] Stop-loss recommendations based on volatility analysis
-- [ ] Chain-of-thought logging for reasoning transparency
-
-### Research Tools
-- [ ] Backtesting framework against historical data
-- [ ] Sentiment tracking over time
-- [ ] Performance attribution (which strategy elements drive returns)
-- [ ] A/B testing different prompt variations
-
-### Data Sources
-- [ ] Earnings calendar integration
-- [ ] SEC filing alerts
-- [ ] Options flow data
-- [ ] Social sentiment aggregation
-
-### Execution
-- [ ] Paper trading mode
-- [ ] Broker API integration (Interactive Brokers, Alpaca)
-- [ ] Webhook triggers for external events
-- [ ] Scheduled agent runs
-
-### Platform
-- [ ] Strategy marketplace (share/import agent configs)
-- [ ] Multi-user support
-- [ ] API endpoint for programmatic agent execution
 
 ---
 

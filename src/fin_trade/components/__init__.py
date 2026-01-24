@@ -14,6 +14,12 @@ from fin_trade.components.skeleton import (
     render_skeleton_holdings,
     render_skeleton_metrics_row,
 )
+from fin_trade.components.ticker_correction import (
+    TickerCorrectionResult,
+    render_ticker_correction,
+    apply_isin_corrections,
+    clear_ticker_corrections,
+)
 
 __all__ = [
     "render_portfolio_tile",
@@ -27,4 +33,8 @@ __all__ = [
     "render_skeleton_card",
     "render_skeleton_holdings",
     "render_skeleton_metrics_row",
+    "TickerCorrectionResult",
+    "render_ticker_correction",
+    "apply_isin_corrections",
+    "clear_ticker_corrections",
 ]
