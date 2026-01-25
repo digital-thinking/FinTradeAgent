@@ -251,6 +251,9 @@ class LangGraphAgentService:
             "_metrics_analysis": None,
             "_metrics_generate": None,
             "_metrics_validate": None,
+            "_prompt_research": None,
+            "_prompt_analysis": None,
+            "_prompt_generate": None,
         }
 
         # Collect metrics
@@ -672,6 +675,13 @@ class DebateAgentService:
             "_metrics_moderator": None,
             "_metrics_generate": None,
             "_metrics_validate": None,
+            "_prompt_research": None,
+            "_prompt_bull_pitch": None,
+            "_prompt_bear_pitch": None,
+            "_prompt_neutral_pitch": None,
+            "_prompt_debate": None,
+            "_prompt_moderator": None,
+            "_prompt_generate": None,
         }
 
         # Collect metrics
