@@ -14,6 +14,7 @@ from fin_trade.models import (
     AgentRecommendation,
 )
 from fin_trade.services.security import Security
+from fin_trade.services.stock_data import PriceContext
 
 
 @pytest.fixture
@@ -145,3 +146,75 @@ agent_mode: simple
     config_path = temp_data_dir["portfolios"] / "test_portfolio.yaml"
     config_path.write_text(config_content)
     return config_path
+
+
+def create_mock_price_context(
+    ticker: str,
+    current_price: float,
+    change_5d_pct: float = 5.0,
+    change_30d_pct: float = 10.0,
+) -> PriceContext:
+    """Helper to create a mock PriceContext."""
+    return PriceContext(
+        ticker=ticker,
+        current_price=current_price,
+        change_5d_pct=change_5d_pct,
+        change_30d_pct=change_30d_pct,
+        high_52w=current_price * 1.2,
+        low_52w=current_price * 0.8,
+        pct_from_52w_high=-16.7,
+        pct_from_52w_low=25.0,
+        rsi_14=50.0,
+        volume_avg_20d=1000000.0,
+        volume_ratio=1.0,
+        ma_20=current_price * 0.98,
+        ma_50=current_price * 0.95,
+        trend_summary=f"↗+{change_5d_pct:.1f}% (5d), above 20-MA",
+    )
+
+
+@pytest.fixture
+def mock_stock_data_service():
+    """Create a mock StockDataService with configurable prices."""
+    mock = MagicMock()
+
+    # Default behavior - returns formatted string for holdings
+    def format_holdings(holdings, price_contexts=None):
+        if not holdings:
+            return "  None (empty portfolio)"
+
+        lines = []
+        for h in holdings:
+            # Use the _mock_prices dict if set, otherwise default
+            price = getattr(mock, "_mock_prices", {}).get(h.ticker, h.avg_price * 1.1)
+            gain = ((price - h.avg_price) / h.avg_price * 100) if h.avg_price > 0 else 0
+            line = (
+                f"  - {h.ticker} - {h.name}: {h.quantity} shares @ avg ${h.avg_price:.2f}\n"
+                f"    Current: ${price:.2f} | ↗+5.0% (5d) | +10.0% (30d)\n"
+                f"    P/L: {gain:+.1f}%"
+            )
+            lines.append(line)
+        return "\n".join(lines)
+
+    mock.format_holdings_for_prompt.side_effect = format_holdings
+
+    # Get price context
+    def get_price_context(ticker):
+        price = getattr(mock, "_mock_prices", {}).get(ticker, 100.0)
+        return create_mock_price_context(ticker, price)
+
+    mock.get_price_context.side_effect = get_price_context
+
+    # Get holdings context
+    def get_holdings_context(tickers):
+        return {t: get_price_context(t) for t in tickers}
+
+    mock.get_holdings_context.side_effect = get_holdings_context
+
+    # Helper method to set mock prices
+    def set_prices(prices: dict):
+        mock._mock_prices = prices
+
+    mock.set_prices = set_prices
+
+    return mock

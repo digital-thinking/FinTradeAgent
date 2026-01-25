@@ -6,7 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
-from fin_trade.services.stock_data import StockDataService
+from fin_trade.services.stock_data import StockDataService, PriceContext
+from fin_trade.models import Holding
 
 
 class TestStockDataServiceInit:
@@ -244,3 +245,296 @@ class TestGetPrice:
         price = service.get_price("upper")
 
         assert price == 102.0
+
+
+class TestCalculateRsi:
+    """Tests for _calculate_rsi method."""
+
+    def test_calculates_rsi_correctly(self, tmp_path):
+        """Test RSI calculation with known values."""
+        service = StockDataService(data_dir=tmp_path)
+
+        # Create a series with alternating gains/losses
+        prices = pd.Series([100, 102, 101, 103, 102, 104, 103, 105, 104, 106,
+                           105, 107, 106, 108, 107, 109])
+
+        rsi = service._calculate_rsi(prices, period=14)
+
+        # RSI should be between 0 and 100
+        assert rsi is not None
+        assert 0 <= rsi <= 100
+
+    def test_returns_none_for_insufficient_data(self, tmp_path):
+        """Test returns None when not enough data for RSI."""
+        service = StockDataService(data_dir=tmp_path)
+
+        # Only 10 prices, need 15 for RSI-14
+        prices = pd.Series([100, 101, 102, 103, 104, 105, 106, 107, 108, 109])
+
+        rsi = service._calculate_rsi(prices, period=14)
+
+        assert rsi is None
+
+    def test_returns_100_for_all_gains(self, tmp_path):
+        """Test RSI is 100 when all movements are gains."""
+        service = StockDataService(data_dir=tmp_path)
+
+        # Monotonically increasing prices
+        prices = pd.Series(list(range(100, 120)))
+
+        rsi = service._calculate_rsi(prices, period=14)
+
+        assert rsi == 100.0
+
+
+class TestCalculateChangePct:
+    """Tests for _calculate_change_pct method."""
+
+    def test_calculates_positive_change(self, tmp_path):
+        """Test calculates positive percentage change."""
+        service = StockDataService(data_dir=tmp_path)
+
+        dates = pd.date_range(end=datetime.now(), periods=10, freq="D")
+        df = pd.DataFrame({"Close": [100, 102, 104, 106, 108, 110, 112, 114, 116, 120]}, index=dates)
+
+        change = service._calculate_change_pct(df, 5)
+
+        # Should be positive
+        assert change is not None
+        assert change > 0
+
+    def test_calculates_negative_change(self, tmp_path):
+        """Test calculates negative percentage change."""
+        service = StockDataService(data_dir=tmp_path)
+
+        dates = pd.date_range(end=datetime.now(), periods=10, freq="D")
+        df = pd.DataFrame({"Close": [120, 118, 116, 114, 112, 110, 108, 106, 104, 100]}, index=dates)
+
+        change = service._calculate_change_pct(df, 5)
+
+        # Should be negative
+        assert change is not None
+        assert change < 0
+
+    def test_returns_none_for_insufficient_data(self, tmp_path):
+        """Test returns None when not enough data."""
+        service = StockDataService(data_dir=tmp_path)
+
+        dates = pd.date_range(end=datetime.now(), periods=1, freq="D")
+        df = pd.DataFrame({"Close": [100]}, index=dates)
+
+        change = service._calculate_change_pct(df, 5)
+
+        assert change is None
+
+
+class TestGetPriceContext:
+    """Tests for get_price_context method."""
+
+    def test_returns_price_context_object(self, tmp_path):
+        """Test returns PriceContext with all fields."""
+        service = StockDataService(data_dir=tmp_path)
+
+        # Create mock data with all required columns
+        dates = pd.date_range(end=datetime.now(), periods=60, freq="D")
+        df = pd.DataFrame({
+            "Close": [100 + i for i in range(60)],
+            "High": [105 + i for i in range(60)],
+            "Low": [95 + i for i in range(60)],
+            "Volume": [1000000 for _ in range(60)],
+        }, index=dates)
+        service._cache["TEST"] = df
+
+        ctx = service.get_price_context("TEST")
+
+        assert isinstance(ctx, PriceContext)
+        assert ctx.ticker == "TEST"
+        assert ctx.current_price > 0
+        assert ctx.change_5d_pct is not None
+        assert ctx.change_30d_pct is not None
+        assert ctx.high_52w is not None
+        assert ctx.low_52w is not None
+        assert ctx.rsi_14 is not None
+        assert ctx.ma_20 is not None
+
+    def test_to_context_string_includes_price(self, tmp_path):
+        """Test context string includes current price."""
+        service = StockDataService(data_dir=tmp_path)
+
+        dates = pd.date_range(end=datetime.now(), periods=60, freq="D")
+        df = pd.DataFrame({
+            "Close": [100 + i * 0.5 for i in range(60)],
+            "High": [105 + i * 0.5 for i in range(60)],
+            "Low": [95 + i * 0.5 for i in range(60)],
+            "Volume": [1000000 for _ in range(60)],
+        }, index=dates)
+        service._cache["CTX"] = df
+
+        ctx = service.get_price_context("CTX")
+        ctx_str = ctx.to_context_string()
+
+        assert "$" in ctx_str  # Has price
+        assert "RSI" in ctx_str  # Has RSI
+
+    def test_raises_for_no_data(self, tmp_path):
+        """Test raises ValueError when no data available."""
+        service = StockDataService(data_dir=tmp_path)
+        service._cache["EMPTY"] = pd.DataFrame(columns=["Close"])
+
+        with pytest.raises(ValueError, match="No price data available"):
+            service.get_price_context("EMPTY")
+
+
+class TestGetHoldingsContext:
+    """Tests for get_holdings_context method."""
+
+    def test_returns_dict_of_price_contexts(self, tmp_path):
+        """Test returns dict mapping tickers to PriceContext."""
+        service = StockDataService(data_dir=tmp_path)
+
+        # Create data for two tickers
+        dates = pd.date_range(end=datetime.now(), periods=60, freq="D")
+        for ticker in ["AAPL", "MSFT"]:
+            df = pd.DataFrame({
+                "Close": [100 + i for i in range(60)],
+                "High": [105 + i for i in range(60)],
+                "Low": [95 + i for i in range(60)],
+                "Volume": [1000000 for _ in range(60)],
+            }, index=dates)
+            service._cache[ticker] = df
+
+        result = service.get_holdings_context(["AAPL", "MSFT"])
+
+        assert "AAPL" in result
+        assert "MSFT" in result
+        assert isinstance(result["AAPL"], PriceContext)
+        assert isinstance(result["MSFT"], PriceContext)
+
+    def test_skips_failed_tickers(self, tmp_path):
+        """Test skips tickers that fail to fetch."""
+        service = StockDataService(data_dir=tmp_path)
+
+        # Only create data for one ticker
+        dates = pd.date_range(end=datetime.now(), periods=60, freq="D")
+        df = pd.DataFrame({
+            "Close": [100 + i for i in range(60)],
+            "High": [105 + i for i in range(60)],
+            "Low": [95 + i for i in range(60)],
+            "Volume": [1000000 for _ in range(60)],
+        }, index=dates)
+        service._cache["GOOD"] = df
+        service._cache["BAD"] = pd.DataFrame(columns=["Close"])  # Empty
+
+        result = service.get_holdings_context(["GOOD", "BAD"])
+
+        assert "GOOD" in result
+        assert "BAD" not in result  # Should be skipped
+
+
+class TestFormatHoldingsForPrompt:
+    """Tests for format_holdings_for_prompt method."""
+
+    def test_formats_empty_holdings(self, tmp_path):
+        """Test formats empty holdings list."""
+        service = StockDataService(data_dir=tmp_path)
+
+        result = service.format_holdings_for_prompt([])
+
+        assert "None (empty portfolio)" in result
+
+    def test_formats_holdings_with_context(self, tmp_path):
+        """Test formats holdings with rich context."""
+        service = StockDataService(data_dir=tmp_path)
+
+        # Create mock data
+        dates = pd.date_range(end=datetime.now(), periods=60, freq="D")
+        df = pd.DataFrame({
+            "Close": [150 + i * 0.5 for i in range(60)],
+            "High": [155 + i * 0.5 for i in range(60)],
+            "Low": [145 + i * 0.5 for i in range(60)],
+            "Volume": [1000000 for _ in range(60)],
+        }, index=dates)
+        service._cache["AAPL"] = df
+
+        holdings = [
+            Holding(
+                isin="US0378331005",
+                ticker="AAPL",
+                name="Apple Inc.",
+                quantity=10,
+                avg_price=150.0,
+            )
+        ]
+
+        result = service.format_holdings_for_prompt(holdings)
+
+        assert "AAPL" in result
+        assert "Apple Inc." in result
+        assert "10 shares" in result
+        assert "$150.00" in result  # avg price
+        assert "P/L" in result  # gain/loss
+
+    def test_calculates_gain_percentage(self, tmp_path):
+        """Test calculates gain percentage correctly."""
+        service = StockDataService(data_dir=tmp_path)
+
+        # Create data where current price is 20% above avg
+        dates = pd.date_range(end=datetime.now(), periods=60, freq="D")
+        df = pd.DataFrame({
+            "Close": [180.0 for _ in range(60)],  # Current price = 180
+            "High": [185.0 for _ in range(60)],
+            "Low": [175.0 for _ in range(60)],
+            "Volume": [1000000 for _ in range(60)],
+        }, index=dates)
+        service._cache["GAIN"] = df
+
+        holdings = [
+            Holding(
+                isin="US123",
+                ticker="GAIN",
+                name="Gain Stock",
+                quantity=10,
+                avg_price=150.0,  # 180/150 = 20% gain
+            )
+        ]
+
+        result = service.format_holdings_for_prompt(holdings)
+
+        assert "+20.0%" in result
+
+    def test_uses_provided_price_contexts(self, tmp_path):
+        """Test uses provided price contexts instead of fetching."""
+        service = StockDataService(data_dir=tmp_path)
+
+        # Don't add to cache - should use provided context
+        price_ctx = PriceContext(
+            ticker="TEST",
+            current_price=200.0,
+            change_5d_pct=5.0,
+            change_30d_pct=10.0,
+            high_52w=220.0,
+            low_52w=180.0,
+            pct_from_52w_high=-9.1,
+            pct_from_52w_low=11.1,
+            rsi_14=55.0,
+            volume_avg_20d=1000000.0,
+            volume_ratio=1.0,
+            ma_20=195.0,
+            ma_50=190.0,
+            trend_summary="↗+5.0% (5d), above 20-MA",
+        )
+
+        holdings = [
+            Holding(
+                isin="US123",
+                ticker="TEST",
+                name="Test Stock",
+                quantity=10,
+                avg_price=100.0,
+            )
+        ]
+
+        result = service.format_holdings_for_prompt(holdings, {"TEST": price_ctx})
+
+        assert "+100.0%" in result  # (200-100)/100 = 100% gain
+        assert "$200.00" in result  # Current price from context

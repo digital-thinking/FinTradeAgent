@@ -16,6 +16,7 @@ from fin_trade.services.security import SecurityService
 from fin_trade.services.llm_provider import LLMProviderFactory
 from fin_trade.services.market_data import MarketDataService
 from fin_trade.services.reflection import ReflectionService
+from fin_trade.services.stock_data import StockDataService
 from fin_trade.prompts import SIMPLE_AGENT_PROMPT
 
 # Load .env file from project root
@@ -34,10 +35,12 @@ class AgentService:
         security_service: SecurityService | None = None,
         market_data_service: MarketDataService | None = None,
         reflection_service: ReflectionService | None = None,
+        stock_data_service: StockDataService | None = None,
     ):
         self.security_service = security_service or SecurityService()
         self.market_data_service = market_data_service or MarketDataService()
         self.reflection_service = reflection_service or ReflectionService()
+        self.stock_data_service = stock_data_service or StockDataService()
         # Reload .env to ensure keys are available
         load_dotenv(_env_path)
         # Ensure logs directory exists
@@ -78,22 +81,18 @@ class AgentService:
         self, config: PortfolioConfig, state: PortfolioState
     ) -> str:
         """Build the prompt for the LLM with portfolio context."""
-        holdings_info = []
-        holding_tickers = []
-        for h in state.holdings:
-            holding_tickers.append(h.ticker)
-            try:
-                current_price = self.security_service.get_price(h.ticker)
-                gain = ((current_price - h.avg_price) / h.avg_price) * 100
-                holdings_info.append(
-                    f"  - {h.ticker} ({h.name}): "
-                    f"{h.quantity} shares @ avg ${h.avg_price:.2f}, "
-                    f"current ${current_price:.2f} ({gain:+.1f}%)"
-                )
-            except Exception:
+        # Get rich price context for holdings (history, RSI, volume, MAs)
+        holding_tickers = [h.ticker for h in state.holdings]
+        try:
+            holdings_info_str = self.stock_data_service.format_holdings_for_prompt(state.holdings)
+        except Exception:
+            # Fallback to basic format if price context fails
+            holdings_info = []
+            for h in state.holdings:
                 holdings_info.append(
                     f"  - {h.ticker} ({h.name}): {h.quantity} shares @ avg ${h.avg_price:.2f}"
                 )
+            holdings_info_str = "\n".join(holdings_info) if holdings_info else "  None"
 
         trades_info = []
         for t in state.trades:
@@ -131,7 +130,7 @@ class AgentService:
             strategy_prompt=config.strategy_prompt,
             cash=state.cash,
             initial_amount=config.initial_amount,
-            holdings_info="\n".join(holdings_info) if holdings_info else "  None",
+            holdings_info=holdings_info_str,
             trades_info="\n".join(trades_info) if trades_info else "  None",
             trades_per_run=config.trades_per_run,
             num_initial_trades=config.num_initial_trades,

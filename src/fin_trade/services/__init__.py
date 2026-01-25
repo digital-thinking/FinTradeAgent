@@ -1,6 +1,6 @@
 """Services for the Fin Trade application."""
 
-from fin_trade.services.stock_data import StockDataService
+from fin_trade.services.stock_data import StockDataService, PriceContext
 from fin_trade.services.portfolio import PortfolioService
 from fin_trade.services.agent import AgentService
 from fin_trade.services.security import SecurityService
@@ -12,6 +12,7 @@ from fin_trade.services.reflection import ReflectionService
 
 __all__ = [
     "StockDataService",
+    "PriceContext",
     "PortfolioService",
     "AgentService",
     "SecurityService",

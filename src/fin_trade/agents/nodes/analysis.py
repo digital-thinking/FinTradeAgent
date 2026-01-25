@@ -11,6 +11,7 @@ from fin_trade.agents.state import SimpleAgentState
 from fin_trade.prompts import ANALYSIS_PROMPT
 from fin_trade.services.market_data import MarketDataService
 from fin_trade.services.reflection import ReflectionService
+from fin_trade.services.stock_data import StockDataService
 
 # Load environment variables
 _project_root = Path(__file__).parent.parent.parent.parent.parent
@@ -31,20 +32,17 @@ def _build_analysis_prompt(state: SimpleAgentState) -> str:
     config = state["portfolio_config"]
     portfolio_state = state["portfolio_state"]
     market_research = state.get("market_research", "No research available")
-    price_data = state.get("price_data", {})
     user_context = state.get("user_context")
 
-    # Format holdings info
-    holdings_info = []
-    holding_tickers = []
-    for h in portfolio_state.holdings:
-        holding_tickers.append(h.ticker)
-        current_price = price_data.get(h.ticker, h.avg_price)
-        gain = ((current_price - h.avg_price) / h.avg_price) * 100 if h.avg_price > 0 else 0
-        holdings_info.append(
-            f"  - {h.ticker} ({h.name}): {h.quantity} shares @ avg ${h.avg_price:.2f}, "
-            f"current ${current_price:.2f} ({gain:+.1f}%)"
-        )
+    # Get rich price context for holdings
+    stock_data_service = StockDataService()
+    holding_tickers = [h.ticker for h in portfolio_state.holdings]
+    price_contexts = stock_data_service.get_holdings_context(holding_tickers)
+
+    # Format holdings with rich context (price history, RSI, volume, MAs)
+    holdings_info_str = stock_data_service.format_holdings_for_prompt(
+        portfolio_state.holdings, price_contexts
+    )
 
     # Build user context section if provided
     user_context_section = ""
@@ -81,7 +79,7 @@ USER GUIDANCE (from portfolio manager - incorporate this into your analysis):
         strategy_prompt=config.strategy_prompt,
         cash=portfolio_state.cash,
         initial_amount=config.initial_amount,
-        holdings_info="\n".join(holdings_info) if holdings_info else "  None (empty portfolio)",
+        holdings_info=holdings_info_str,
         market_research=market_research,
         market_data_context=market_data_context,
         reflection_context=reflection_context,

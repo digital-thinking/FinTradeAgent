@@ -17,6 +17,7 @@ from fin_trade.prompts import (
 )
 from fin_trade.services.market_data import MarketDataService
 from fin_trade.services.reflection import ReflectionService
+from fin_trade.services.stock_data import StockDataService
 
 # Load environment variables
 _project_root = Path(__file__).parent.parent.parent.parent.parent
@@ -113,22 +114,27 @@ def _invoke_anthropic(prompt: str, model: str) -> LLMResponse:
 
 
 def _format_holdings(state: DebateAgentState) -> str:
-    """Format holdings for prompt."""
+    """Format holdings with rich price context (history, RSI, volume, MAs)."""
     portfolio_state = state["portfolio_state"]
-    price_data = state.get("price_data", {})
 
     if not portfolio_state.holdings:
         return "None (empty portfolio)"
 
-    lines = []
-    for h in portfolio_state.holdings:
-        current_price = price_data.get(h.ticker, h.avg_price)
-        gain = ((current_price - h.avg_price) / h.avg_price) * 100 if h.avg_price > 0 else 0
-        lines.append(
-            f"  - {h.ticker} ({h.name}): {h.quantity} shares @ avg ${h.avg_price:.2f}, "
-            f"current ${current_price:.2f} ({gain:+.1f}%)"
-        )
-    return "\n".join(lines)
+    try:
+        stock_data_service = StockDataService()
+        return stock_data_service.format_holdings_for_prompt(portfolio_state.holdings)
+    except Exception:
+        # Fallback to basic format if price context fails
+        price_data = state.get("price_data", {})
+        lines = []
+        for h in portfolio_state.holdings:
+            current_price = price_data.get(h.ticker, h.avg_price)
+            gain = ((current_price - h.avg_price) / h.avg_price) * 100 if h.avg_price > 0 else 0
+            lines.append(
+                f"  - {h.ticker} ({h.name}): {h.quantity} shares @ avg ${h.avg_price:.2f}, "
+                f"current ${current_price:.2f} ({gain:+.1f}%)"
+            )
+        return "\n".join(lines)
 
 
 def _get_market_data_context(state: DebateAgentState) -> str:
