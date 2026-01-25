@@ -18,6 +18,8 @@ COMPLETE TRADE HISTORY:
 MARKET INTELLIGENCE DATA:
 {market_data_context}
 
+{reflection_context}
+
 CONSTRAINTS:
 - Maximum {trades_per_run} trades per execution
 - On an empty portfolio, aim for up to {num_initial_trades} DIFFERENT stocks if good opportunities exist
@@ -119,6 +121,11 @@ CURRENT HOLDINGS:
 
 MARKET RESEARCH (from web search - treat as current and accurate):
 {market_research}
+
+MARKET INTELLIGENCE DATA:
+{market_data_context}
+
+{reflection_context}
 
 ANALYSIS TASK - Provide concrete analysis with specific ticker symbols:
 

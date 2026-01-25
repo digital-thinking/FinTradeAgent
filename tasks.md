@@ -86,3 +86,35 @@ This package implements the **Data & Integrations** section from ROADMAP.md:
 #### Task 5: Add Unit Tests
 - [x] Create `tests/test_market_data_service.py` with tests for MarketDataService (22 tests)
 - [x] Mock yfinance calls to ensure reliable test execution
+
+---
+
+## 📦 Package H: Agent Intelligence - IN PROGRESS
+*Focus: Self-reflective learning for trading agents.*
+*Primary Files: `src/fin_trade/services/reflection.py` (new), `src/fin_trade/services/agent.py`, `src/fin_trade/prompts/simple_agent.py`*
+
+### Implementation Plan
+
+This package implements the **Agent Intelligence** section from ROADMAP.md:
+- Self-Reflective Learning: Agents analyze past performance and reasoning to identify biases and refine strategies
+
+#### Task 1: Create ReflectionService
+- [x] Create `src/fin_trade/services/reflection.py` with `ReflectionService` class
+- [x] Implement completed trade cycle detection (BUY followed by SELL of same ticker)
+- [x] Calculate performance metrics: win rate, avg gain/loss, holding periods
+- [x] Analyze reasoning patterns to identify common themes and potential biases
+
+#### Task 2: Generate Reflection Insights
+- [x] Create data classes for trade analysis results
+- [x] Identify best/worst performing trades with reasoning correlation
+- [x] Detect potential biases (sector concentration, timing patterns, overtrading)
+- [x] Format insights as agent-consumable context string
+
+#### Task 3: Integrate Reflection into Agent Context
+- [x] Update `_build_prompt()` in `agent.py` to include reflection data
+- [x] Add reflection context section to `SIMPLE_AGENT_PROMPT`
+- [x] Guide agents to learn from past successes and mistakes
+
+#### Task 4: Add Unit Tests
+- [x] Create `tests/test_reflection_service.py` with comprehensive tests
+- [x] Test trade cycle detection, metrics calculation, and bias detection

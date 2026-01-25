@@ -8,6 +8,7 @@ from fin_trade.services.isin_lookup import IsinLookupResult
 from fin_trade.services.execution_log import ExecutionLogService
 from fin_trade.services.attribution import AttributionService
 from fin_trade.services.market_data import MarketDataService
+from fin_trade.services.reflection import ReflectionService
 
 __all__ = [
     "StockDataService",
@@ -18,4 +19,5 @@ __all__ = [
     "ExecutionLogService",
     "AttributionService",
     "MarketDataService",
+    "ReflectionService",
 ]

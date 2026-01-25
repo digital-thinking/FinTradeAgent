@@ -15,6 +15,7 @@ from fin_trade.models import (
 from fin_trade.services.security import SecurityService
 from fin_trade.services.llm_provider import LLMProviderFactory
 from fin_trade.services.market_data import MarketDataService
+from fin_trade.services.reflection import ReflectionService
 from fin_trade.prompts import SIMPLE_AGENT_PROMPT
 
 # Load .env file from project root
@@ -32,9 +33,11 @@ class AgentService:
         self,
         security_service: SecurityService | None = None,
         market_data_service: MarketDataService | None = None,
+        reflection_service: ReflectionService | None = None,
     ):
         self.security_service = security_service or SecurityService()
         self.market_data_service = market_data_service or MarketDataService()
+        self.reflection_service = reflection_service or ReflectionService()
         # Reload .env to ensure keys are available
         load_dotenv(_env_path)
         # Ensure logs directory exists
@@ -116,6 +119,14 @@ class AgentService:
             except Exception:
                 market_data_context = "Market data temporarily unavailable."
 
+        # Generate self-reflection on past performance
+        reflection_context = ""
+        try:
+            reflection = self.reflection_service.analyze_performance(state)
+            reflection_context = reflection.to_context_string()
+        except Exception:
+            reflection_context = "Performance reflection temporarily unavailable."
+
         return SIMPLE_AGENT_PROMPT.format(
             strategy_prompt=config.strategy_prompt,
             cash=state.cash,
@@ -125,6 +136,7 @@ class AgentService:
             trades_per_run=config.trades_per_run,
             num_initial_trades=config.num_initial_trades,
             market_data_context=market_data_context,
+            reflection_context=reflection_context,
         )
 
     def _parse_response(self, response_text: str) -> AgentRecommendation:

@@ -18,6 +18,11 @@ STRATEGY CONTEXT:
 MARKET RESEARCH:
 {research}
 
+MARKET INTELLIGENCE DATA:
+{market_data_context}
+
+{reflection_context}
+
 CURRENT HOLDINGS:
 {holdings}
 
@@ -48,6 +53,11 @@ STRATEGY CONTEXT:
 MARKET RESEARCH:
 {research}
 
+MARKET INTELLIGENCE DATA:
+{market_data_context}
+
+{reflection_context}
+
 CURRENT HOLDINGS:
 {holdings}
 
@@ -76,6 +86,11 @@ STRATEGY CONTEXT:
 
 MARKET RESEARCH:
 {research}
+
+MARKET INTELLIGENCE DATA:
+{market_data_context}
+
+{reflection_context}
 
 CURRENT HOLDINGS:
 {holdings}
@@ -109,6 +124,9 @@ MODERATOR_PROMPT = """You are the CIO moderating this investment committee debat
 STRATEGY BEING FOLLOWED:
 {strategy}
 {user_context_section}
+
+{reflection_context}
+
 BULL CASE:
 {bull_pitch}
 

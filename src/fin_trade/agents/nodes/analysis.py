@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 
 from fin_trade.agents.state import SimpleAgentState
 from fin_trade.prompts import ANALYSIS_PROMPT
+from fin_trade.services.market_data import MarketDataService
+from fin_trade.services.reflection import ReflectionService
 
 # Load environment variables
 _project_root = Path(__file__).parent.parent.parent.parent.parent
@@ -34,7 +36,9 @@ def _build_analysis_prompt(state: SimpleAgentState) -> str:
 
     # Format holdings info
     holdings_info = []
+    holding_tickers = []
     for h in portfolio_state.holdings:
+        holding_tickers.append(h.ticker)
         current_price = price_data.get(h.ticker, h.avg_price)
         gain = ((current_price - h.avg_price) / h.avg_price) * 100 if h.avg_price > 0 else 0
         holdings_info.append(
@@ -51,6 +55,27 @@ USER GUIDANCE (from portfolio manager - incorporate this into your analysis):
 
 """
 
+    # Fetch market data context
+    market_data_context = ""
+    try:
+        market_data_service = MarketDataService()
+        if holding_tickers:
+            market_data_context = market_data_service.get_full_context_for_holdings(holding_tickers)
+        else:
+            macro = market_data_service.get_macro_data()
+            market_data_context = macro.to_context_string()
+    except Exception:
+        market_data_context = "Market data temporarily unavailable."
+
+    # Generate self-reflection on past performance
+    reflection_context = ""
+    try:
+        reflection_service = ReflectionService()
+        reflection = reflection_service.analyze_performance(portfolio_state)
+        reflection_context = reflection.to_context_string()
+    except Exception:
+        reflection_context = "Performance reflection temporarily unavailable."
+
     return ANALYSIS_PROMPT.format(
         user_context_section=user_context_section,
         strategy_prompt=config.strategy_prompt,
@@ -58,6 +83,8 @@ USER GUIDANCE (from portfolio manager - incorporate this into your analysis):
         initial_amount=config.initial_amount,
         holdings_info="\n".join(holdings_info) if holdings_info else "  None (empty portfolio)",
         market_research=market_research,
+        market_data_context=market_data_context,
+        reflection_context=reflection_context,
     )
 
 
