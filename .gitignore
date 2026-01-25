@@ -37,7 +37,9 @@ ENV/
 # Data caches (keep structure, ignore data)
 data/stock_data/*
 data/state/*.json
+data/state/*.db
 data/logs/*.log
+data/logs/*.md
 !data/state/.gitkeep
 !data/stock_data/.gitkeep
 !data/logs/.gitkeep
@@ -45,4 +47,3 @@ data/logs/*.log
 # OS
 .DS_Store
 Thumbs.db
-/data/execution_logs.db
