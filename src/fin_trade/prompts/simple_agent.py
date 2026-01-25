@@ -169,6 +169,8 @@ CONSTRAINTS:
 CURRENT HOLDINGS:
 {holdings_info}
 
+{buy_candidates_section}
+
 OUTPUT FORMAT - Return ONLY valid JSON:
 {{
   "trades": [

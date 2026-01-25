@@ -2,6 +2,7 @@
 
 import json
 import pytest
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 from fin_trade.services.security import SecurityService, Security
@@ -24,13 +25,12 @@ class TestSecurityServiceInit:
         data_dir = tmp_path / "stock_data"
         data_dir.mkdir()
 
-        # Create a persisted security file
+        # Create a persisted security file (ticker-based naming)
         security_data = {
-            "isin": "US0378331005",
             "ticker": "AAPL",
             "shortName": "Apple Inc.",
         }
-        (data_dir / "US0378331005_data.json").write_text(json.dumps(security_data))
+        (data_dir / "AAPL_data.json").write_text(json.dumps(security_data))
 
         mock_stock_service = MagicMock()
         service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
@@ -38,34 +38,8 @@ class TestSecurityServiceInit:
         # Should have loaded the security
         security = service.get_by_ticker("AAPL")
         assert security is not None
-        assert security.isin == "US0378331005"
+        assert security.ticker == "AAPL"
         assert security.name == "Apple Inc."
-
-
-class TestGetByIsin:
-    """Tests for get_by_isin method."""
-
-    def test_returns_security_when_found(self, tmp_path):
-        """Test returns security when ISIN exists."""
-        data_dir = tmp_path / "stock_data"
-        data_dir.mkdir()
-
-        security_data = {"isin": "US123", "ticker": "TEST", "shortName": "Test Co"}
-        (data_dir / "US123_data.json").write_text(json.dumps(security_data))
-
-        mock_stock_service = MagicMock()
-        service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
-
-        security = service.get_by_isin("US123")
-        assert security is not None
-        assert security.ticker == "TEST"
-
-    def test_returns_none_when_not_found(self, tmp_path):
-        """Test returns None when ISIN doesn't exist."""
-        mock_stock_service = MagicMock()
-        service = SecurityService(data_dir=tmp_path, stock_data_service=mock_stock_service)
-
-        assert service.get_by_isin("NONEXISTENT") is None
 
 
 class TestGetByTicker:
@@ -76,15 +50,15 @@ class TestGetByTicker:
         data_dir = tmp_path / "stock_data"
         data_dir.mkdir()
 
-        security_data = {"isin": "US123", "ticker": "TEST", "shortName": "Test Co"}
-        (data_dir / "US123_data.json").write_text(json.dumps(security_data))
+        security_data = {"ticker": "TEST", "shortName": "Test Co"}
+        (data_dir / "TEST_data.json").write_text(json.dumps(security_data))
 
         mock_stock_service = MagicMock()
         service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
 
         security = service.get_by_ticker("test")  # lowercase should work
         assert security is not None
-        assert security.isin == "US123"
+        assert security.ticker == "TEST"
 
     def test_returns_none_when_not_found(self, tmp_path):
         """Test returns None when ticker doesn't exist."""
@@ -102,8 +76,8 @@ class TestLookupTicker:
         data_dir = tmp_path / "stock_data"
         data_dir.mkdir()
 
-        security_data = {"isin": "US123", "ticker": "CACHED", "shortName": "Cached Co"}
-        (data_dir / "US123_data.json").write_text(json.dumps(security_data))
+        security_data = {"ticker": "CACHED", "shortName": "Cached Co"}
+        (data_dir / "CACHED_data.json").write_text(json.dumps(security_data))
 
         mock_stock_service = MagicMock()
         service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
@@ -112,7 +86,7 @@ class TestLookupTicker:
             security = service.lookup_ticker("CACHED")
             mock_yf.Ticker.assert_not_called()
 
-        assert security.isin == "US123"
+        assert security.ticker == "CACHED"
 
     @patch("fin_trade.services.security.yf")
     def test_fetches_from_yfinance_when_not_cached(self, mock_yf, tmp_path):
@@ -120,7 +94,6 @@ class TestLookupTicker:
         mock_ticker = MagicMock()
         mock_ticker.info = {
             "shortName": "New Stock",
-            "isin": "US456789",
             "ticker": "NEW",
         }
         mock_yf.Ticker.return_value = mock_ticker
@@ -132,22 +105,7 @@ class TestLookupTicker:
 
         assert security.ticker == "NEW"
         assert security.name == "New Stock"
-        assert security.isin == "US456789"
         mock_yf.Ticker.assert_called_once_with("NEW")
-
-    @patch("fin_trade.services.security.yf")
-    def test_uses_unknown_isin_when_not_available(self, mock_yf, tmp_path):
-        """Test uses UNKNOWN-{ticker} when no ISIN from yfinance."""
-        mock_ticker = MagicMock()
-        mock_ticker.info = {"shortName": "Unknown ISIN Stock"}  # No isin field
-        mock_yf.Ticker.return_value = mock_ticker
-
-        mock_stock_service = MagicMock()
-        service = SecurityService(data_dir=tmp_path, stock_data_service=mock_stock_service)
-
-        security = service.lookup_ticker("NOISIN")
-
-        assert security.isin == "UNKNOWN-NOISIN"
 
     @patch("fin_trade.services.security.yf")
     def test_handles_yfinance_exception(self, mock_yf, tmp_path):
@@ -159,9 +117,9 @@ class TestLookupTicker:
 
         security = service.lookup_ticker("ERROR")
 
-        # Should still return a security with UNKNOWN ISIN
+        # Should still return a security
         assert security.ticker == "ERROR"
-        assert security.isin == "UNKNOWN-ERROR"
+        assert security.name == "ERROR"
 
 
 class TestGetPrice:
@@ -195,45 +153,6 @@ class TestForceUpdatePrice:
         mock_stock_service.get_price.assert_called_once_with("MSFT")
 
 
-class TestUpdateIsin:
-    """Tests for update_isin method."""
-
-    def test_updates_existing_security_isin(self, tmp_path):
-        """Test updates ISIN for existing security."""
-        data_dir = tmp_path / "stock_data"
-        data_dir.mkdir()
-
-        # Create security with UNKNOWN ISIN
-        security_data = {"isin": "UNKNOWN-TEST", "ticker": "TEST", "shortName": "Test Co"}
-        (data_dir / "UNKNOWN-TEST_data.json").write_text(json.dumps(security_data))
-
-        mock_stock_service = MagicMock()
-        service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
-
-        # Update with real ISIN
-        updated = service.update_isin("TEST", "US123456789")
-
-        assert updated.isin == "US123456789"
-        assert updated.ticker == "TEST"
-
-        # Old file should be deleted
-        assert not (data_dir / "UNKNOWN-TEST_data.json").exists()
-
-        # New file should exist
-        assert (data_dir / "US123456789_data.json").exists()
-
-    def test_creates_new_security_when_not_exists(self, tmp_path):
-        """Test creates new security when ticker doesn't exist."""
-        mock_stock_service = MagicMock()
-        service = SecurityService(data_dir=tmp_path, stock_data_service=mock_stock_service)
-
-        security = service.update_isin("NEWSTOCK", "US999888777")
-
-        assert security.ticker == "NEWSTOCK"
-        assert security.isin == "US999888777"
-        assert security.name == "NEWSTOCK"  # Falls back to ticker as name
-
-
 class TestGetFullInfo:
     """Tests for get_full_info method."""
 
@@ -243,12 +162,11 @@ class TestGetFullInfo:
         data_dir.mkdir()
 
         security_data = {
-            "isin": "US123",
             "ticker": "INFO",
             "shortName": "Info Co",
             "sector": "Technology",
         }
-        (data_dir / "US123_data.json").write_text(json.dumps(security_data))
+        (data_dir / "INFO_data.json").write_text(json.dumps(security_data))
 
         mock_stock_service = MagicMock()
         service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
@@ -274,7 +192,6 @@ class TestGetStockInfo:
         data_dir.mkdir()
 
         security_data = {
-            "isin": "US123",
             "ticker": "STOCK",
             "shortName": "Stock Co",
             "currency": "EUR",
@@ -282,7 +199,7 @@ class TestGetStockInfo:
             "industry": "Banking",
             "country": "Germany",
         }
-        (data_dir / "US123_data.json").write_text(json.dumps(security_data))
+        (data_dir / "STOCK_data.json").write_text(json.dumps(security_data))
 
         mock_stock_service = MagicMock()
         service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
@@ -300,7 +217,6 @@ class TestGetStockInfo:
         mock_ticker = MagicMock()
         mock_ticker.info = {
             "shortName": "Fetched Stock",
-            "isin": "US789",
             "currency": "USD",
             "sector": "Tech",
         }
@@ -326,5 +242,302 @@ class TestGetStockInfo:
 
         assert info["name"] == "ERRORSTOCK"
         assert info["ticker"] == "ERRORSTOCK"
-        assert info["isin"] == "UNKNOWN-ERRORSTOCK"
         assert info["currency"] == "USD"
+
+
+class TestIsDataStale:
+    """Tests for is_data_stale method."""
+
+    def test_returns_true_when_ticker_not_found(self, tmp_path):
+        """Test returns True when ticker has no stored data."""
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=tmp_path, stock_data_service=mock_stock_service)
+
+        assert service.is_data_stale("UNKNOWN") is True
+
+    def test_returns_true_when_no_saved_at(self, tmp_path):
+        """Test returns True when _saved_at is missing."""
+        data_dir = tmp_path / "stock_data"
+        data_dir.mkdir()
+
+        security_data = {"ticker": "TEST", "shortName": "Test"}
+        (data_dir / "TEST_data.json").write_text(json.dumps(security_data))
+
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
+
+        assert service.is_data_stale("TEST") is True
+
+    def test_returns_false_when_data_is_fresh(self, tmp_path):
+        """Test returns False when data is within max_age_hours."""
+        data_dir = tmp_path / "stock_data"
+        data_dir.mkdir()
+
+        security_data = {
+            "ticker": "FRESH",
+            "shortName": "Fresh Co",
+            "_saved_at": datetime.now().isoformat(),
+        }
+        (data_dir / "FRESH_data.json").write_text(json.dumps(security_data))
+
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
+
+        assert service.is_data_stale("FRESH") is False
+
+    def test_returns_true_when_data_is_old(self, tmp_path):
+        """Test returns True when data is older than max_age_hours."""
+        data_dir = tmp_path / "stock_data"
+        data_dir.mkdir()
+
+        old_time = datetime.now() - timedelta(hours=48)
+        security_data = {
+            "ticker": "OLD",
+            "shortName": "Old Co",
+            "_saved_at": old_time.isoformat(),
+        }
+        (data_dir / "OLD_data.json").write_text(json.dumps(security_data))
+
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
+
+        assert service.is_data_stale("OLD", max_age_hours=24) is True
+
+
+class TestRefreshSecurityData:
+    """Tests for refresh_security_data method."""
+
+    @patch("fin_trade.services.security.yf")
+    def test_refreshes_and_saves_data(self, mock_yf, tmp_path):
+        """Test refreshes data from yfinance and saves to file."""
+        mock_ticker = MagicMock()
+        mock_ticker.info = {
+            "shortName": "Refreshed Stock",
+            "sector": "Tech",
+        }
+        mock_yf.Ticker.return_value = mock_ticker
+
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=tmp_path, stock_data_service=mock_stock_service)
+
+        info = service.refresh_security_data("REFRESH")
+
+        assert info is not None
+        assert info["shortName"] == "Refreshed Stock"
+
+        # Should save to file
+        data_file = tmp_path / "REFRESH_data.json"
+        assert data_file.exists()
+
+    @patch("fin_trade.services.security.yf")
+    def test_returns_none_on_error(self, mock_yf, tmp_path):
+        """Test returns None when yfinance fails."""
+        mock_yf.Ticker.side_effect = Exception("API Error")
+
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=tmp_path, stock_data_service=mock_stock_service)
+
+        info = service.refresh_security_data("ERROR")
+        assert info is None
+
+
+class TestGetShortInterest:
+    """Tests for get_short_interest method."""
+
+    def test_returns_short_interest_data(self, tmp_path):
+        """Test returns short interest when available."""
+        data_dir = tmp_path / "stock_data"
+        data_dir.mkdir()
+
+        security_data = {
+            "ticker": "GME",
+            "shortName": "GameStop",
+            "sharesShort": 10000000,
+            "shortRatio": 5.5,
+            "shortPercentOfFloat": 0.25,
+        }
+        (data_dir / "GME_data.json").write_text(json.dumps(security_data))
+
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
+
+        si = service.get_short_interest("GME")
+        assert si is not None
+        assert si["shares_short"] == 10000000
+        assert si["short_ratio"] == 5.5
+        assert si["short_percent_float"] == 0.25
+
+    def test_returns_none_when_no_data(self, tmp_path):
+        """Test returns None when no short interest data."""
+        data_dir = tmp_path / "stock_data"
+        data_dir.mkdir()
+
+        security_data = {"ticker": "AAPL", "shortName": "Apple"}
+        (data_dir / "AAPL_data.json").write_text(json.dumps(security_data))
+
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
+
+        assert service.get_short_interest("AAPL") is None
+
+
+class TestGet52wRange:
+    """Tests for get_52w_range method."""
+
+    def test_returns_range_data(self, tmp_path):
+        """Test returns 52-week range when available."""
+        data_dir = tmp_path / "stock_data"
+        data_dir.mkdir()
+
+        security_data = {
+            "ticker": "NVDA",
+            "shortName": "NVIDIA",
+            "fiftyTwoWeekHigh": 212.19,
+            "fiftyTwoWeekLow": 86.62,
+        }
+        (data_dir / "NVDA_data.json").write_text(json.dumps(security_data))
+
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
+
+        range_data = service.get_52w_range("NVDA")
+        assert range_data is not None
+        assert range_data["high_52w"] == 212.19
+        assert range_data["low_52w"] == 86.62
+
+
+class TestGetMovingAverages:
+    """Tests for get_moving_averages method."""
+
+    def test_returns_ma_data(self, tmp_path):
+        """Test returns moving averages when available."""
+        data_dir = tmp_path / "stock_data"
+        data_dir.mkdir()
+
+        security_data = {
+            "ticker": "AAPL",
+            "shortName": "Apple",
+            "fiftyDayAverage": 180.50,
+            "twoHundredDayAverage": 175.25,
+        }
+        (data_dir / "AAPL_data.json").write_text(json.dumps(security_data))
+
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
+
+        ma = service.get_moving_averages("AAPL")
+        assert ma is not None
+        assert ma["ma_50"] == 180.50
+        assert ma["ma_200"] == 175.25
+
+
+class TestGetAnalystData:
+    """Tests for get_analyst_data method."""
+
+    def test_returns_analyst_data(self, tmp_path):
+        """Test returns analyst ratings when available."""
+        data_dir = tmp_path / "stock_data"
+        data_dir.mkdir()
+
+        security_data = {
+            "ticker": "MSFT",
+            "shortName": "Microsoft",
+            "targetMeanPrice": 450.0,
+            "recommendationKey": "buy",
+            "numberOfAnalystOpinions": 35,
+        }
+        (data_dir / "MSFT_data.json").write_text(json.dumps(security_data))
+
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
+
+        analyst = service.get_analyst_data("MSFT")
+        assert analyst is not None
+        assert analyst["target_price"] == 450.0
+        assert analyst["recommendation"] == "buy"
+        assert analyst["num_analysts"] == 35
+
+
+class TestGetVolumeData:
+    """Tests for get_volume_data method."""
+
+    def test_returns_volume_data(self, tmp_path):
+        """Test returns volume metrics when available."""
+        data_dir = tmp_path / "stock_data"
+        data_dir.mkdir()
+
+        security_data = {
+            "ticker": "AMD",
+            "shortName": "AMD",
+            "averageVolume": 50000000,
+            "averageVolume10days": 55000000,
+        }
+        (data_dir / "AMD_data.json").write_text(json.dumps(security_data))
+
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
+
+        vol = service.get_volume_data("AMD")
+        assert vol is not None
+        assert vol["avg_volume"] == 50000000
+        assert vol["avg_volume_10d"] == 55000000
+
+
+class TestGetEarningsTimestamp:
+    """Tests for get_earnings_timestamp method."""
+
+    def test_returns_earnings_datetime(self, tmp_path):
+        """Test returns earnings timestamp as datetime."""
+        data_dir = tmp_path / "stock_data"
+        data_dir.mkdir()
+
+        # Timestamp for 2026-01-26 00:00:00 UTC
+        security_data = {
+            "ticker": "NVDA",
+            "shortName": "NVIDIA",
+            "earningsTimestamp": 1772053200,
+        }
+        (data_dir / "NVDA_data.json").write_text(json.dumps(security_data))
+
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
+
+        earnings = service.get_earnings_timestamp("NVDA")
+        assert earnings is not None
+        assert isinstance(earnings, datetime)
+
+    def test_returns_none_when_no_earnings(self, tmp_path):
+        """Test returns None when no earnings timestamp."""
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=tmp_path, stock_data_service=mock_stock_service)
+
+        assert service.get_earnings_timestamp("UNKNOWN") is None
+
+
+class TestGetValuationMetrics:
+    """Tests for get_valuation_metrics method."""
+
+    def test_returns_valuation_metrics(self, tmp_path):
+        """Test returns valuation metrics when available."""
+        data_dir = tmp_path / "stock_data"
+        data_dir.mkdir()
+
+        security_data = {
+            "ticker": "NVDA",
+            "shortName": "NVIDIA",
+            "beta": 2.314,
+            "trailingPE": 44.58,
+            "forwardPE": 23.57,
+            "priceToBook": 36.82,
+            "marketCap": 4385041022976,
+        }
+        (data_dir / "NVDA_data.json").write_text(json.dumps(security_data))
+
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=data_dir, stock_data_service=mock_stock_service)
+
+        metrics = service.get_valuation_metrics("NVDA")
+        assert metrics is not None
+        assert metrics["beta"] == 2.314
+        assert metrics["pe_trailing"] == 44.58
+        assert metrics["pe_forward"] == 23.57

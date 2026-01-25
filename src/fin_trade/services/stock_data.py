@@ -1,11 +1,17 @@
 """Stock data fetching and caching service."""
 
-from dataclasses import dataclass
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 from pathlib import Path
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
 import pandas as pd
 import yfinance as yf
+
+if TYPE_CHECKING:
+    from fin_trade.services.security import SecurityService
 
 
 @dataclass
@@ -26,6 +32,11 @@ class PriceContext:
     ma_20: float | None
     ma_50: float | None
     trend_summary: str  # e.g., "↗ +15% (5d), above 20-day MA"
+
+    # Short interest data (from stored SecurityService data)
+    shares_short: int | None = None
+    short_ratio: float | None = None  # Days to cover
+    short_percent_float: float | None = None
 
     def to_context_string(self) -> str:
         """Format as compact string for agent consumption."""
@@ -61,6 +72,12 @@ class PriceContext:
                 parts.append("above 20-MA")
             else:
                 parts.append("below 20-MA")
+
+        # Short interest (only show if significant - > 10%)
+        if self.short_percent_float is not None and self.short_percent_float > 0.10:
+            si_pct = self.short_percent_float * 100
+            dtc = f" ({self.short_ratio:.1f} DTC)" if self.short_ratio else ""
+            parts.append(f"SI: {si_pct:.1f}%{dtc}")
 
         return " | ".join(parts)
 
@@ -192,12 +209,58 @@ class StockDataService:
 
         return float(((end_price - start_price) / start_price) * 100)
 
-    def get_price_context(self, ticker: str) -> PriceContext:
-        """Get rich price context for a ticker including history and indicators."""
+    def get_price_context(
+        self,
+        ticker: str,
+        security_service: SecurityService | None = None,
+    ) -> PriceContext:
+        """Get rich price context for a ticker including history and indicators.
+
+        If security_service is provided, uses stored 52w range and MA data
+        to reduce API calls (only fetches 30 days of history for RSI/changes).
+
+        Args:
+            ticker: Stock ticker symbol
+            security_service: Optional SecurityService for stored data reuse
+
+        Returns:
+            PriceContext with price history and technical indicators
+        """
         ticker = ticker.upper()
 
-        # Get 1-year history for 52-week calculations
-        df = self.get_history(ticker, days=365)
+        # Try to get 52w range and MAs from stored data
+        high_52w = None
+        low_52w = None
+        ma_50_stored = None
+        shares_short = None
+        short_ratio = None
+        short_percent_float = None
+
+        if security_service:
+            # Get stored 52w range (avoid fetching 365 days of history)
+            range_data = security_service.get_52w_range(ticker)
+            if range_data:
+                high_52w = range_data["high_52w"]
+                low_52w = range_data["low_52w"]
+
+            # Get stored MA data
+            ma_data = security_service.get_moving_averages(ticker)
+            if ma_data:
+                ma_50_stored = ma_data["ma_50"]
+
+            # Get short interest data
+            si_data = security_service.get_short_interest(ticker)
+            if si_data:
+                shares_short = si_data["shares_short"]
+                short_ratio = si_data["short_ratio"]
+                short_percent_float = si_data["short_percent_float"]
+
+        # Determine how much history we need
+        # If we have stored 52w data, only need 30 days for RSI and changes
+        # Otherwise, need 365 days to calculate 52w range
+        days_needed = 30 if (high_52w is not None and low_52w is not None) else 365
+
+        df = self.get_history(ticker, days=days_needed)
 
         if df.empty:
             raise ValueError(f"No price data available for {ticker}")
@@ -208,9 +271,10 @@ class StockDataService:
         change_5d = self._calculate_change_pct(df, 5)
         change_30d = self._calculate_change_pct(df, 30)
 
-        # 52-week high/low
-        high_52w = float(df["High"].max()) if "High" in df.columns else None
-        low_52w = float(df["Low"].min()) if "Low" in df.columns else None
+        # Calculate 52-week high/low from history if not from stored data
+        if high_52w is None or low_52w is None:
+            high_52w = float(df["High"].max()) if "High" in df.columns else None
+            low_52w = float(df["Low"].min()) if "Low" in df.columns else None
 
         pct_from_high = None
         pct_from_low = None
@@ -231,9 +295,9 @@ class StockDataService:
                 current_volume = float(df["Volume"].iloc[-1])
                 volume_ratio = current_volume / volume_avg_20d
 
-        # Moving averages
+        # Moving averages - use stored MA-50 if available, calculate from history otherwise
         ma_20 = float(df["Close"].tail(20).mean()) if len(df) >= 20 else None
-        ma_50 = float(df["Close"].tail(50).mean()) if len(df) >= 50 else None
+        ma_50 = ma_50_stored if ma_50_stored else (float(df["Close"].tail(50).mean()) if len(df) >= 50 else None)
 
         # Build trend summary
         trend_parts = []
@@ -262,16 +326,29 @@ class StockDataService:
             ma_20=ma_20,
             ma_50=ma_50,
             trend_summary=trend_summary,
+            shares_short=shares_short,
+            short_ratio=short_ratio,
+            short_percent_float=short_percent_float,
         )
 
     def get_holdings_context(
-        self, tickers: list[str]
+        self,
+        tickers: list[str],
+        security_service: SecurityService | None = None,
     ) -> dict[str, PriceContext]:
-        """Get price context for multiple tickers."""
+        """Get price context for multiple tickers.
+
+        Args:
+            tickers: List of ticker symbols
+            security_service: Optional SecurityService for stored data reuse
+
+        Returns:
+            Dict mapping ticker to PriceContext
+        """
         result = {}
         for ticker in tickers:
             try:
-                result[ticker] = self.get_price_context(ticker)
+                result[ticker] = self.get_price_context(ticker, security_service)
             except Exception:
                 pass  # Skip tickers that fail
         return result
@@ -280,12 +357,14 @@ class StockDataService:
         self,
         holdings: list,
         price_contexts: dict[str, PriceContext] | None = None,
+        security_service: SecurityService | None = None,
     ) -> str:
         """Format holdings with rich context for agent prompts.
 
         Args:
             holdings: List of Holding objects with ticker, name, quantity, avg_price
             price_contexts: Pre-fetched price contexts (will fetch if not provided)
+            security_service: Optional SecurityService for stored data reuse
 
         Returns:
             Formatted string for agent prompt
@@ -295,7 +374,7 @@ class StockDataService:
 
         if price_contexts is None:
             tickers = [h.ticker for h in holdings]
-            price_contexts = self.get_holdings_context(tickers)
+            price_contexts = self.get_holdings_context(tickers, security_service)
 
         lines = []
         for h in holdings:

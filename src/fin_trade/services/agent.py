@@ -81,10 +81,12 @@ class AgentService:
         self, config: PortfolioConfig, state: PortfolioState
     ) -> str:
         """Build the prompt for the LLM with portfolio context."""
-        # Get rich price context for holdings (history, RSI, volume, MAs)
+        # Get rich price context for holdings (history, RSI, volume, MAs, short interest)
         holding_tickers = [h.ticker for h in state.holdings]
         try:
-            holdings_info_str = self.stock_data_service.format_holdings_for_prompt(state.holdings)
+            holdings_info_str = self.stock_data_service.format_holdings_for_prompt(
+                state.holdings, security_service=self.security_service
+            )
         except Exception:
             # Fallback to basic format if price context fails
             holdings_info = []

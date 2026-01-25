@@ -1,10 +1,10 @@
-"""Security service for managing stock ticker/ISIN lookups and prices."""
+"""Security service for managing stock ticker lookups and prices."""
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 class Security:
     """Represents a known security with its identifiers."""
 
-    isin: str
     ticker: str
     name: str
 
@@ -26,12 +25,8 @@ class Security:
 class SecurityService:
     """Service for managing security lookups and price fetching.
 
-    ISINs are obtained from:
-    1. yfinance (when available)
-    2. User-provided via UI (stored in data files)
-    3. Fallback to UNKNOWN-{ticker} when not available
-
-    Prices are delegated to StockDataService which handles caching.
+    Security data is stored in {TICKER}_data.json files containing
+    full yfinance info. Prices are delegated to StockDataService.
     """
 
     def __init__(
@@ -51,16 +46,15 @@ class SecurityService:
         self._stock_data_service = stock_data_service
 
         # Initialize caches
-        self._by_isin: dict[str, Security] = {}
         self._by_ticker: dict[str, Security] = {}
         self._full_info: dict[str, dict] = {}  # ticker -> full yfinance info
 
         # Load persisted security data from files
         self._load_persisted_securities()
 
-    def _get_data_file_path(self, isin: str) -> Path:
+    def _get_data_file_path(self, ticker: str) -> Path:
         """Get the path to the data file for a security."""
-        return self.data_dir / f"{isin}_data.json"
+        return self.data_dir / f"{ticker.upper()}_data.json"
 
     def _load_persisted_securities(self) -> None:
         """Load all persisted security data from JSON files."""
@@ -69,25 +63,26 @@ class SecurityService:
                 with open(data_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
 
-                isin = data.get("isin")
                 ticker = data.get("ticker") or data.get("symbol")
                 name = data.get("shortName") or data.get("longName") or data.get("name") or ticker
 
-                if isin and ticker:
-                    security = Security(isin=isin, ticker=ticker.upper(), name=name)
-                    self._by_isin[isin] = security
-                    self._by_ticker[ticker.upper()] = security
-                    self._full_info[ticker.upper()] = data
+                if ticker:
+                    ticker = ticker.upper()
+                    security = Security(ticker=ticker, name=name)
+                    self._by_ticker[ticker] = security
+                    self._full_info[ticker] = data
             except Exception:
                 # Skip files that can't be loaded
                 continue
 
-    def _save_security_data(self, isin: str, data: dict) -> None:
+    def _save_security_data(self, ticker: str, data: dict) -> None:
         """Save security data to a JSON file."""
-        data_file = self._get_data_file_path(isin)
+        ticker = ticker.upper()
+        data_file = self._get_data_file_path(ticker)
 
         # Add metadata
         data["_saved_at"] = datetime.now().isoformat()
+        data["ticker"] = ticker
 
         # Convert any non-serializable values
         serializable_data = {}
@@ -102,10 +97,6 @@ class SecurityService:
         with open(data_file, "w", encoding="utf-8") as f:
             json.dump(serializable_data, f, indent=2, default=str)
 
-    def get_by_isin(self, isin: str) -> Security | None:
-        """Get a security by its ISIN."""
-        return self._by_isin.get(isin)
-
     def get_by_ticker(self, ticker: str) -> Security | None:
         """Get a security by its ticker symbol."""
         return self._by_ticker.get(ticker.upper())
@@ -117,8 +108,7 @@ class SecurityService:
     def lookup_ticker(self, ticker: str) -> Security:
         """
         Lookup a security by ticker. If not known, fetch info from yfinance
-        and register the security. Uses UNKNOWN-{ticker} if no ISIN available.
-        User can provide ISIN manually via UI.
+        and register the security.
         """
         ticker = ticker.upper()
 
@@ -127,7 +117,6 @@ class SecurityService:
             return self._by_ticker[ticker]
 
         # Fetch from yfinance
-        isin = None
         name = ticker
         info = {}
 
@@ -136,7 +125,6 @@ class SecurityService:
             info = stock.info
 
             name = info.get("shortName") or info.get("longName") or ticker
-            isin = info.get("isin")
 
             # Ensure ticker is in the info dict
             info["ticker"] = ticker
@@ -144,28 +132,21 @@ class SecurityService:
         except Exception:
             pass
 
-        # Fallback to UNKNOWN if no ISIN from yfinance
-        if not isin:
-            isin = f"UNKNOWN-{ticker}"
-
-        # Update info dict with ISIN
-        info["isin"] = isin
         if "shortName" not in info:
             info["shortName"] = name
 
-        # Save full info to file
-        self._save_security_data(isin, info)
+        # Save full info to file (ticker-based)
+        self._save_security_data(ticker, info)
 
         # Cache full info
         self._full_info[ticker] = info
 
-        security = Security(isin=isin, ticker=ticker, name=name)
+        security = Security(ticker=ticker, name=name)
         self._register(security)
         return security
 
     def _register(self, security: Security) -> None:
         """Register a security in the lookup caches."""
-        self._by_isin[security.isin] = security
         self._by_ticker[security.ticker] = security
 
     def get_price(self, ticker: str) -> float:
@@ -178,7 +159,7 @@ class SecurityService:
         return self._stock_data_service.get_price(ticker)
 
     def get_stock_info(self, ticker: str) -> dict:
-        """Get stock information including name, ISIN, etc."""
+        """Get stock information including name, sector, etc."""
         ticker = ticker.upper()
 
         # Check if we have cached full info
@@ -187,7 +168,6 @@ class SecurityService:
             return {
                 "name": info.get("shortName") or info.get("longName") or ticker,
                 "ticker": ticker,
-                "isin": info.get("isin") or f"UNKNOWN-{ticker}",
                 "currency": info.get("currency", "USD"),
                 "sector": info.get("sector"),
                 "industry": info.get("industry"),
@@ -201,19 +181,16 @@ class SecurityService:
             info = stock.info
 
             name = info.get("shortName") or info.get("longName") or ticker
-            isin = info.get("isin") or f"UNKNOWN-{ticker}"
 
             info["ticker"] = ticker
-            info["isin"] = isin
 
             # Save and cache the full info
-            self._save_security_data(isin, info)
+            self._save_security_data(ticker, info)
             self._full_info[ticker] = info
 
             return {
                 "name": name,
                 "ticker": ticker,
-                "isin": isin,
                 "currency": info.get("currency", "USD"),
                 "sector": info.get("sector"),
                 "industry": info.get("industry"),
@@ -225,7 +202,6 @@ class SecurityService:
             return {
                 "name": ticker,
                 "ticker": ticker,
-                "isin": f"UNKNOWN-{ticker}",
                 "currency": "USD",
             }
 
@@ -237,62 +213,173 @@ class SecurityService:
             info = stock.info
 
             name = info.get("shortName") or info.get("longName") or ticker
-            isin = info.get("isin") or f"UNKNOWN-{ticker}"
 
             info["ticker"] = ticker
-            info["isin"] = isin
 
             # Save and update caches
-            self._save_security_data(isin, info)
+            self._save_security_data(ticker, info)
             self._full_info[ticker] = info
 
-            security = Security(isin=isin, ticker=ticker, name=name)
+            security = Security(ticker=ticker, name=name)
             self._register(security)
 
             return info
         except Exception:
             return None
 
-    def update_isin(self, ticker: str, isin: str) -> Security:
+    def is_data_stale(self, ticker: str, max_age_hours: int = 24) -> bool:
+        """Check if stored data for a ticker is stale (older than max_age_hours)."""
+        info = self._full_info.get(ticker.upper())
+        if not info:
+            return True
+        saved_at = info.get("_saved_at")
+        if not saved_at:
+            return True
+        try:
+            saved_time = datetime.fromisoformat(saved_at)
+            return datetime.now() - saved_time > timedelta(hours=max_age_hours)
+        except Exception:
+            return True
+
+    # ==================== Rich Data Methods ====================
+    # These methods expose already-stored yfinance data without new API calls
+
+    def get_short_interest(self, ticker: str) -> dict | None:
+        """Get short interest data from stored JSON.
+
+        Returns:
+            Dict with shares_short, short_ratio (days to cover), short_percent_float
+            or None if not available
         """
-        Update the ISIN for a security. Called when user provides ISIN manually.
-        This will update caches and save to file.
+        info = self._full_info.get(ticker.upper())
+        if not info:
+            return None
+
+        shares_short = info.get("sharesShort")
+        if shares_short is None:
+            return None
+
+        return {
+            "shares_short": shares_short,
+            "short_ratio": info.get("shortRatio"),  # Days to cover
+            "short_percent_float": info.get("shortPercentOfFloat"),
+        }
+
+    def get_52w_range(self, ticker: str) -> dict | None:
+        """Get 52-week range from stored JSON.
+
+        Returns:
+            Dict with high_52w, low_52w or None if not available
         """
-        ticker = ticker.upper()
-        isin = isin.strip().upper()
+        info = self._full_info.get(ticker.upper())
+        if not info:
+            return None
 
-        # Get existing security or create new one
-        existing = self._by_ticker.get(ticker)
-        if existing:
-            name = existing.name
-            # Get full info if available
-            full_info = self._full_info.get(ticker, {}).copy()
-        else:
-            name = ticker
-            full_info = {}
+        high = info.get("fiftyTwoWeekHigh")
+        low = info.get("fiftyTwoWeekLow")
+        if high is None or low is None:
+            return None
 
-        # Update the info with the new ISIN
-        full_info["isin"] = isin
-        full_info["ticker"] = ticker
-        if "shortName" not in full_info:
-            full_info["shortName"] = name
+        return {
+            "high_52w": high,
+            "low_52w": low,
+        }
 
-        # Remove old file if it had UNKNOWN ISIN
-        if existing and existing.isin.startswith("UNKNOWN-"):
-            old_file = self._get_data_file_path(existing.isin)
-            if old_file.exists():
-                old_file.unlink()
+    def get_moving_averages(self, ticker: str) -> dict | None:
+        """Get moving averages from stored JSON.
 
-        # Save with new ISIN
-        self._save_security_data(isin, full_info)
-        self._full_info[ticker] = full_info
+        Returns:
+            Dict with ma_50, ma_200 or None if not available
+        """
+        info = self._full_info.get(ticker.upper())
+        if not info:
+            return None
 
-        # Update caches
-        security = Security(isin=isin, ticker=ticker, name=name)
+        ma_50 = info.get("fiftyDayAverage")
+        ma_200 = info.get("twoHundredDayAverage")
+        if ma_50 is None and ma_200 is None:
+            return None
 
-        # Remove old entry from isin cache if it existed
-        if existing:
-            self._by_isin.pop(existing.isin, None)
+        return {
+            "ma_50": ma_50,
+            "ma_200": ma_200,
+        }
 
-        self._register(security)
-        return security
+    def get_analyst_data(self, ticker: str) -> dict | None:
+        """Get analyst ratings from stored JSON.
+
+        Returns:
+            Dict with target_price, recommendation or None if not available
+        """
+        info = self._full_info.get(ticker.upper())
+        if not info:
+            return None
+
+        target = info.get("targetMeanPrice")
+        rec = info.get("recommendationKey")
+        if target is None and rec is None:
+            return None
+
+        return {
+            "target_price": target,
+            "target_high": info.get("targetHighPrice"),
+            "target_low": info.get("targetLowPrice"),
+            "recommendation": rec,
+            "num_analysts": info.get("numberOfAnalystOpinions"),
+        }
+
+    def get_volume_data(self, ticker: str) -> dict | None:
+        """Get volume metrics from stored JSON.
+
+        Returns:
+            Dict with avg_volume, avg_volume_10d or None if not available
+        """
+        info = self._full_info.get(ticker.upper())
+        if not info:
+            return None
+
+        avg_vol = info.get("averageVolume")
+        if avg_vol is None:
+            return None
+
+        return {
+            "avg_volume": avg_vol,
+            "avg_volume_10d": info.get("averageVolume10days"),
+        }
+
+    def get_earnings_timestamp(self, ticker: str) -> datetime | None:
+        """Get earnings date from stored JSON.
+
+        Returns:
+            Datetime of next earnings or None if not available
+        """
+        info = self._full_info.get(ticker.upper())
+        if not info:
+            return None
+
+        ts = info.get("earningsTimestamp")
+        if ts is None:
+            return None
+
+        try:
+            return datetime.fromtimestamp(ts)
+        except (TypeError, ValueError, OSError):
+            return None
+
+    def get_valuation_metrics(self, ticker: str) -> dict | None:
+        """Get valuation metrics from stored JSON.
+
+        Returns:
+            Dict with beta, pe_trailing, pe_forward, etc.
+        """
+        info = self._full_info.get(ticker.upper())
+        if not info:
+            return None
+
+        return {
+            "beta": info.get("beta"),
+            "pe_trailing": info.get("trailingPE"),
+            "pe_forward": info.get("forwardPE"),
+            "price_to_book": info.get("priceToBook"),
+            "market_cap": info.get("marketCap"),
+        }

@@ -10,7 +10,6 @@ from fin_trade.services import PortfolioService
 from fin_trade.services.security import SecurityService
 from fin_trade.components.ticker_correction import (
     render_ticker_correction,
-    apply_isin_corrections,
     clear_ticker_corrections,
 )
 
@@ -364,13 +363,6 @@ def _render_pending_trades_for_log(
                 qty_key = f"pending_qty_{log.id}_{i}"
                 if qty_key in st.session_state.pending_qty_adjustments:
                     quantity_adjustments[i] = st.session_state.pending_qty_adjustments[qty_key]
-
-            # Apply ISIN corrections before executing
-            apply_isin_corrections(
-                key_prefixes=[f"pending_{log.id}_{i}" for i in selected_indices],
-                tickers=[recommendations[i].get("ticker", "") for i in selected_indices],
-                security_service=security_service,
-            )
 
             _apply_pending_trades(
                 log, recommendations, selected_indices, log_service, ticker_corrections,

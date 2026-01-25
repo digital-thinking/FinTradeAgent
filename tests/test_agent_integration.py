@@ -35,7 +35,6 @@ def test_agent_includes_market_data_in_prompt():
         cash=5000.0,
         holdings=[
             Holding(
-                isin="US0378331005",
                 ticker="AAPL",
                 name="Apple Inc.",
                 quantity=10,

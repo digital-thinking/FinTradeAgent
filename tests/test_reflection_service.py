@@ -178,7 +178,6 @@ class TestFindCompletedTrades:
         trades = [
             Trade(
                 timestamp=datetime(2025, 1, 1),
-                isin="US0378331005",
                 ticker="AAPL",
                 name="Apple Inc.",
                 action="BUY",
@@ -196,7 +195,6 @@ class TestFindCompletedTrades:
         trades = [
             Trade(
                 timestamp=datetime(2025, 1, 1),
-                isin="US0378331005",
                 ticker="AAPL",
                 name="Apple Inc.",
                 action="BUY",
@@ -206,7 +204,6 @@ class TestFindCompletedTrades:
             ),
             Trade(
                 timestamp=datetime(2025, 1, 15),
-                isin="US0378331005",
                 ticker="AAPL",
                 name="Apple Inc.",
                 action="SELL",
@@ -230,7 +227,6 @@ class TestFindCompletedTrades:
         trades = [
             Trade(
                 timestamp=datetime(2025, 1, 1),
-                isin="US0378331005",
                 ticker="AAPL",
                 name="Apple Inc.",
                 action="BUY",
@@ -240,7 +236,6 @@ class TestFindCompletedTrades:
             ),
             Trade(
                 timestamp=datetime(2025, 1, 5),
-                isin="US5949181045",
                 ticker="MSFT",
                 name="Microsoft Corp.",
                 action="BUY",
@@ -250,7 +245,6 @@ class TestFindCompletedTrades:
             ),
             Trade(
                 timestamp=datetime(2025, 1, 15),
-                isin="US0378331005",
                 ticker="AAPL",
                 name="Apple Inc.",
                 action="SELL",
@@ -260,7 +254,6 @@ class TestFindCompletedTrades:
             ),
             Trade(
                 timestamp=datetime(2025, 1, 20),
-                isin="US5949181045",
                 ticker="MSFT",
                 name="Microsoft Corp.",
                 action="SELL",
@@ -282,7 +275,6 @@ class TestFindCompletedTrades:
         trades = [
             Trade(
                 timestamp=datetime(2025, 1, 1),
-                isin="US0378331005",
                 ticker="AAPL",
                 name="Apple Inc.",
                 action="BUY",
@@ -292,7 +284,6 @@ class TestFindCompletedTrades:
             ),
             Trade(
                 timestamp=datetime(2025, 1, 5),
-                isin="US0378331005",
                 ticker="AAPL",
                 name="Apple Inc.",
                 action="BUY",
@@ -302,7 +293,6 @@ class TestFindCompletedTrades:
             ),
             Trade(
                 timestamp=datetime(2025, 1, 15),
-                isin="US0378331005",
                 ticker="AAPL",
                 name="Apple Inc.",
                 action="SELL",
@@ -603,7 +593,6 @@ class TestAnalyzePerformance:
         trades = [
             Trade(
                 timestamp=datetime(2025, 1, 1),
-                isin="US0378331005",
                 ticker="AAPL",
                 name="Apple Inc.",
                 action="BUY",
@@ -613,7 +602,6 @@ class TestAnalyzePerformance:
             ),
             Trade(
                 timestamp=datetime(2025, 1, 15),
-                isin="US0378331005",
                 ticker="AAPL",
                 name="Apple Inc.",
                 action="SELL",

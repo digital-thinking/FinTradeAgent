@@ -95,9 +95,7 @@ class TestCalculateAttributionSingleHolding:
         """Test attribution for a single holding with a gain."""
         service = AttributionService(mock_security_service)
         holdings = [
-            Holding(
-                isin="US0378331005",
-                ticker="AAPL",
+            Holding(ticker="AAPL",
                 name="Apple Inc.",
                 quantity=10,
                 avg_price=150.0,
@@ -123,9 +121,7 @@ class TestCalculateAttributionSingleHolding:
         """Test attribution for a single holding with a loss."""
         service = AttributionService(mock_security_service)
         holdings = [
-            Holding(
-                isin="US88160R1014",
-                ticker="TSLA",
+            Holding(ticker="TSLA",
                 name="Tesla Inc.",
                 quantity=5,
                 avg_price=200.0,
@@ -151,9 +147,9 @@ class TestCalculateAttributionMultipleHoldings:
         """Test attribution for multiple holdings across sectors."""
         service = AttributionService(mock_security_service)
         holdings = [
-            Holding(isin="US0378331005", ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
-            Holding(isin="US5949181045", ticker="MSFT", name="Microsoft Corp.", quantity=5, avg_price=350.0),
-            Holding(isin="US88160R1014", ticker="TSLA", name="Tesla Inc.", quantity=10, avg_price=200.0),
+            Holding(ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
+            Holding(ticker="MSFT", name="Microsoft Corp.", quantity=5, avg_price=350.0),
+            Holding(ticker="TSLA", name="Tesla Inc.", quantity=10, avg_price=200.0),
         ]
         state = PortfolioState(cash=2000.0, holdings=holdings)
 
@@ -183,8 +179,8 @@ class TestCalculateAttributionMultipleHoldings:
         """Test that contribution percentages sum to 100% when total gain is non-zero."""
         service = AttributionService(mock_security_service)
         holdings = [
-            Holding(isin="US0378331005", ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
-            Holding(isin="US5949181045", ticker="MSFT", name="Microsoft Corp.", quantity=5, avg_price=350.0),
+            Holding(ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
+            Holding(ticker="MSFT", name="Microsoft Corp.", quantity=5, avg_price=350.0),
         ]
         state = PortfolioState(cash=2000.0, holdings=holdings)
 
@@ -201,9 +197,9 @@ class TestSectorAttribution:
         """Test that holdings are correctly aggregated by sector."""
         service = AttributionService(mock_security_service)
         holdings = [
-            Holding(isin="US0378331005", ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
-            Holding(isin="US5949181045", ticker="MSFT", name="Microsoft Corp.", quantity=5, avg_price=350.0),
-            Holding(isin="US88160R1014", ticker="TSLA", name="Tesla Inc.", quantity=10, avg_price=200.0),
+            Holding(ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
+            Holding(ticker="MSFT", name="Microsoft Corp.", quantity=5, avg_price=350.0),
+            Holding(ticker="TSLA", name="Tesla Inc.", quantity=10, avg_price=200.0),
         ]
         state = PortfolioState(cash=2000.0, holdings=holdings)
 
@@ -227,7 +223,7 @@ class TestSectorAttribution:
 
         service = AttributionService(mock_security_service)
         holdings = [
-            Holding(isin="US0378331005", ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
+            Holding(ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
         ]
         state = PortfolioState(cash=5000.0, holdings=holdings)
 
@@ -241,8 +237,8 @@ class TestSectorAttribution:
         """Test sector allocation percentages are calculated correctly."""
         service = AttributionService(mock_security_service)
         holdings = [
-            Holding(isin="US0378331005", ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
-            Holding(isin="US88160R1014", ticker="TSLA", name="Tesla Inc.", quantity=10, avg_price=200.0),
+            Holding(ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
+            Holding(ticker="TSLA", name="Tesla Inc.", quantity=10, avg_price=200.0),
         ]
         state = PortfolioState(cash=2000.0, holdings=holdings)
 
@@ -266,8 +262,8 @@ class TestTopContributorsAndDetractors:
         """Test correctly identifies the top contributor."""
         service = AttributionService(mock_security_service)
         holdings = [
-            Holding(isin="US0378331005", ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
-            Holding(isin="US5949181045", ticker="MSFT", name="Microsoft Corp.", quantity=5, avg_price=350.0),
+            Holding(ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
+            Holding(ticker="MSFT", name="Microsoft Corp.", quantity=5, avg_price=350.0),
         ]
         state = PortfolioState(cash=2000.0, holdings=holdings)
 
@@ -282,8 +278,8 @@ class TestTopContributorsAndDetractors:
         """Test correctly identifies the top detractor (only if negative)."""
         service = AttributionService(mock_security_service)
         holdings = [
-            Holding(isin="US0378331005", ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
-            Holding(isin="US88160R1014", ticker="TSLA", name="Tesla Inc.", quantity=10, avg_price=200.0),
+            Holding(ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
+            Holding(ticker="TSLA", name="Tesla Inc.", quantity=10, avg_price=200.0),
         ]
         state = PortfolioState(cash=2000.0, holdings=holdings)
 
@@ -297,8 +293,8 @@ class TestTopContributorsAndDetractors:
         """Test that top_detractor is None when all holdings have gains."""
         service = AttributionService(mock_security_service)
         holdings = [
-            Holding(isin="US0378331005", ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
-            Holding(isin="US5949181045", ticker="MSFT", name="Microsoft Corp.", quantity=5, avg_price=350.0),
+            Holding(ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
+            Holding(ticker="MSFT", name="Microsoft Corp.", quantity=5, avg_price=350.0),
         ]
         state = PortfolioState(cash=2000.0, holdings=holdings)
 
@@ -318,7 +314,7 @@ class TestEdgeCases:
 
         service = AttributionService(mock_security_service)
         holdings = [
-            Holding(isin="US0378331005", ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
+            Holding(ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
         ]
         state = PortfolioState(cash=5000.0, holdings=holdings)
 
@@ -334,7 +330,7 @@ class TestEdgeCases:
 
         service = AttributionService(mock_security_service)
         holdings = [
-            Holding(isin="US0378331005", ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
+            Holding(ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
         ]
         state = PortfolioState(cash=5000.0, holdings=holdings)
 
@@ -350,7 +346,7 @@ class TestEdgeCases:
         """Test handles zero cost basis without division error."""
         service = AttributionService(mock_security_service)
         holdings = [
-            Holding(isin="US0378331005", ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=0.0),
+            Holding(ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=0.0),
         ]
         state = PortfolioState(cash=5000.0, holdings=holdings)
 
@@ -368,7 +364,7 @@ class TestEdgeCases:
 
         service = AttributionService(mock)
         holdings = [
-            Holding(isin="US0378331005", ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
+            Holding(ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=150.0),
         ]
         state = PortfolioState(cash=5000.0, holdings=holdings)
 

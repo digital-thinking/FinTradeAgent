@@ -1,11 +1,17 @@
 """Market data service for fetching earnings, filings, insider trades, and macro data."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
 import yfinance as yf
+
+if TYPE_CHECKING:
+    from fin_trade.services.security import SecurityService
 
 
 @dataclass
@@ -147,14 +153,46 @@ class MarketDataService:
         """Store data in cache."""
         self._cache[key] = (datetime.now(), data)
 
-    def get_earnings_info(self, ticker: str) -> EarningsInfo:
-        """Fetch earnings calendar information for a ticker."""
+    def get_earnings_info(
+        self,
+        ticker: str,
+        security_service: SecurityService | None = None,
+    ) -> EarningsInfo:
+        """Fetch earnings calendar information for a ticker.
+
+        If security_service is provided, checks stored data first
+        before calling yfinance API.
+
+        Args:
+            ticker: Stock ticker symbol
+            security_service: Optional SecurityService for stored data reuse
+
+        Returns:
+            EarningsInfo with earnings date and estimates
+        """
         ticker = ticker.upper()
         cache_key = f"earnings_{ticker}"
 
         cached = self._get_cached(cache_key)
         if cached:
             return cached  # type: ignore
+
+        # Try to get earnings date from stored SecurityService data first
+        if security_service:
+            stored_earnings = security_service.get_earnings_timestamp(ticker)
+            if stored_earnings:
+                # Check if stored date is in the future
+                days_until = (stored_earnings - datetime.now()).days
+                if days_until >= 0:
+                    result = EarningsInfo(
+                        ticker=ticker,
+                        earnings_date=stored_earnings,
+                        eps_estimate=None,  # Not available from stored data
+                        revenue_estimate=None,
+                        days_until_earnings=days_until,
+                    )
+                    self._set_cached(cache_key, result)
+                    return result
 
         try:
             stock = yf.Ticker(ticker)

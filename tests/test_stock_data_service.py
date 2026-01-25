@@ -457,9 +457,7 @@ class TestFormatHoldingsForPrompt:
         service._cache["AAPL"] = df
 
         holdings = [
-            Holding(
-                isin="US0378331005",
-                ticker="AAPL",
+            Holding(ticker="AAPL",
                 name="Apple Inc.",
                 quantity=10,
                 avg_price=150.0,
@@ -489,9 +487,7 @@ class TestFormatHoldingsForPrompt:
         service._cache["GAIN"] = df
 
         holdings = [
-            Holding(
-                isin="US123",
-                ticker="GAIN",
+            Holding(ticker="GAIN",
                 name="Gain Stock",
                 quantity=10,
                 avg_price=150.0,  # 180/150 = 20% gain
@@ -525,9 +521,7 @@ class TestFormatHoldingsForPrompt:
         )
 
         holdings = [
-            Holding(
-                isin="US123",
-                ticker="TEST",
+            Holding(ticker="TEST",
                 name="Test Stock",
                 quantity=10,
                 avg_price=100.0,
@@ -538,3 +532,89 @@ class TestFormatHoldingsForPrompt:
 
         assert "+100.0%" in result  # (200-100)/100 = 100% gain
         assert "$200.00" in result  # Current price from context
+
+
+class TestPriceContextShortInterest:
+    """Tests for short interest formatting in PriceContext."""
+
+    def test_shows_short_interest_when_above_threshold(self):
+        """Test shows SI% when above 10%."""
+        ctx = PriceContext(
+            ticker="GME",
+            current_price=25.0,
+            change_5d_pct=5.0,
+            change_30d_pct=10.0,
+            high_52w=30.0,
+            low_52w=10.0,
+            pct_from_52w_high=-16.7,
+            pct_from_52w_low=150.0,
+            rsi_14=55.0,
+            volume_avg_20d=1000000.0,
+            volume_ratio=1.0,
+            ma_20=24.0,
+            ma_50=22.0,
+            trend_summary="↗+5.0% (5d), above 20-MA",
+            shares_short=10000000,
+            short_ratio=5.5,
+            short_percent_float=0.25,  # 25% - above 10% threshold
+        )
+
+        ctx_str = ctx.to_context_string()
+
+        assert "SI:" in ctx_str
+        assert "25.0%" in ctx_str
+        assert "5.5 DTC" in ctx_str  # Days to cover
+
+    def test_hides_short_interest_when_below_threshold(self):
+        """Test hides SI% when below 10%."""
+        ctx = PriceContext(
+            ticker="AAPL",
+            current_price=185.0,
+            change_5d_pct=2.0,
+            change_30d_pct=5.0,
+            high_52w=200.0,
+            low_52w=150.0,
+            pct_from_52w_high=-7.5,
+            pct_from_52w_low=23.3,
+            rsi_14=60.0,
+            volume_avg_20d=50000000.0,
+            volume_ratio=1.0,
+            ma_20=180.0,
+            ma_50=175.0,
+            trend_summary="↗+2.0% (5d), above 20-MA",
+            shares_short=1000000,
+            short_ratio=0.5,
+            short_percent_float=0.05,  # 5% - below 10% threshold
+        )
+
+        ctx_str = ctx.to_context_string()
+
+        assert "SI:" not in ctx_str  # Should not show
+
+    def test_handles_none_short_interest(self):
+        """Test handles None short interest values."""
+        ctx = PriceContext(
+            ticker="TEST",
+            current_price=100.0,
+            change_5d_pct=None,
+            change_30d_pct=None,
+            high_52w=None,
+            low_52w=None,
+            pct_from_52w_high=None,
+            pct_from_52w_low=None,
+            rsi_14=None,
+            volume_avg_20d=None,
+            volume_ratio=None,
+            ma_20=None,
+            ma_50=None,
+            trend_summary="neutral",
+            shares_short=None,
+            short_ratio=None,
+            short_percent_float=None,
+        )
+
+        # Should not raise
+        ctx_str = ctx.to_context_string()
+
+        assert "$100.00" in ctx_str
+        assert "SI:" not in ctx_str

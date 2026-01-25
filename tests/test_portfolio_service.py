@@ -299,9 +299,7 @@ class TestCalculateGain:
         state = PortfolioState(
             cash=8000.0,
             holdings=[
-                Holding(
-                    isin="US123",
-                    ticker="TEST",
+                Holding(ticker="TEST",
                     name="Test",
                     quantity=20,
                     avg_price=100.0,
@@ -332,9 +330,7 @@ class TestCalculateGain:
         state = PortfolioState(
             cash=5000.0,
             holdings=[
-                Holding(
-                    isin="US123",
-                    ticker="TEST",
+                Holding(ticker="TEST",
                     name="Test",
                     quantity=50,
                     avg_price=100.0,
@@ -607,9 +603,7 @@ class TestExecuteTrade:
         initial_state = PortfolioState(
             cash=5000.0,
             holdings=[
-                Holding(
-                    isin="US0378331005",
-                    ticker="AAPL",
+                Holding(ticker="AAPL",
                     name="Apple Inc.",
                     quantity=10,
                     avg_price=90.0,
@@ -651,9 +645,7 @@ class TestExecuteTrade:
         initial_state = PortfolioState(
             cash=5000.0,
             holdings=[
-                Holding(
-                    isin="US0378331005",
-                    ticker="AAPL",
+                Holding(ticker="AAPL",
                     name="Apple Inc.",
                     quantity=10,
                     avg_price=90.0,
@@ -690,15 +682,13 @@ class TestExecuteTrade:
         """Test partial SELL preserves SL/TP on remaining shares."""
         mock_security_service.force_update_price.return_value = 100.0
         mock_security_service.lookup_ticker.return_value = MagicMock(
-            isin="US0378331005", ticker="AAPL", name="Apple Inc."
+            ticker="AAPL", name="Apple Inc."
         )
 
         initial_state = PortfolioState(
             cash=5000.0,
             holdings=[
-                Holding(
-                    isin="US0378331005",
-                    ticker="AAPL",
+                Holding(ticker="AAPL",
                     name="Apple Inc.",
                     quantity=10,
                     avg_price=90.0,

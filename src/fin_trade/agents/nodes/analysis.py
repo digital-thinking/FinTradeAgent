@@ -11,6 +11,7 @@ from fin_trade.agents.state import SimpleAgentState
 from fin_trade.prompts import ANALYSIS_PROMPT
 from fin_trade.services.market_data import MarketDataService
 from fin_trade.services.reflection import ReflectionService
+from fin_trade.services.security import SecurityService
 from fin_trade.services.stock_data import StockDataService
 
 # Load environment variables
@@ -35,13 +36,17 @@ def _build_analysis_prompt(state: SimpleAgentState) -> str:
     user_context = state.get("user_context")
 
     # Get rich price context for holdings
+    # Pass SecurityService to use stored 52w range, MAs, short interest data
+    security_service = SecurityService()
     stock_data_service = StockDataService()
     holding_tickers = [h.ticker for h in portfolio_state.holdings]
-    price_contexts = stock_data_service.get_holdings_context(holding_tickers)
+    price_contexts = stock_data_service.get_holdings_context(
+        holding_tickers, security_service
+    )
 
-    # Format holdings with rich context (price history, RSI, volume, MAs)
+    # Format holdings with rich context (price history, RSI, volume, MAs, short interest)
     holdings_info_str = stock_data_service.format_holdings_for_prompt(
-        portfolio_state.holdings, price_contexts
+        portfolio_state.holdings, price_contexts, security_service
     )
 
     # Build user context section if provided

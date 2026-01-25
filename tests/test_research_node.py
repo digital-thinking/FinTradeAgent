@@ -26,16 +26,12 @@ def research_state():
     portfolio_state = PortfolioState(
         cash=5000.0,
         holdings=[
-            Holding(
-                isin="US0378331005",
-                ticker="AAPL",
+            Holding(ticker="AAPL",
                 name="Apple Inc.",
                 quantity=10,
                 avg_price=150.0,
             ),
-            Holding(
-                isin="US5949181045",
-                ticker="MSFT",
+            Holding(ticker="MSFT",
                 name="Microsoft Corp.",
                 quantity=5,
                 avg_price=350.0,

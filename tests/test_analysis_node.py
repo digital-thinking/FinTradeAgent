@@ -11,7 +11,7 @@ from fin_trade.models import (
 )
 
 
-def _mock_format_holdings(holdings, price_contexts=None, prices=None):
+def _mock_format_holdings(holdings, price_contexts=None, security_service=None, prices=None):
     """Create a mock holdings format that uses provided prices."""
     if not holdings:
         return "  None (empty portfolio)"
@@ -47,14 +47,12 @@ def analysis_state():
         cash=3500.0,
         holdings=[
             Holding(
-                isin="US0378331005",
                 ticker="AAPL",
                 name="Apple Inc.",
                 quantity=10,
                 avg_price=150.0,
             ),
             Holding(
-                isin="US67066G1040",
                 ticker="NVDA",
                 name="NVIDIA Corp.",
                 quantity=5,
@@ -98,17 +96,20 @@ class TestBuildAnalysisPrompt:
 
     @pytest.fixture(autouse=True)
     def mock_stock_data_service(self):
-        """Mock StockDataService for all tests."""
+        """Mock StockDataService and SecurityService for all tests."""
         self._mock_prices = {}
 
-        def format_holdings(holdings, price_contexts=None):
-            return _mock_format_holdings(holdings, price_contexts, self._mock_prices)
+        def format_holdings(holdings, price_contexts=None, security_service=None):
+            return _mock_format_holdings(holdings, price_contexts, security_service, self._mock_prices)
 
         mock_service = MagicMock()
         mock_service.format_holdings_for_prompt.side_effect = format_holdings
         mock_service.get_holdings_context.return_value = {}
 
-        with patch("fin_trade.agents.nodes.analysis.StockDataService", return_value=mock_service):
+        mock_security_service = MagicMock()
+
+        with patch("fin_trade.agents.nodes.analysis.StockDataService", return_value=mock_service), \
+             patch("fin_trade.agents.nodes.analysis.SecurityService", return_value=mock_security_service):
             yield mock_service
 
     def test_includes_strategy_prompt(self, analysis_state):
@@ -232,7 +233,6 @@ class TestBuildAnalysisPrompt:
             cash=5000.0,
             holdings=[
                 Holding(
-                    isin="US123",
                     ticker="TEST",
                     name="Test Stock",
                     quantity=10,

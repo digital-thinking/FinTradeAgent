@@ -29,7 +29,6 @@ def mock_security_service():
     # Default security lookup
     def lookup_ticker(ticker: str) -> Security:
         return Security(
-            isin=f"US{ticker}123456",
             ticker=ticker.upper(),
             name=f"{ticker.upper()} Inc.",
         )
@@ -43,7 +42,6 @@ def mock_security_service():
 def sample_holding():
     """Create a sample holding."""
     return Holding(
-        isin="US0378331005",
         ticker="AAPL",
         name="Apple Inc.",
         quantity=10,
@@ -56,7 +54,6 @@ def sample_trade():
     """Create a sample trade."""
     return Trade(
         timestamp=datetime(2024, 1, 15, 10, 30),
-        isin="US0378331005",
         ticker="AAPL",
         name="Apple Inc.",
         action="BUY",
@@ -179,7 +176,7 @@ def mock_stock_data_service():
     mock = MagicMock()
 
     # Default behavior - returns formatted string for holdings
-    def format_holdings(holdings, price_contexts=None):
+    def format_holdings(holdings, price_contexts=None, security_service=None):
         if not holdings:
             return "  None (empty portfolio)"
 
@@ -199,14 +196,14 @@ def mock_stock_data_service():
     mock.format_holdings_for_prompt.side_effect = format_holdings
 
     # Get price context
-    def get_price_context(ticker):
+    def get_price_context(ticker, security_service=None):
         price = getattr(mock, "_mock_prices", {}).get(ticker, 100.0)
         return create_mock_price_context(ticker, price)
 
     mock.get_price_context.side_effect = get_price_context
 
     # Get holdings context
-    def get_holdings_context(tickers):
+    def get_holdings_context(tickers, security_service=None):
         return {t: get_price_context(t) for t in tickers}
 
     mock.get_holdings_context.side_effect = get_holdings_context

@@ -17,6 +17,7 @@ from fin_trade.prompts import (
 )
 from fin_trade.services.market_data import MarketDataService
 from fin_trade.services.reflection import ReflectionService
+from fin_trade.services.security import SecurityService
 from fin_trade.services.stock_data import StockDataService
 
 # Load environment variables
@@ -114,15 +115,19 @@ def _invoke_anthropic(prompt: str, model: str) -> LLMResponse:
 
 
 def _format_holdings(state: DebateAgentState) -> str:
-    """Format holdings with rich price context (history, RSI, volume, MAs)."""
+    """Format holdings with rich price context (history, RSI, volume, MAs, short interest)."""
     portfolio_state = state["portfolio_state"]
 
     if not portfolio_state.holdings:
         return "None (empty portfolio)"
 
     try:
+        # Pass SecurityService to use stored 52w range, MAs, short interest data
+        security_service = SecurityService()
         stock_data_service = StockDataService()
-        return stock_data_service.format_holdings_for_prompt(portfolio_state.holdings)
+        return stock_data_service.format_holdings_for_prompt(
+            portfolio_state.holdings, security_service=security_service
+        )
     except Exception:
         # Fallback to basic format if price context fails
         price_data = state.get("price_data", {})
