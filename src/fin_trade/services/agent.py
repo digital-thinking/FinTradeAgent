@@ -14,6 +14,7 @@ from fin_trade.models import (
 )
 from fin_trade.services.security import SecurityService
 from fin_trade.services.llm_provider import LLMProviderFactory
+from fin_trade.services.market_data import MarketDataService
 from fin_trade.prompts import SIMPLE_AGENT_PROMPT
 
 # Load .env file from project root
@@ -27,8 +28,13 @@ load_dotenv(_env_path)
 class AgentService:
     """Service for invoking LLM agents to get trading recommendations."""
 
-    def __init__(self, security_service: SecurityService | None = None):
+    def __init__(
+        self,
+        security_service: SecurityService | None = None,
+        market_data_service: MarketDataService | None = None,
+    ):
         self.security_service = security_service or SecurityService()
+        self.market_data_service = market_data_service or MarketDataService()
         # Reload .env to ensure keys are available
         load_dotenv(_env_path)
         # Ensure logs directory exists
@@ -70,7 +76,9 @@ class AgentService:
     ) -> str:
         """Build the prompt for the LLM with portfolio context."""
         holdings_info = []
+        holding_tickers = []
         for h in state.holdings:
+            holding_tickers.append(h.ticker)
             try:
                 current_price = self.security_service.get_price(h.ticker)
                 gain = ((current_price - h.avg_price) / h.avg_price) * 100
@@ -91,6 +99,23 @@ class AgentService:
                 f"{t.ticker} ({t.name}) @ ${t.price:.2f}"
             )
 
+        # Fetch market data context for holdings
+        market_data_context = ""
+        if holding_tickers:
+            try:
+                market_data_context = self.market_data_service.get_full_context_for_holdings(
+                    holding_tickers
+                )
+            except Exception:
+                market_data_context = "Market data temporarily unavailable."
+        else:
+            # Still fetch macro data even with no holdings
+            try:
+                macro = self.market_data_service.get_macro_data()
+                market_data_context = macro.to_context_string()
+            except Exception:
+                market_data_context = "Market data temporarily unavailable."
+
         return SIMPLE_AGENT_PROMPT.format(
             strategy_prompt=config.strategy_prompt,
             cash=state.cash,
@@ -99,6 +124,7 @@ class AgentService:
             trades_info="\n".join(trades_info) if trades_info else "  None",
             trades_per_run=config.trades_per_run,
             num_initial_trades=config.num_initial_trades,
+            market_data_context=market_data_context,
         )
 
     def _parse_response(self, response_text: str) -> AgentRecommendation:

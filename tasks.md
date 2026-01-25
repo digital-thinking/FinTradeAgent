@@ -52,11 +52,37 @@
 - [ ] **Asynchronous Execution**
     - Optimize backend processing to ensure UI responsiveness.
 
-## 📦 Package G: Data & Intelligence (New)
+## 📦 Package G: Data & Intelligence (New) - IN PROGRESS
 *Focus: Expanding data sources and agent intelligence.*
-*Primary Files: `src/fin_trade/services/stock_data.py`, `src/fin_trade/services/agent.py`*
+*Primary Files: `src/fin_trade/services/market_data.py` (new), `src/fin_trade/services/agent.py`, `src/fin_trade/prompts/simple_agent.py`*
 
-- [ ] **Data Source Expansion**
-    - **Earnings**: Integrate an earnings calendar API to warn agents of upcoming volatility.
-    - **SEC Filings**: Fetch recent 8-K/10-Q summaries for held companies.
-    - **Sentiment**: Scrape and aggregate sentiment scores from news headlines.
+### Implementation Plan
+
+This package implements the **Data & Integrations** section from ROADMAP.md:
+- Macro-Economic Data (CPI, GDP, unemployment, Fed rates)
+- SEC Filings (8-K, 10-Q, 10-K alerts/summaries)
+- Earnings Calendar (upcoming earnings dates and results)
+- Insider Trading Data (buy/sell activity)
+
+#### Task 1: Create MarketDataService
+- [x] Create `src/fin_trade/services/market_data.py` with a new `MarketDataService` class
+- [x] Implement earnings calendar fetching using yfinance `.calendar` property
+- [x] Implement insider transactions fetching using yfinance `.insider_transactions`
+- [x] Cache data appropriately (24h for earnings, 24h for insider trades)
+
+#### Task 2: Add SEC Filings Integration
+- [x] Use yfinance `.sec_filings` to fetch recent SEC filings (8-K, 10-Q, 10-K)
+- [x] Parse and format filing data for agent consumption
+
+#### Task 3: Add Macro-Economic Data
+- [x] Fetch major market indices (S&P 500, Nasdaq, Dow Jones) for market context
+- [x] Fetch Treasury yields (10Y, 2Y) for interest rate context using yfinance
+
+#### Task 4: Integrate Data into Agent Context
+- [x] Update `_build_prompt()` in `agent.py` to include market data
+- [x] Add new prompt sections for earnings, filings, insider trades, and macro data
+- [x] Update `SIMPLE_AGENT_PROMPT` to reference and use the new data
+
+#### Task 5: Add Unit Tests
+- [x] Create `tests/test_market_data_service.py` with tests for MarketDataService (22 tests)
+- [x] Mock yfinance calls to ensure reliable test execution
