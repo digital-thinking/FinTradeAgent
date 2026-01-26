@@ -87,8 +87,8 @@ class AttributionService:
         total_current_value = 0.0
 
         for holding in state.holdings:
-            current_price = self._get_price_safe(holding.ticker, holding.avg_price)
-            stock_info = self._get_stock_info_safe(holding.ticker)
+            current_price = self._get_price(holding.ticker)
+            stock_info = self._get_stock_info(holding.ticker)
 
             cost_basis = holding.avg_price * holding.quantity
             current_value = current_price * holding.quantity
@@ -205,16 +205,10 @@ class AttributionService:
         sector_attributions.sort(key=lambda x: x.total_gain, reverse=True)
         return sector_attributions
 
-    def _get_price_safe(self, ticker: str, fallback: float) -> float:
-        """Get current price with fallback."""
-        try:
-            return self.security_service.get_price(ticker)
-        except Exception:
-            return fallback
+    def _get_price(self, ticker: str) -> float:
+        """Get current price for a ticker."""
+        return self.security_service.get_price(ticker)
 
-    def _get_stock_info_safe(self, ticker: str) -> dict:
-        """Get stock info with fallback to empty dict."""
-        try:
-            return self.security_service.get_stock_info(ticker)
-        except Exception:
-            return {}
+    def _get_stock_info(self, ticker: str) -> dict:
+        """Get stock info for a ticker."""
+        return self.security_service.get_stock_info(ticker)

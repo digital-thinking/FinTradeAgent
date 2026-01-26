@@ -174,6 +174,7 @@ def create_mock_price_context(
 def mock_stock_data_service():
     """Create a mock StockDataService with configurable prices."""
     mock = MagicMock()
+    mock._mock_prices = {}  # Initialize to empty dict to avoid MagicMock auto-creation
 
     # Default behavior - returns formatted string for holdings
     def format_holdings(holdings, price_contexts=None, security_service=None):

@@ -307,8 +307,8 @@ class TestTopContributorsAndDetractors:
 class TestEdgeCases:
     """Tests for edge cases and error handling."""
 
-    def test_handles_price_fetch_failure(self, mock_security_service, sample_config):
-        """Test falls back to avg_price when price fetch fails."""
+    def test_price_fetch_failure_propagates(self, mock_security_service, sample_config):
+        """Test that price fetch errors propagate (fail fast per CLAUDE.md)."""
         # Make price fetch raise an exception
         mock_security_service.get_price.side_effect = Exception("Network error")
 
@@ -318,14 +318,12 @@ class TestEdgeCases:
         ]
         state = PortfolioState(cash=5000.0, holdings=holdings)
 
-        result = service.calculate_attribution(sample_config, state)
+        # Should raise the exception (no fallback behavior)
+        with pytest.raises(Exception, match="Network error"):
+            service.calculate_attribution(sample_config, state)
 
-        # Should use avg_price as fallback (no gain/loss)
-        assert result.by_holding[0].current_price == 150.0
-        assert result.by_holding[0].unrealized_gain == 0.0
-
-    def test_handles_stock_info_fetch_failure(self, mock_security_service, sample_config):
-        """Test handles stock info fetch failure gracefully."""
+    def test_stock_info_fetch_failure_propagates(self, mock_security_service, sample_config):
+        """Test that stock info fetch errors propagate (fail fast per CLAUDE.md)."""
         mock_security_service.get_stock_info.side_effect = Exception("API error")
 
         service = AttributionService(mock_security_service)
@@ -334,13 +332,9 @@ class TestEdgeCases:
         ]
         state = PortfolioState(cash=5000.0, holdings=holdings)
 
-        result = service.calculate_attribution(sample_config, state)
-
-        # Should still calculate attribution with Unknown sector
-        assert len(result.by_holding) == 1
-        assert result.by_holding[0].sector is None
-        assert len(result.by_sector) == 1
-        assert result.by_sector[0].sector == "Unknown"
+        # Should raise the exception (no fallback behavior)
+        with pytest.raises(Exception, match="API error"):
+            service.calculate_attribution(sample_config, state)
 
     def test_handles_zero_cost_basis(self, mock_security_service, sample_config):
         """Test handles zero cost basis without division error."""

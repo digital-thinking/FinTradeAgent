@@ -83,18 +83,9 @@ class AgentService:
         """Build the prompt for the LLM with portfolio context."""
         # Get rich price context for holdings (history, RSI, volume, MAs, short interest)
         holding_tickers = [h.ticker for h in state.holdings]
-        try:
-            holdings_info_str = self.stock_data_service.format_holdings_for_prompt(
-                state.holdings, security_service=self.security_service
-            )
-        except Exception:
-            # Fallback to basic format if price context fails
-            holdings_info = []
-            for h in state.holdings:
-                holdings_info.append(
-                    f"  - {h.ticker} ({h.name}): {h.quantity} shares @ avg ${h.avg_price:.2f}"
-                )
-            holdings_info_str = "\n".join(holdings_info) if holdings_info else "  None"
+        holdings_info_str = self.stock_data_service.format_holdings_for_prompt(
+            state.holdings, security_service=self.security_service
+        )
 
         trades_info = []
         for t in state.trades:
@@ -104,29 +95,18 @@ class AgentService:
             )
 
         # Fetch market data context for holdings
-        market_data_context = ""
         if holding_tickers:
-            try:
-                market_data_context = self.market_data_service.get_full_context_for_holdings(
-                    holding_tickers
-                )
-            except Exception:
-                market_data_context = "Market data temporarily unavailable."
+            market_data_context = self.market_data_service.get_full_context_for_holdings(
+                holding_tickers
+            )
         else:
             # Still fetch macro data even with no holdings
-            try:
-                macro = self.market_data_service.get_macro_data()
-                market_data_context = macro.to_context_string()
-            except Exception:
-                market_data_context = "Market data temporarily unavailable."
+            macro = self.market_data_service.get_macro_data()
+            market_data_context = macro.to_context_string()
 
         # Generate self-reflection on past performance
-        reflection_context = ""
-        try:
-            reflection = self.reflection_service.analyze_performance(state)
-            reflection_context = reflection.to_context_string()
-        except Exception:
-            reflection_context = "Performance reflection temporarily unavailable."
+        reflection = self.reflection_service.analyze_performance(state)
+        reflection_context = reflection.to_context_string()
 
         return SIMPLE_AGENT_PROMPT.format(
             strategy_prompt=config.strategy_prompt,

@@ -269,10 +269,10 @@ class TestCalculateValue:
 
         assert value == 10000.0
 
-    def test_falls_back_to_avg_price_on_error(
+    def test_price_error_propagates(
         self, temp_data_dir, mock_security_service, sample_portfolio_state
     ):
-        """Test uses avg_price when price lookup fails."""
+        """Test that price lookup errors propagate (fail fast per CLAUDE.md)."""
         mock_security_service.get_price.side_effect = Exception("API error")
 
         service = PortfolioService(
@@ -281,10 +281,8 @@ class TestCalculateValue:
             security_service=mock_security_service,
         )
 
-        value = service.calculate_value(sample_portfolio_state)
-
-        # 5000 cash + (10 shares * $150 avg_price) = 6500
-        assert value == 6500.0
+        with pytest.raises(Exception, match="API error"):
+            service.calculate_value(sample_portfolio_state)
 
 
 class TestCalculateGain:

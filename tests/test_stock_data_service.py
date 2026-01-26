@@ -410,8 +410,8 @@ class TestGetHoldingsContext:
         assert isinstance(result["AAPL"], PriceContext)
         assert isinstance(result["MSFT"], PriceContext)
 
-    def test_skips_failed_tickers(self, tmp_path):
-        """Test skips tickers that fail to fetch."""
+    def test_failed_tickers_raise_error(self, tmp_path):
+        """Test that failed tickers raise errors (fail fast per CLAUDE.md)."""
         service = StockDataService(data_dir=tmp_path)
 
         # Only create data for one ticker
@@ -425,10 +425,9 @@ class TestGetHoldingsContext:
         service._cache["GOOD"] = df
         service._cache["BAD"] = pd.DataFrame(columns=["Close"])  # Empty
 
-        result = service.get_holdings_context(["GOOD", "BAD"])
-
-        assert "GOOD" in result
-        assert "BAD" not in result  # Should be skipped
+        # Should raise error for BAD ticker (no fallback)
+        with pytest.raises(ValueError, match="No price data available for BAD"):
+            service.get_holdings_context(["GOOD", "BAD"])
 
 
 class TestFormatHoldingsForPrompt:

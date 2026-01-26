@@ -59,21 +59,17 @@ class SecurityService:
     def _load_persisted_securities(self) -> None:
         """Load all persisted security data from JSON files."""
         for data_file in self.data_dir.glob("*_data.json"):
-            try:
-                with open(data_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
+            with open(data_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
 
-                ticker = data.get("ticker") or data.get("symbol")
-                name = data.get("shortName") or data.get("longName") or data.get("name") or ticker
+            ticker = data.get("ticker") or data.get("symbol")
+            name = data.get("shortName") or data.get("longName") or data.get("name") or ticker
 
-                if ticker:
-                    ticker = ticker.upper()
-                    security = Security(ticker=ticker, name=name)
-                    self._by_ticker[ticker] = security
-                    self._full_info[ticker] = data
-            except Exception:
-                # Skip files that can't be loaded
-                continue
+            if ticker:
+                ticker = ticker.upper()
+                security = Security(ticker=ticker, name=name)
+                self._by_ticker[ticker] = security
+                self._full_info[ticker] = data
 
     def _save_security_data(self, ticker: str, data: dict) -> None:
         """Save security data to a JSON file."""
@@ -117,20 +113,13 @@ class SecurityService:
             return self._by_ticker[ticker]
 
         # Fetch from yfinance
-        name = ticker
-        info = {}
+        stock = yf.Ticker(ticker)
+        info = stock.info
 
-        try:
-            stock = yf.Ticker(ticker)
-            info = stock.info
+        name = info.get("shortName") or info.get("longName") or ticker
 
-            name = info.get("shortName") or info.get("longName") or ticker
-
-            # Ensure ticker is in the info dict
-            info["ticker"] = ticker
-
-        except Exception:
-            pass
+        # Ensure ticker is in the info dict
+        info["ticker"] = ticker
 
         if "shortName" not in info:
             info["shortName"] = name
@@ -176,56 +165,46 @@ class SecurityService:
                 "marketCap": info.get("marketCap"),
             }
 
-        try:
-            stock = yf.Ticker(ticker)
-            info = stock.info
+        stock = yf.Ticker(ticker)
+        info = stock.info
 
-            name = info.get("shortName") or info.get("longName") or ticker
+        name = info.get("shortName") or info.get("longName") or ticker
 
-            info["ticker"] = ticker
+        info["ticker"] = ticker
 
-            # Save and cache the full info
-            self._save_security_data(ticker, info)
-            self._full_info[ticker] = info
+        # Save and cache the full info
+        self._save_security_data(ticker, info)
+        self._full_info[ticker] = info
 
-            return {
-                "name": name,
-                "ticker": ticker,
-                "currency": info.get("currency", "USD"),
-                "sector": info.get("sector"),
-                "industry": info.get("industry"),
-                "country": info.get("country"),
-                "website": info.get("website"),
-                "marketCap": info.get("marketCap"),
-            }
-        except Exception:
-            return {
-                "name": ticker,
-                "ticker": ticker,
-                "currency": "USD",
-            }
+        return {
+            "name": name,
+            "ticker": ticker,
+            "currency": info.get("currency", "USD"),
+            "sector": info.get("sector"),
+            "industry": info.get("industry"),
+            "country": info.get("country"),
+            "website": info.get("website"),
+            "marketCap": info.get("marketCap"),
+        }
 
-    def refresh_security_data(self, ticker: str) -> dict | None:
+    def refresh_security_data(self, ticker: str) -> dict:
         """Force refresh security data from yfinance and save to file."""
         ticker = ticker.upper()
-        try:
-            stock = yf.Ticker(ticker)
-            info = stock.info
+        stock = yf.Ticker(ticker)
+        info = stock.info
 
-            name = info.get("shortName") or info.get("longName") or ticker
+        name = info.get("shortName") or info.get("longName") or ticker
 
-            info["ticker"] = ticker
+        info["ticker"] = ticker
 
-            # Save and update caches
-            self._save_security_data(ticker, info)
-            self._full_info[ticker] = info
+        # Save and update caches
+        self._save_security_data(ticker, info)
+        self._full_info[ticker] = info
 
-            security = Security(ticker=ticker, name=name)
-            self._register(security)
+        security = Security(ticker=ticker, name=name)
+        self._register(security)
 
-            return info
-        except Exception:
-            return None
+        return info
 
     def is_data_stale(self, ticker: str, max_age_hours: int = 24) -> bool:
         """Check if stored data for a ticker is stale (older than max_age_hours)."""
@@ -235,11 +214,8 @@ class SecurityService:
         saved_at = info.get("_saved_at")
         if not saved_at:
             return True
-        try:
-            saved_time = datetime.fromisoformat(saved_at)
-            return datetime.now() - saved_time > timedelta(hours=max_age_hours)
-        except Exception:
-            return True
+        saved_time = datetime.fromisoformat(saved_at)
+        return datetime.now() - saved_time > timedelta(hours=max_age_hours)
 
     # ==================== Rich Data Methods ====================
     # These methods expose already-stored yfinance data without new API calls

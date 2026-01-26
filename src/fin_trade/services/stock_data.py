@@ -347,10 +347,7 @@ class StockDataService:
         """
         result = {}
         for ticker in tickers:
-            try:
-                result[ticker] = self.get_price_context(ticker, security_service)
-            except Exception:
-                pass  # Skip tickers that fail
+            result[ticker] = self.get_price_context(ticker, security_service)
         return result
 
     def format_holdings_for_prompt(

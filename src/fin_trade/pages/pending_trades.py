@@ -291,7 +291,6 @@ def _render_pending_trades_for_log(
                     original_ticker=ticker,
                     key_prefix=key_prefix,
                     security_service=security_service,
-                    show_isin_input=True,
                 )
                 # If correction made it valid, show success
                 if result.is_valid and result.corrected_ticker != ticker:

@@ -194,61 +194,51 @@ class MarketDataService:
                     self._set_cached(cache_key, result)
                     return result
 
-        try:
-            stock = yf.Ticker(ticker)
-            calendar = stock.calendar
+        stock = yf.Ticker(ticker)
+        calendar = stock.calendar
 
-            earnings_date = None
-            eps_estimate = None
-            revenue_estimate = None
-            days_until = None
+        earnings_date = None
+        eps_estimate = None
+        revenue_estimate = None
+        days_until = None
 
-            if calendar is not None and not calendar.empty:
-                # calendar can be a DataFrame or dict depending on yfinance version
-                if isinstance(calendar, pd.DataFrame):
-                    if "Earnings Date" in calendar.index:
-                        date_val = calendar.loc["Earnings Date"].iloc[0]
-                        if pd.notna(date_val):
-                            earnings_date = pd.to_datetime(date_val).to_pydatetime()
-                    if "EPS Estimate" in calendar.index:
-                        eps_val = calendar.loc["EPS Estimate"].iloc[0]
-                        if pd.notna(eps_val):
-                            eps_estimate = float(eps_val)
-                    if "Revenue Estimate" in calendar.index:
-                        rev_val = calendar.loc["Revenue Estimate"].iloc[0]
-                        if pd.notna(rev_val):
-                            revenue_estimate = float(rev_val)
-                elif isinstance(calendar, dict):
-                    if "Earnings Date" in calendar:
-                        dates = calendar["Earnings Date"]
-                        if dates:
-                            earnings_date = pd.to_datetime(dates[0]).to_pydatetime()
-                    if "EPS Estimate" in calendar:
-                        eps_estimate = calendar.get("EPS Estimate")
-                    if "Revenue Estimate" in calendar:
-                        revenue_estimate = calendar.get("Revenue Estimate")
+        # calendar can be a DataFrame or dict depending on yfinance version
+        if calendar is not None:
+            if isinstance(calendar, pd.DataFrame) and not calendar.empty:
+                if "Earnings Date" in calendar.index:
+                    date_val = calendar.loc["Earnings Date"].iloc[0]
+                    if pd.notna(date_val):
+                        earnings_date = pd.to_datetime(date_val).to_pydatetime()
+                if "EPS Estimate" in calendar.index:
+                    eps_val = calendar.loc["EPS Estimate"].iloc[0]
+                    if pd.notna(eps_val):
+                        eps_estimate = float(eps_val)
+                if "Revenue Estimate" in calendar.index:
+                    rev_val = calendar.loc["Revenue Estimate"].iloc[0]
+                    if pd.notna(rev_val):
+                        revenue_estimate = float(rev_val)
+            elif isinstance(calendar, dict) and calendar:
+                if "Earnings Date" in calendar:
+                    dates = calendar["Earnings Date"]
+                    if dates:
+                        earnings_date = pd.to_datetime(dates[0]).to_pydatetime()
+                if "EPS Estimate" in calendar:
+                    eps_estimate = calendar.get("EPS Estimate")
+                if "Revenue Estimate" in calendar:
+                    revenue_estimate = calendar.get("Revenue Estimate")
 
-            if earnings_date:
-                days_until = (earnings_date - datetime.now()).days
+        if earnings_date:
+            days_until = (earnings_date - datetime.now()).days
 
-            result = EarningsInfo(
-                ticker=ticker,
-                earnings_date=earnings_date,
-                eps_estimate=eps_estimate,
-                revenue_estimate=revenue_estimate,
-                days_until_earnings=days_until,
-            )
-            self._set_cached(cache_key, result)
-            return result
-
-        except Exception:
-            return EarningsInfo(
-                ticker=ticker,
-                earnings_date=None,
-                eps_estimate=None,
-                revenue_estimate=None,
-                days_until_earnings=None,
-            )
+        result = EarningsInfo(
+            ticker=ticker,
+            earnings_date=earnings_date,
+            eps_estimate=eps_estimate,
+            revenue_estimate=revenue_estimate,
+            days_until_earnings=days_until,
+        )
+        self._set_cached(cache_key, result)
+        return result
 
     def get_insider_trades(self, ticker: str, limit: int = 5) -> list[InsiderTrade]:
         """Fetch recent insider trading transactions for a ticker."""
@@ -259,60 +249,56 @@ class MarketDataService:
         if cached:
             return cached[:limit]  # type: ignore
 
-        try:
-            stock = yf.Ticker(ticker)
-            insider_df = stock.insider_transactions
+        stock = yf.Ticker(ticker)
+        insider_df = stock.insider_transactions
 
-            if insider_df is None or insider_df.empty:
-                return []
-
-            trades = []
-            for _, row in insider_df.head(limit * 2).iterrows():
-                # Parse transaction type
-                trans_text = str(row.get("Text", row.get("Transaction", "")))
-                if "Sale" in trans_text or "Sell" in trans_text:
-                    trans_type = "Sell"
-                elif "Purchase" in trans_text or "Buy" in trans_text:
-                    trans_type = "Buy"
-                else:
-                    continue  # Skip other transaction types
-
-                # Parse shares
-                shares = row.get("Shares", 0)
-                if pd.isna(shares):
-                    shares = 0
-                shares = int(abs(shares))
-
-                # Parse value
-                value = row.get("Value", None)
-                if pd.notna(value):
-                    value = float(abs(value))
-                else:
-                    value = None
-
-                # Parse date
-                date = None
-                date_col = row.get("Start Date", row.get("Date", None))
-                if pd.notna(date_col):
-                    date = pd.to_datetime(date_col).to_pydatetime()
-
-                trades.append(
-                    InsiderTrade(
-                        ticker=ticker,
-                        insider_name=str(row.get("Insider", "Unknown")),
-                        position=str(row.get("Position", "Unknown")),
-                        transaction_type=trans_type,
-                        shares=shares,
-                        value=value,
-                        date=date,
-                    )
-                )
-
-            self._set_cached(cache_key, trades)
-            return trades[:limit]
-
-        except Exception:
+        if insider_df is None or insider_df.empty:
             return []
+
+        trades = []
+        for _, row in insider_df.head(limit * 2).iterrows():
+            # Parse transaction type
+            trans_text = str(row.get("Text", row.get("Transaction", "")))
+            if "Sale" in trans_text or "Sell" in trans_text:
+                trans_type = "Sell"
+            elif "Purchase" in trans_text or "Buy" in trans_text:
+                trans_type = "Buy"
+            else:
+                continue  # Skip other transaction types
+
+            # Parse shares
+            shares = row.get("Shares", 0)
+            if pd.isna(shares):
+                shares = 0
+            shares = int(abs(shares))
+
+            # Parse value
+            value = row.get("Value", None)
+            if pd.notna(value):
+                value = float(abs(value))
+            else:
+                value = None
+
+            # Parse date
+            date = None
+            date_col = row.get("Start Date", row.get("Date", None))
+            if pd.notna(date_col):
+                date = pd.to_datetime(date_col).to_pydatetime()
+
+            trades.append(
+                InsiderTrade(
+                    ticker=ticker,
+                    insider_name=str(row.get("Insider", "Unknown")),
+                    position=str(row.get("Position", "Unknown")),
+                    transaction_type=trans_type,
+                    shares=shares,
+                    value=value,
+                    date=date,
+                )
+            )
+
+        self._set_cached(cache_key, trades)
+        return trades[:limit]
 
     def get_sec_filings(
         self, ticker: str, filing_types: list[str] | None = None, limit: int = 5
@@ -329,63 +315,59 @@ class MarketDataService:
             filings = [f for f in cached if f.filing_type in filing_types]  # type: ignore
             return filings[:limit]
 
-        try:
-            stock = yf.Ticker(ticker)
-            sec_filings = stock.sec_filings
+        stock = yf.Ticker(ticker)
+        sec_filings = stock.sec_filings
 
-            if sec_filings is None or (
-                isinstance(sec_filings, pd.DataFrame) and sec_filings.empty
-            ):
-                return []
-
-            filings = []
-
-            # Handle both DataFrame and list formats
-            if isinstance(sec_filings, pd.DataFrame):
-                for _, row in sec_filings.iterrows():
-                    filing_type = str(row.get("type", row.get("Type", "")))
-                    if not any(ft in filing_type for ft in filing_types):
-                        continue
-
-                    date = None
-                    date_col = row.get("date", row.get("Date", None))
-                    if pd.notna(date_col):
-                        date = pd.to_datetime(date_col).to_pydatetime()
-
-                    filings.append(
-                        SECFiling(
-                            ticker=ticker,
-                            filing_type=filing_type,
-                            date=date,
-                            title=str(row.get("title", row.get("Title", "N/A"))),
-                            url=str(row.get("edgarUrl", row.get("link", ""))),
-                        )
-                    )
-            elif isinstance(sec_filings, list):
-                for filing in sec_filings:
-                    filing_type = filing.get("type", "")
-                    if not any(ft in filing_type for ft in filing_types):
-                        continue
-
-                    date = None
-                    if "date" in filing:
-                        date = pd.to_datetime(filing["date"]).to_pydatetime()
-
-                    filings.append(
-                        SECFiling(
-                            ticker=ticker,
-                            filing_type=filing_type,
-                            date=date,
-                            title=filing.get("title", "N/A"),
-                            url=filing.get("edgarUrl", ""),
-                        )
-                    )
-
-            self._set_cached(cache_key, filings)
-            return filings[:limit]
-
-        except Exception:
+        if sec_filings is None or (
+            isinstance(sec_filings, pd.DataFrame) and sec_filings.empty
+        ):
             return []
+
+        filings = []
+
+        # Handle both DataFrame and list formats
+        if isinstance(sec_filings, pd.DataFrame):
+            for _, row in sec_filings.iterrows():
+                filing_type = str(row.get("type", row.get("Type", "")))
+                if not any(ft in filing_type for ft in filing_types):
+                    continue
+
+                date = None
+                date_col = row.get("date", row.get("Date", None))
+                if pd.notna(date_col):
+                    date = pd.to_datetime(date_col).to_pydatetime()
+
+                filings.append(
+                    SECFiling(
+                        ticker=ticker,
+                        filing_type=filing_type,
+                        date=date,
+                        title=str(row.get("title", row.get("Title", "N/A"))),
+                        url=str(row.get("edgarUrl", row.get("link", ""))),
+                    )
+                )
+        elif isinstance(sec_filings, list):
+            for filing in sec_filings:
+                filing_type = filing.get("type", "")
+                if not any(ft in filing_type for ft in filing_types):
+                    continue
+
+                date = None
+                if "date" in filing:
+                    date = pd.to_datetime(filing["date"]).to_pydatetime()
+
+                filings.append(
+                    SECFiling(
+                        ticker=ticker,
+                        filing_type=filing_type,
+                        date=date,
+                        title=filing.get("title", "N/A"),
+                        url=filing.get("edgarUrl", ""),
+                    )
+                )
+
+        self._set_cached(cache_key, filings)
+        return filings[:limit]
 
     def get_macro_data(self) -> MacroData:
         """Fetch macro-economic market data (indices, treasury yields, VIX)."""
@@ -399,30 +381,24 @@ class MarketDataService:
             ticker_symbol: str,
         ) -> tuple[float | None, float | None]:
             """Get latest price and daily change percentage."""
-            try:
-                ticker = yf.Ticker(ticker_symbol)
-                hist = ticker.history(period="5d")
-                if hist.empty or len(hist) < 2:
-                    if not hist.empty:
-                        return float(hist["Close"].iloc[-1]), None
-                    return None, None
-                latest = float(hist["Close"].iloc[-1])
-                prev = float(hist["Close"].iloc[-2])
-                change_pct = ((latest - prev) / prev) * 100
-                return latest, change_pct
-            except Exception:
+            ticker = yf.Ticker(ticker_symbol)
+            hist = ticker.history(period="5d")
+            if hist.empty or len(hist) < 2:
+                if not hist.empty:
+                    return float(hist["Close"].iloc[-1]), None
                 return None, None
+            latest = float(hist["Close"].iloc[-1])
+            prev = float(hist["Close"].iloc[-2])
+            change_pct = ((latest - prev) / prev) * 100
+            return latest, change_pct
 
         def get_treasury_yield(ticker_symbol: str) -> float | None:
             """Get latest treasury yield."""
-            try:
-                ticker = yf.Ticker(ticker_symbol)
-                hist = ticker.history(period="5d")
-                if hist.empty:
-                    return None
-                return float(hist["Close"].iloc[-1])
-            except Exception:
+            ticker = yf.Ticker(ticker_symbol)
+            hist = ticker.history(period="5d")
+            if hist.empty:
                 return None
+            return float(hist["Close"].iloc[-1])
 
         # Fetch data for major indices and rates
         sp500_price, sp500_change = get_latest_price_and_change("^GSPC")

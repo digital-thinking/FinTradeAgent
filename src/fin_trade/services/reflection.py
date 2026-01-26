@@ -186,31 +186,51 @@ class ReflectionService:
                 if trade.action == "BUY":
                     open_buys.append(trade)
                 elif trade.action == "SELL" and open_buys:
-                    # Match with oldest buy (FIFO)
-                    buy = open_buys.pop(0)
-                    sell = trade
+                    # Match with oldest buys (FIFO), handling partial fills
+                    remaining_sell_qty = trade.quantity
 
-                    holding_days = (sell.timestamp - buy.timestamp).days
-                    profit_loss = (sell.price - buy.price) * min(buy.quantity, sell.quantity)
-                    return_pct = ((sell.price - buy.price) / buy.price) * 100
+                    while remaining_sell_qty > 0 and open_buys:
+                        buy = open_buys[0]
+                        matched_qty = min(buy.quantity, remaining_sell_qty)
 
-                    completed.append(
-                        CompletedTrade(
-                            ticker=ticker,
-                            name=buy.name,
-                            buy_date=buy.timestamp,
-                            sell_date=sell.timestamp,
-                            buy_price=buy.price,
-                            sell_price=sell.price,
-                            quantity=min(buy.quantity, sell.quantity),
-                            buy_reasoning=buy.reasoning,
-                            sell_reasoning=sell.reasoning,
-                            holding_days=holding_days,
-                            profit_loss=profit_loss,
-                            return_pct=return_pct,
-                            is_winner=return_pct > 0,
+                        holding_days = (trade.timestamp - buy.timestamp).days
+                        profit_loss = (trade.price - buy.price) * matched_qty
+                        return_pct = ((trade.price - buy.price) / buy.price) * 100
+
+                        completed.append(
+                            CompletedTrade(
+                                ticker=ticker,
+                                name=buy.name,
+                                buy_date=buy.timestamp,
+                                sell_date=trade.timestamp,
+                                buy_price=buy.price,
+                                sell_price=trade.price,
+                                quantity=matched_qty,
+                                buy_reasoning=buy.reasoning,
+                                sell_reasoning=trade.reasoning,
+                                holding_days=holding_days,
+                                profit_loss=profit_loss,
+                                return_pct=return_pct,
+                                is_winner=return_pct > 0,
+                            )
                         )
-                    )
+
+                        remaining_sell_qty -= matched_qty
+
+                        if matched_qty >= buy.quantity:
+                            # Buy fully consumed, remove it
+                            open_buys.pop(0)
+                        else:
+                            # Buy partially consumed, update remaining quantity
+                            open_buys[0] = Trade(
+                                ticker=buy.ticker,
+                                name=buy.name,
+                                action=buy.action,
+                                quantity=buy.quantity - matched_qty,
+                                price=buy.price,
+                                timestamp=buy.timestamp,
+                                reasoning=buy.reasoning,
+                            )
 
         return sorted(completed, key=lambda t: t.sell_date, reverse=True)
 

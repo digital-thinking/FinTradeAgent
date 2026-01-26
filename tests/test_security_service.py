@@ -108,18 +108,15 @@ class TestLookupTicker:
         mock_yf.Ticker.assert_called_once_with("NEW")
 
     @patch("fin_trade.services.security.yf")
-    def test_handles_yfinance_exception(self, mock_yf, tmp_path):
-        """Test handles yfinance API errors gracefully."""
+    def test_yfinance_exception_propagates(self, mock_yf, tmp_path):
+        """Test that yfinance API errors propagate (fail fast per CLAUDE.md)."""
         mock_yf.Ticker.side_effect = Exception("API Error")
 
         mock_stock_service = MagicMock()
         service = SecurityService(data_dir=tmp_path, stock_data_service=mock_stock_service)
 
-        security = service.lookup_ticker("ERROR")
-
-        # Should still return a security
-        assert security.ticker == "ERROR"
-        assert security.name == "ERROR"
+        with pytest.raises(Exception, match="API Error"):
+            service.lookup_ticker("ERROR")
 
 
 class TestGetPrice:
@@ -231,18 +228,15 @@ class TestGetStockInfo:
         assert info["sector"] == "Tech"
 
     @patch("fin_trade.services.security.yf")
-    def test_returns_minimal_info_on_error(self, mock_yf, tmp_path):
-        """Test returns minimal info when yfinance fails."""
+    def test_yfinance_error_propagates(self, mock_yf, tmp_path):
+        """Test that yfinance errors propagate (fail fast per CLAUDE.md)."""
         mock_yf.Ticker.side_effect = Exception("API Error")
 
         mock_stock_service = MagicMock()
         service = SecurityService(data_dir=tmp_path, stock_data_service=mock_stock_service)
 
-        info = service.get_stock_info("ERRORSTOCK")
-
-        assert info["name"] == "ERRORSTOCK"
-        assert info["ticker"] == "ERRORSTOCK"
-        assert info["currency"] == "USD"
+        with pytest.raises(Exception, match="API Error"):
+            service.get_stock_info("ERRORSTOCK")
 
 
 class TestIsDataStale:
@@ -330,15 +324,15 @@ class TestRefreshSecurityData:
         assert data_file.exists()
 
     @patch("fin_trade.services.security.yf")
-    def test_returns_none_on_error(self, mock_yf, tmp_path):
-        """Test returns None when yfinance fails."""
+    def test_yfinance_error_propagates(self, mock_yf, tmp_path):
+        """Test that yfinance errors propagate (fail fast per CLAUDE.md)."""
         mock_yf.Ticker.side_effect = Exception("API Error")
 
         mock_stock_service = MagicMock()
         service = SecurityService(data_dir=tmp_path, stock_data_service=mock_stock_service)
 
-        info = service.refresh_security_data("ERROR")
-        assert info is None
+        with pytest.raises(Exception, match="API Error"):
+            service.refresh_security_data("ERROR")
 
 
 class TestGetShortInterest:

@@ -248,15 +248,14 @@ class TestGetEarningsInfo:
         assert result.earnings_date is None
 
     @patch("fin_trade.services.market_data.yf")
-    def test_handles_api_error(self, mock_yf, tmp_path):
-        """Test handles API errors gracefully."""
+    def test_api_error_propagates(self, mock_yf, tmp_path):
+        """Test that API errors propagate (fail fast per CLAUDE.md)."""
         mock_yf.Ticker.side_effect = Exception("API Error")
 
         service = MarketDataService(cache_dir=tmp_path)
-        result = service.get_earnings_info("AAPL")
 
-        assert result.ticker == "AAPL"
-        assert result.earnings_date is None
+        with pytest.raises(Exception, match="API Error"):
+            service.get_earnings_info("AAPL")
 
     @patch("fin_trade.services.market_data.yf")
     def test_uses_cache(self, mock_yf, tmp_path):

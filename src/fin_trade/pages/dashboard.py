@@ -81,17 +81,22 @@ def render_dashboard_page(portfolio_service: PortfolioService) -> None:
             st.metric("Return", f"{worst['Gain (%)']:+.1f}%", f"${worst['Gain ($)']:,.2f}")
 
         # Bar Chart Comparison
+        # Convert to native Python floats to avoid numpy display issues
+        gain_values = [float(x) for x in df_sorted['Gain (%)']]
+
         fig = go.Figure()
         fig.add_trace(go.Bar(
-            x=df_sorted['Name'],
-            y=df_sorted['Gain (%)'],
-            marker_color=['#008F11' if x >= 0 else '#ff0000' for x in df_sorted['Gain (%)']]
+            x=df_sorted['Name'].tolist(),
+            y=gain_values,
+            marker_color=['#008F11' if x >= 0 else '#ff0000' for x in gain_values],
+            hovertemplate="<b>%{x}</b><br>Return: %{y:.2f}%<extra></extra>"
         ))
-        
+
         fig.update_layout(
             title="Return by Strategy (%)",
             xaxis_title="Strategy",
             yaxis_title="Return (%)",
+            yaxis_tickformat=".1f",
             template="plotly_dark",
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
@@ -288,11 +293,11 @@ def _render_sector_attribution_chart(
             sector_df,
             column_config={
                 "Sector": st.column_config.TextColumn("Sector", width="medium"),
-                "Holdings": st.column_config.NumberColumn("Holdings", format="%d"),
-                "Cost Basis": st.column_config.NumberColumn("Cost Basis", format="$%.2f"),
-                "Current Value": st.column_config.NumberColumn("Current", format="$%.2f"),
-                "Gain/Loss": st.column_config.NumberColumn("Gain/Loss", format="$%.2f"),
-                "Return %": st.column_config.NumberColumn("Return %", format="%.1f%%"),
+                "Holdings": st.column_config.NumberColumn("Holdings", format="d"),
+                "Cost Basis": st.column_config.NumberColumn("Cost Basis", format="$,.2f"),
+                "Current Value": st.column_config.NumberColumn("Current", format="$,.2f"),
+                "Gain/Loss": st.column_config.NumberColumn("Gain/Loss", format="$,.2f"),
+                "Return %": st.column_config.NumberColumn("Return %", format=".1f"),
             },
             hide_index=True,
             use_container_width=True,
@@ -355,11 +360,11 @@ def _render_top_performers(holding_data: list[HoldingAttribution]) -> None:
                 "Ticker": st.column_config.TextColumn("Ticker", width="small"),
                 "Name": st.column_config.TextColumn("Name", width="medium"),
                 "Sector": st.column_config.TextColumn("Sector", width="medium"),
-                "Qty": st.column_config.NumberColumn("Qty", format="%d"),
-                "Avg Price": st.column_config.NumberColumn("Avg Price", format="$%.2f"),
-                "Current": st.column_config.NumberColumn("Current", format="$%.2f"),
-                "Gain/Loss": st.column_config.NumberColumn("Gain/Loss", format="$%.2f"),
-                "Return %": st.column_config.NumberColumn("Return %", format="%.1f%%"),
+                "Qty": st.column_config.NumberColumn("Qty", format="d"),
+                "Avg Price": st.column_config.NumberColumn("Avg Price", format="$,.2f"),
+                "Current": st.column_config.NumberColumn("Current", format="$,.2f"),
+                "Gain/Loss": st.column_config.NumberColumn("Gain/Loss", format="$,.2f"),
+                "Return %": st.column_config.NumberColumn("Return %", format=".1f"),
             },
             hide_index=True,
             use_container_width=True,

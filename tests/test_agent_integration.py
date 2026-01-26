@@ -16,6 +16,9 @@ def test_agent_includes_market_data_in_prompt():
 
     mock_security = MagicMock()
     mock_security.get_price.return_value = 150.0
+    mock_security.get_52w_range.return_value = None
+    mock_security.get_moving_averages.return_value = None
+    mock_security.get_short_interest.return_value = None
 
     agent = AgentService(
         security_service=mock_security, market_data_service=mock_market_data

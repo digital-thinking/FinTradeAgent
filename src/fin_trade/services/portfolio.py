@@ -192,13 +192,10 @@ class PortfolioService:
 
     def calculate_value(self, state: PortfolioState) -> float:
         """Calculate total portfolio value (cash + holdings)."""
-        total = state.cash
+        total = float(state.cash)
         for holding in state.holdings:
-            try:
-                price = self.security_service.get_price(holding.ticker)
-                total += price * holding.quantity
-            except Exception:
-                total += holding.avg_price * holding.quantity
+            price = self.security_service.get_price(holding.ticker)
+            total += float(price) * holding.quantity
         return total
 
     def calculate_gain(
@@ -207,10 +204,10 @@ class PortfolioService:
         """Calculate absolute and percentage gain/loss."""
         current_value = self.calculate_value(state)
         # Use actual initial investment if recorded, otherwise fall back to config
-        initial = state.initial_investment or config.initial_amount
+        initial = float(state.initial_investment or config.initial_amount)
         absolute_gain = current_value - initial
-        percentage_gain = (absolute_gain / initial) * 100 if initial > 0 else 0
-        return absolute_gain, percentage_gain
+        percentage_gain = (absolute_gain / initial) * 100 if initial > 0 else 0.0
+        return float(absolute_gain), float(percentage_gain)
 
     def is_execution_overdue(
         self, config: PortfolioConfig, state: PortfolioState

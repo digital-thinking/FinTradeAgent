@@ -104,18 +104,16 @@ class TestBuildPrompt:
         # AAPL: (180-150)/150 = 20%
         assert "+20.0%" in prompt or "+20%" in prompt
 
-    def test_handles_price_lookup_error(
+    def test_price_lookup_error_propagates(
         self, agent_service, config, state_with_holdings, mock_stock_data_service
     ):
-        """Test graceful handling when price lookup fails."""
-        # Make format_holdings_for_prompt raise an error, then return fallback
+        """Test that price lookup errors propagate (fail fast per CLAUDE.md)."""
+        # Make format_holdings_for_prompt raise an error
         mock_stock_data_service.format_holdings_for_prompt.side_effect = Exception("API error")
 
-        # Should fall back gracefully - the implementation catches exceptions
-        prompt = agent_service._build_prompt(config, state_with_holdings)
-
-        # Should still include basic portfolio info
-        assert "$5000.00" in prompt or "5000" in prompt
+        # Should raise the exception (no fallback behavior)
+        with pytest.raises(Exception, match="API error"):
+            agent_service._build_prompt(config, state_with_holdings)
 
     def test_empty_portfolio_shows_none(self, agent_service, config, empty_portfolio_state):
         """Test that empty portfolio shows None for holdings."""
