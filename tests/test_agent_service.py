@@ -16,10 +16,13 @@ from fin_trade.services.agent import AgentService
 
 
 @pytest.fixture
-def agent_service(mock_security_service):
-    """Create an AgentService with mocked security service."""
+def agent_service(mock_security_service, mock_stock_data_service):
+    """Create an AgentService with mocked services."""
     with patch("fin_trade.services.agent.load_dotenv"):
-        service = AgentService(security_service=mock_security_service)
+        service = AgentService(
+            security_service=mock_security_service,
+            stock_data_service=mock_stock_data_service,
+        )
     return service
 
 
@@ -45,14 +48,12 @@ def state_with_holdings():
         cash=5000.0,
         holdings=[
             Holding(
-                isin="US0378331005",
                 ticker="AAPL",
                 name="Apple Inc.",
                 quantity=10,
                 avg_price=150.0,
             ),
             Holding(
-                isin="US5949181045",
                 ticker="MSFT",
                 name="Microsoft Corp.",
                 quantity=5,
@@ -92,27 +93,27 @@ class TestBuildPrompt:
         assert "MSFT" in prompt
 
     def test_shows_gain_percentage_for_holdings(
-        self, agent_service, config, state_with_holdings, mock_security_service
+        self, agent_service, config, state_with_holdings, mock_stock_data_service
     ):
         """Test that gain percentage is calculated and shown."""
-        mock_security_service.get_price.side_effect = [180.0, 385.0]  # AAPL up 20%, MSFT up 10%
+        # Set mock prices: AAPL up 20%, MSFT up 10%
+        mock_stock_data_service.set_prices({"AAPL": 180.0, "MSFT": 385.0})
 
         prompt = agent_service._build_prompt(config, state_with_holdings)
 
         # AAPL: (180-150)/150 = 20%
         assert "+20.0%" in prompt or "+20%" in prompt
 
-    def test_handles_price_lookup_error(
-        self, agent_service, config, state_with_holdings, mock_security_service
+    def test_price_lookup_error_propagates(
+        self, agent_service, config, state_with_holdings, mock_stock_data_service
     ):
-        """Test graceful handling when price lookup fails."""
-        mock_security_service.get_price.side_effect = Exception("API error")
+        """Test that price lookup errors propagate (fail fast per CLAUDE.md)."""
+        # Make format_holdings_for_prompt raise an error
+        mock_stock_data_service.format_holdings_for_prompt.side_effect = Exception("API error")
 
-        prompt = agent_service._build_prompt(config, state_with_holdings)
-
-        # Should still include holdings without current price/gain
-        assert "AAPL" in prompt
-        assert "10 shares" in prompt
+        # Should raise the exception (no fallback behavior)
+        with pytest.raises(Exception, match="API error"):
+            agent_service._build_prompt(config, state_with_holdings)
 
     def test_empty_portfolio_shows_none(self, agent_service, config, empty_portfolio_state):
         """Test that empty portfolio shows None for holdings."""

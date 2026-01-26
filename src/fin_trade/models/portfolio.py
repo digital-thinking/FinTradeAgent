@@ -9,7 +9,6 @@ from typing import Literal
 class Holding:
     """Represents a stock holding in a portfolio."""
 
-    isin: str
     ticker: str
     name: str
     quantity: int
@@ -23,7 +22,6 @@ class Trade:
     """Represents a trade execution."""
 
     timestamp: datetime
-    isin: str
     ticker: str
     name: str
     action: Literal["BUY", "SELL"]

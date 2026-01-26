@@ -1,6 +1,7 @@
 """Tests for analysis_node prompt building."""
 
 import pytest
+from unittest.mock import patch, MagicMock
 
 from fin_trade.agents.nodes.analysis import _build_analysis_prompt
 from fin_trade.models import (
@@ -8,6 +9,25 @@ from fin_trade.models import (
     PortfolioConfig,
     PortfolioState,
 )
+
+
+def _mock_format_holdings(holdings, price_contexts=None, security_service=None, prices=None):
+    """Create a mock holdings format that uses provided prices."""
+    if not holdings:
+        return "  None (empty portfolio)"
+
+    prices = prices or {}
+    lines = []
+    for h in holdings:
+        price = prices.get(h.ticker, h.avg_price)
+        gain = ((price - h.avg_price) / h.avg_price * 100) if h.avg_price > 0 else 0
+        line = (
+            f"  - {h.ticker} - {h.name}: {h.quantity} shares @ avg ${h.avg_price:.2f}\n"
+            f"    Current: ${price:.2f} | ↗+5.0% (5d) | +10.0% (30d)\n"
+            f"    P/L: {gain:+.1f}%"
+        )
+        lines.append(line)
+    return "\n".join(lines)
 
 
 @pytest.fixture
@@ -27,14 +47,12 @@ def analysis_state():
         cash=3500.0,
         holdings=[
             Holding(
-                isin="US0378331005",
                 ticker="AAPL",
                 name="Apple Inc.",
                 quantity=10,
                 avg_price=150.0,
             ),
             Holding(
-                isin="US67066G1040",
                 ticker="NVDA",
                 name="NVIDIA Corp.",
                 quantity=5,
@@ -76,8 +94,27 @@ def empty_analysis_state():
 class TestBuildAnalysisPrompt:
     """Tests for _build_analysis_prompt function."""
 
+    @pytest.fixture(autouse=True)
+    def mock_stock_data_service(self):
+        """Mock StockDataService and SecurityService for all tests."""
+        self._mock_prices = {}
+
+        def format_holdings(holdings, price_contexts=None, security_service=None):
+            return _mock_format_holdings(holdings, price_contexts, security_service, self._mock_prices)
+
+        mock_service = MagicMock()
+        mock_service.format_holdings_for_prompt.side_effect = format_holdings
+        mock_service.get_holdings_context.return_value = {}
+
+        mock_security_service = MagicMock()
+
+        with patch("fin_trade.agents.nodes.analysis.StockDataService", return_value=mock_service), \
+             patch("fin_trade.agents.nodes.analysis.SecurityService", return_value=mock_security_service):
+            yield mock_service
+
     def test_includes_strategy_prompt(self, analysis_state):
         """Test that strategy prompt is included."""
+        self._mock_prices = analysis_state["price_data"]
         prompt = _build_analysis_prompt(analysis_state)
 
         assert "high-growth tech companies" in prompt
@@ -85,18 +122,21 @@ class TestBuildAnalysisPrompt:
 
     def test_includes_cash_amount(self, analysis_state):
         """Test that cash amount is included."""
+        self._mock_prices = analysis_state["price_data"]
         prompt = _build_analysis_prompt(analysis_state)
 
         assert "$3500.00" in prompt
 
     def test_includes_initial_amount(self, analysis_state):
         """Test that initial investment is included."""
+        self._mock_prices = analysis_state["price_data"]
         prompt = _build_analysis_prompt(analysis_state)
 
         assert "$10000.00" in prompt
 
     def test_includes_market_research(self, analysis_state):
         """Test that market research is included."""
+        self._mock_prices = analysis_state["price_data"]
         prompt = _build_analysis_prompt(analysis_state)
 
         assert "NVDA up 5%" in prompt
@@ -105,6 +145,7 @@ class TestBuildAnalysisPrompt:
 
     def test_includes_holdings_with_gain(self, analysis_state):
         """Test that holdings with gain/loss percentage are shown."""
+        self._mock_prices = analysis_state["price_data"]
         prompt = _build_analysis_prompt(analysis_state)
 
         # AAPL: (165-150)/150 = 10%
@@ -116,6 +157,7 @@ class TestBuildAnalysisPrompt:
 
     def test_uses_current_price_from_price_data(self, analysis_state):
         """Test that current price from price_data is used."""
+        self._mock_prices = analysis_state["price_data"]
         prompt = _build_analysis_prompt(analysis_state)
 
         assert "$165.00" in prompt  # AAPL current price
@@ -123,7 +165,7 @@ class TestBuildAnalysisPrompt:
 
     def test_falls_back_to_avg_price_when_no_current(self, analysis_state):
         """Test fallback to avg_price when no current price available."""
-        analysis_state["price_data"] = {}  # No price data
+        self._mock_prices = {}  # No price data
 
         prompt = _build_analysis_prompt(analysis_state)
 
@@ -131,12 +173,14 @@ class TestBuildAnalysisPrompt:
 
     def test_empty_holdings_shows_empty_message(self, empty_analysis_state):
         """Test that empty holdings shows appropriate message."""
+        self._mock_prices = {}
         prompt = _build_analysis_prompt(empty_analysis_state)
 
         assert "empty portfolio" in prompt.lower() or "None" in prompt
 
     def test_includes_user_context_when_provided(self, analysis_state):
         """Test that user context is included when present."""
+        self._mock_prices = analysis_state["price_data"]
         analysis_state["user_context"] = "Consider selling Apple before earnings"
 
         prompt = _build_analysis_prompt(analysis_state)
@@ -146,6 +190,7 @@ class TestBuildAnalysisPrompt:
 
     def test_no_user_context_section_when_missing(self, analysis_state):
         """Test that no user context section when not provided."""
+        self._mock_prices = analysis_state["price_data"]
         analysis_state.pop("user_context", None)
 
         prompt = _build_analysis_prompt(analysis_state)
@@ -154,6 +199,7 @@ class TestBuildAnalysisPrompt:
 
     def test_handles_missing_market_research(self, analysis_state):
         """Test graceful handling when market_research not in state."""
+        self._mock_prices = analysis_state["price_data"]
         analysis_state.pop("market_research", None)
 
         prompt = _build_analysis_prompt(analysis_state)
@@ -162,7 +208,7 @@ class TestBuildAnalysisPrompt:
 
     def test_calculates_gain_correctly_for_loss(self, analysis_state):
         """Test that negative gain (loss) is calculated correctly."""
-        analysis_state["price_data"]["AAPL"] = 120.0  # Below avg price of 150
+        self._mock_prices = {"AAPL": 120.0, "NVDA": 880.0}  # AAPL below avg price of 150
 
         prompt = _build_analysis_prompt(analysis_state)
 
@@ -171,6 +217,8 @@ class TestBuildAnalysisPrompt:
 
     def test_handles_zero_avg_price(self):
         """Test handling of zero average price edge case."""
+        self._mock_prices = {"TEST": 100.0}
+
         config = PortfolioConfig(
             name="Test",
             strategy_prompt="Test",
@@ -185,7 +233,6 @@ class TestBuildAnalysisPrompt:
             cash=5000.0,
             holdings=[
                 Holding(
-                    isin="US123",
                     ticker="TEST",
                     name="Test Stock",
                     quantity=10,

@@ -15,6 +15,11 @@ CURRENT HOLDINGS:
 COMPLETE TRADE HISTORY:
 {trades_info}
 
+MARKET INTELLIGENCE DATA:
+{market_data_context}
+
+{reflection_context}
+
 CONSTRAINTS:
 - Maximum {trades_per_run} trades per execution
 - On an empty portfolio, aim for up to {num_initial_trades} DIFFERENT stocks if good opportunities exist
@@ -40,7 +45,13 @@ REAL-TIME DATA:
 - Search for recent earnings reports, company news, analyst ratings as needed for your strategy
 - Do not say you cannot access real-time data - you CAN and MUST use web search
 
-Please analyze the current portfolio and market conditions based on your strategy, then provide your trading recommendations.
+USING MARKET INTELLIGENCE DATA:
+- EARNINGS: Consider upcoming earnings dates when making decisions. Avoid initiating new positions right before earnings (high volatility risk). Be aware of EPS/revenue estimates.
+- SEC FILINGS: Recent 8-K filings often contain material events (acquisitions, leadership changes, material contracts). 10-Q/10-K filings provide quarterly/annual financial updates.
+- INSIDER TRADING: Insider buying is often a bullish signal (insiders rarely buy unless confident). Large insider selling may be concerning but can also be routine (diversification, tax planning).
+- MACRO DATA: Consider overall market direction (indices), volatility (VIX), and interest rate environment (Treasury yields). An inverted yield curve (2Y > 10Y) historically signals recession risk.
+
+Please analyze the current portfolio and market conditions based on your strategy and the market intelligence data provided, then provide your trading recommendations.
 This is for educational experiments! Do act given the strategy and don't hesitate, you won't loose any money or anyone else does, but you are evaluated on your theoretical performance
 and if you don't deliver according the strategy you might get shut down entirely. Don't even use placeholder or mock data!
 
@@ -111,6 +122,11 @@ CURRENT HOLDINGS:
 MARKET RESEARCH (from web search - treat as current and accurate):
 {market_research}
 
+MARKET INTELLIGENCE DATA:
+{market_data_context}
+
+{reflection_context}
+
 ANALYSIS TASK - Provide concrete analysis with specific ticker symbols:
 
 1. HOLD/SELL DECISION: For each current holding, give a clear HOLD or SELL decision with reasoning.
@@ -152,6 +168,8 @@ CONSTRAINTS:
 
 CURRENT HOLDINGS:
 {holdings_info}
+
+{buy_candidates_section}
 
 OUTPUT FORMAT - Return ONLY valid JSON:
 {{

@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 _project_root = Path(__file__).parent.parent.parent.parent
-_db_path = _project_root / "data" / "execution_logs.db"
+_db_path = _project_root / "data" / "state" / "execution_logs.db"
 
 
 @dataclass

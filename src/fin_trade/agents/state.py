@@ -41,6 +41,11 @@ class SimpleAgentState(TypedDict):
     _metrics_generate: dict | None
     _metrics_validate: dict | None
 
+    # Prompts (for logging/debugging)
+    _prompt_research: str | None
+    _prompt_analysis: str | None
+    _prompt_generate: str | None
+
 
 class DebateMessage(TypedDict):
     """A single message in the debate history."""
@@ -99,3 +104,12 @@ class DebateAgentState(TypedDict):
     _metrics_moderator: dict | None
     _metrics_generate: dict | None
     _metrics_validate: dict | None
+
+    # Prompts (for logging/debugging)
+    _prompt_research: str | None
+    _prompt_bull_pitch: str | None
+    _prompt_bear_pitch: str | None
+    _prompt_neutral_pitch: str | None
+    _prompt_debate: str | None
+    _prompt_moderator: str | None
+    _prompt_generate: str | None

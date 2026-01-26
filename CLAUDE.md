@@ -15,7 +15,7 @@ Separation of concerns: Each function should have a single responsibility
 
 Evidence-based debugging: Add minimal, targeted logging
 Fix root causes: Address the underlying issue, not just symptoms
-Simple > Complex: Let TypeScript catch errors instead of excessive runtime checks
+Simple > Complex: Let Python's type hints catch errors instead of excessive runtime checks
 Collaborative process: Work with user to identify most efficient solution
 
 ## Testing

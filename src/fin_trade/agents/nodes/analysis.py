@@ -9,6 +9,10 @@ from dotenv import load_dotenv
 
 from fin_trade.agents.state import SimpleAgentState
 from fin_trade.prompts import ANALYSIS_PROMPT
+from fin_trade.services.market_data import MarketDataService
+from fin_trade.services.reflection import ReflectionService
+from fin_trade.services.security import SecurityService
+from fin_trade.services.stock_data import StockDataService
 
 # Load environment variables
 _project_root = Path(__file__).parent.parent.parent.parent.parent
@@ -29,18 +33,21 @@ def _build_analysis_prompt(state: SimpleAgentState) -> str:
     config = state["portfolio_config"]
     portfolio_state = state["portfolio_state"]
     market_research = state.get("market_research", "No research available")
-    price_data = state.get("price_data", {})
     user_context = state.get("user_context")
 
-    # Format holdings info
-    holdings_info = []
-    for h in portfolio_state.holdings:
-        current_price = price_data.get(h.ticker, h.avg_price)
-        gain = ((current_price - h.avg_price) / h.avg_price) * 100 if h.avg_price > 0 else 0
-        holdings_info.append(
-            f"  - {h.ticker} ({h.name}): {h.quantity} shares @ avg ${h.avg_price:.2f}, "
-            f"current ${current_price:.2f} ({gain:+.1f}%)"
-        )
+    # Get rich price context for holdings
+    # Pass SecurityService to use stored 52w range, MAs, short interest data
+    security_service = SecurityService()
+    stock_data_service = StockDataService()
+    holding_tickers = [h.ticker for h in portfolio_state.holdings]
+    price_contexts = stock_data_service.get_holdings_context(
+        holding_tickers, security_service
+    )
+
+    # Format holdings with rich context (price history, RSI, volume, MAs, short interest)
+    holdings_info_str = stock_data_service.format_holdings_for_prompt(
+        portfolio_state.holdings, price_contexts, security_service
+    )
 
     # Build user context section if provided
     user_context_section = ""
@@ -51,13 +58,36 @@ USER GUIDANCE (from portfolio manager - incorporate this into your analysis):
 
 """
 
+    # Fetch market data context
+    market_data_context = ""
+    try:
+        market_data_service = MarketDataService()
+        if holding_tickers:
+            market_data_context = market_data_service.get_full_context_for_holdings(holding_tickers)
+        else:
+            macro = market_data_service.get_macro_data()
+            market_data_context = macro.to_context_string()
+    except Exception:
+        market_data_context = "Market data temporarily unavailable."
+
+    # Generate self-reflection on past performance
+    reflection_context = ""
+    try:
+        reflection_service = ReflectionService()
+        reflection = reflection_service.analyze_performance(portfolio_state)
+        reflection_context = reflection.to_context_string()
+    except Exception:
+        reflection_context = "Performance reflection temporarily unavailable."
+
     return ANALYSIS_PROMPT.format(
         user_context_section=user_context_section,
         strategy_prompt=config.strategy_prompt,
         cash=portfolio_state.cash,
         initial_amount=config.initial_amount,
-        holdings_info="\n".join(holdings_info) if holdings_info else "  None (empty portfolio)",
+        holdings_info=holdings_info_str,
         market_research=market_research,
+        market_data_context=market_data_context,
+        reflection_context=reflection_context,
     )
 
 

@@ -95,9 +95,8 @@ class PortfolioService:
 
         holdings = [
             Holding(
-                isin=h["isin"],
-                ticker=h.get("ticker", h["isin"]),
-                name=h.get("name", h["isin"]),
+                ticker=h.get("ticker", h.get("isin", "UNKNOWN")),
+                name=h.get("name", h.get("ticker", "Unknown")),
                 quantity=int(h["quantity"]),
                 avg_price=float(h["avg_price"]),
                 stop_loss_price=h.get("stop_loss_price"),
@@ -109,9 +108,8 @@ class PortfolioService:
         trades = [
             Trade(
                 timestamp=self._to_naive_datetime(datetime.fromisoformat(t["timestamp"])),
-                isin=t["isin"],
-                ticker=t.get("ticker", t["isin"]),
-                name=t.get("name", t["isin"]),
+                ticker=t.get("ticker", t.get("isin", "UNKNOWN")),
+                name=t.get("name", t.get("ticker", "Unknown")),
                 action=t["action"],
                 quantity=int(t["quantity"]),
                 price=float(t["price"]),
@@ -160,7 +158,6 @@ class PortfolioService:
             "cash": state.cash,
             "holdings": [
                 {
-                    "isin": h.isin,
                     "ticker": h.ticker,
                     "name": h.name,
                     "quantity": h.quantity,
@@ -173,7 +170,6 @@ class PortfolioService:
             "trades": [
                 {
                     "timestamp": t.timestamp.isoformat(),
-                    "isin": t.isin,
                     "ticker": t.ticker,
                     "name": t.name,
                     "action": t.action,
@@ -196,13 +192,10 @@ class PortfolioService:
 
     def calculate_value(self, state: PortfolioState) -> float:
         """Calculate total portfolio value (cash + holdings)."""
-        total = state.cash
+        total = float(state.cash)
         for holding in state.holdings:
-            try:
-                price = self.security_service.get_price(holding.ticker)
-                total += price * holding.quantity
-            except Exception:
-                total += holding.avg_price * holding.quantity
+            price = self.security_service.get_price(holding.ticker)
+            total += float(price) * holding.quantity
         return total
 
     def calculate_gain(
@@ -211,10 +204,10 @@ class PortfolioService:
         """Calculate absolute and percentage gain/loss."""
         current_value = self.calculate_value(state)
         # Use actual initial investment if recorded, otherwise fall back to config
-        initial = state.initial_investment or config.initial_amount
+        initial = float(state.initial_investment or config.initial_amount)
         absolute_gain = current_value - initial
-        percentage_gain = (absolute_gain / initial) * 100 if initial > 0 else 0
-        return absolute_gain, percentage_gain
+        percentage_gain = (absolute_gain / initial) * 100 if initial > 0 else 0.0
+        return float(absolute_gain), float(percentage_gain)
 
     def is_execution_overdue(
         self, config: PortfolioConfig, state: PortfolioState
@@ -272,7 +265,6 @@ class PortfolioService:
                 holdings = [h for h in holdings if h.ticker != ticker]
                 # Use new SL/TP if provided, otherwise keep existing
                 holdings.append(Holding(
-                    isin=security.isin,
                     ticker=security.ticker,
                     name=security.name,
                     quantity=total_qty,
@@ -282,7 +274,6 @@ class PortfolioService:
                 ))
             else:
                 holdings.append(Holding(
-                    isin=security.isin,
                     ticker=security.ticker,
                     name=security.name,
                     quantity=quantity,
@@ -303,7 +294,6 @@ class PortfolioService:
             holdings = [h for h in holdings if h.ticker != ticker]
             if new_qty > 0:
                 holdings.append(Holding(
-                    isin=existing.isin,
                     ticker=existing.ticker,
                     name=existing.name,
                     quantity=new_qty,
@@ -314,7 +304,6 @@ class PortfolioService:
 
         trade = Trade(
             timestamp=datetime.now(),
-            isin=security.isin,
             ticker=security.ticker,
             name=security.name,
             action=action,

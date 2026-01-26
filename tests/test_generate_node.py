@@ -30,9 +30,7 @@ def simple_state():
     portfolio_state = PortfolioState(
         cash=5000.0,
         holdings=[
-            Holding(
-                isin="US0378331005",
-                ticker="AAPL",
+            Holding(ticker="AAPL",
                 name="Apple Inc.",
                 quantity=10,
                 avg_price=150.0,

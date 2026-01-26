@@ -180,9 +180,7 @@ class TestValidateNodeSellValidation:
         )
 
         holdings = [
-            Holding(
-                isin="US123",
-                ticker="AAPL",
+            Holding(ticker="AAPL",
                 name="Apple",
                 quantity=10,  # Only have 10
                 avg_price=150.0,
@@ -221,9 +219,7 @@ class TestValidateNodeSellValidation:
         )
 
         holdings = [
-            Holding(
-                isin="US123",
-                ticker="AAPL",
+            Holding(ticker="AAPL",
                 name="Apple",
                 quantity=10,
                 avg_price=150.0,
@@ -496,9 +492,7 @@ class TestValidateNodeSellProceeds:
         mock_get_price.return_value = 100.0  # $100 per share
 
         holdings = [
-            Holding(
-                isin="US123",
-                ticker="MSFT",
+            Holding(ticker="MSFT",
                 name="Microsoft",
                 quantity=100,  # Can sell 50 shares = $5000
                 avg_price=100.0,
@@ -549,9 +543,7 @@ class TestValidateNodeSellProceeds:
         mock_get_price.return_value = 100.0
 
         holdings = [
-            Holding(
-                isin="US123",
-                ticker="MSFT",
+            Holding(ticker="MSFT",
                 name="Microsoft",
                 quantity=20,  # Can only sell 20 shares = $2000
                 avg_price=100.0,
@@ -602,9 +594,7 @@ class TestValidateNodeSellProceeds:
         mock_get_price.return_value = 100.0
 
         holdings = [
-            Holding(
-                isin="US123",
-                ticker="MSFT",
+            Holding(ticker="MSFT",
                 name="Microsoft",
                 quantity=10,  # Only 10 shares, trying to sell 50
                 avg_price=100.0,

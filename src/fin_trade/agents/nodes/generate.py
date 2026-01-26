@@ -9,8 +9,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from fin_trade.agents.state import SimpleAgentState
+from fin_trade.agents.tools.price_lookup import (
+    extract_tickers_from_text,
+    fetch_buy_candidate_data,
+    format_buy_candidates_for_prompt,
+)
 from fin_trade.models import AgentRecommendation, TradeRecommendation
 from fin_trade.prompts import GENERATE_TRADES_PROMPT
+from fin_trade.services.security import SecurityService
 
 # Load environment variables
 _project_root = Path(__file__).parent.parent.parent.parent.parent
@@ -38,6 +44,7 @@ def _build_generate_prompt(state) -> str:
     analysis = state.get("analysis") or state.get("moderator_analysis") or "No analysis available"
     price_data = state.get("price_data", {})
     user_context = state.get("user_context")
+    buy_candidates_section = state.get("buy_candidates_section", "")
 
     # Format holdings for context
     holdings_info = []
@@ -69,6 +76,7 @@ USER GUIDANCE (incorporate this into trade generation):
         cash=portfolio_state.cash,
         trade_instruction=trade_instruction,
         holdings_info="\n".join(holdings_info) if holdings_info else "  None (empty portfolio)",
+        buy_candidates_section=buy_candidates_section,
     )
 
 
@@ -181,14 +189,42 @@ def generate_trades_node(state) -> dict:
 
     Works with both SimpleAgentState and DebateAgentState.
 
+    Extracts potential BUY candidate tickers from the analysis,
+    fetches their current prices, and includes this in the prompt
+    so the agent can calculate accurate trade quantities.
+
     Updates state with:
     - recommendations: Parsed AgentRecommendation (or None if parsing fails)
     - error: Error message if parsing fails
     - _metrics_generate: Metrics for this step
     """
     config = state["portfolio_config"]
+    portfolio_state = state["portfolio_state"]
 
-    prompt = _build_generate_prompt(state)
+    # Extract potential BUY candidate tickers from analysis
+    analysis = state.get("analysis") or state.get("moderator_analysis") or ""
+    market_research = state.get("market_research", "")
+    combined_text = f"{analysis}\n{market_research}"
+
+    # Get existing holding tickers to exclude from BUY candidates
+    holding_tickers = {h.ticker.upper() for h in portfolio_state.holdings}
+
+    # Extract and filter tickers
+    potential_tickers = extract_tickers_from_text(combined_text)
+    buy_candidate_tickers = [t for t in potential_tickers if t not in holding_tickers]
+
+    # Fetch BUY candidate data (prices, bid/ask) and format for prompt
+    buy_candidates_section = ""
+    if buy_candidate_tickers:
+        security_service = SecurityService()
+        candidates = fetch_buy_candidate_data(buy_candidate_tickers[:10], security_service)  # Limit to 10
+        buy_candidates_section = format_buy_candidates_for_prompt(candidates)
+
+    # Add buy_candidates_section to state for prompt building
+    state_with_candidates = dict(state)
+    state_with_candidates["buy_candidates_section"] = buy_candidates_section
+
+    prompt = _build_generate_prompt(state_with_candidates)
 
     start_time = time.time()
 

@@ -15,6 +15,10 @@ from fin_trade.prompts import (
     DEBATE_PROMPT,
     MODERATOR_PROMPT,
 )
+from fin_trade.services.market_data import MarketDataService
+from fin_trade.services.reflection import ReflectionService
+from fin_trade.services.security import SecurityService
+from fin_trade.services.stock_data import StockDataService
 
 # Load environment variables
 _project_root = Path(__file__).parent.parent.parent.parent.parent
@@ -111,22 +115,59 @@ def _invoke_anthropic(prompt: str, model: str) -> LLMResponse:
 
 
 def _format_holdings(state: DebateAgentState) -> str:
-    """Format holdings for prompt."""
+    """Format holdings with rich price context (history, RSI, volume, MAs, short interest)."""
     portfolio_state = state["portfolio_state"]
-    price_data = state.get("price_data", {})
 
     if not portfolio_state.holdings:
         return "None (empty portfolio)"
 
-    lines = []
-    for h in portfolio_state.holdings:
-        current_price = price_data.get(h.ticker, h.avg_price)
-        gain = ((current_price - h.avg_price) / h.avg_price) * 100 if h.avg_price > 0 else 0
-        lines.append(
-            f"  - {h.ticker} ({h.name}): {h.quantity} shares @ avg ${h.avg_price:.2f}, "
-            f"current ${current_price:.2f} ({gain:+.1f}%)"
+    try:
+        # Pass SecurityService to use stored 52w range, MAs, short interest data
+        security_service = SecurityService()
+        stock_data_service = StockDataService()
+        return stock_data_service.format_holdings_for_prompt(
+            portfolio_state.holdings, security_service=security_service
         )
-    return "\n".join(lines)
+    except Exception:
+        # Fallback to basic format if price context fails
+        price_data = state.get("price_data", {})
+        lines = []
+        for h in portfolio_state.holdings:
+            current_price = price_data.get(h.ticker, h.avg_price)
+            gain = ((current_price - h.avg_price) / h.avg_price) * 100 if h.avg_price > 0 else 0
+            lines.append(
+                f"  - {h.ticker} ({h.name}): {h.quantity} shares @ avg ${h.avg_price:.2f}, "
+                f"current ${current_price:.2f} ({gain:+.1f}%)"
+            )
+        return "\n".join(lines)
+
+
+def _get_market_data_context(state: DebateAgentState) -> str:
+    """Get market data context for holdings."""
+    portfolio_state = state["portfolio_state"]
+    holding_tickers = [h.ticker for h in portfolio_state.holdings]
+
+    try:
+        market_data_service = MarketDataService()
+        if holding_tickers:
+            return market_data_service.get_full_context_for_holdings(holding_tickers)
+        else:
+            macro = market_data_service.get_macro_data()
+            return macro.to_context_string()
+    except Exception:
+        return "Market data temporarily unavailable."
+
+
+def _get_reflection_context(state: DebateAgentState) -> str:
+    """Get self-reflection context on past performance."""
+    portfolio_state = state["portfolio_state"]
+
+    try:
+        reflection_service = ReflectionService()
+        reflection = reflection_service.analyze_performance(portfolio_state)
+        return reflection.to_context_string()
+    except Exception:
+        return "Performance reflection temporarily unavailable."
 
 
 def bull_pitch_node(state) -> dict:
@@ -137,6 +178,8 @@ def bull_pitch_node(state) -> dict:
     prompt = BULL_PROMPT.format(
         strategy=config.strategy_prompt,
         research=state.get("market_research", "No research available"),
+        market_data_context=_get_market_data_context(state),
+        reflection_context=_get_reflection_context(state),
         holdings=_format_holdings(state),
         cash=state["portfolio_state"].cash,
     )
@@ -163,6 +206,8 @@ def bear_pitch_node(state) -> dict:
     prompt = BEAR_PROMPT.format(
         strategy=config.strategy_prompt,
         research=state.get("market_research", "No research available"),
+        market_data_context=_get_market_data_context(state),
+        reflection_context=_get_reflection_context(state),
         holdings=_format_holdings(state),
         cash=state["portfolio_state"].cash,
     )
@@ -189,6 +234,8 @@ def neutral_pitch_node(state) -> dict:
     prompt = NEUTRAL_PROMPT.format(
         strategy=config.strategy_prompt,
         research=state.get("market_research", "No research available"),
+        market_data_context=_get_market_data_context(state),
+        reflection_context=_get_reflection_context(state),
         holdings=_format_holdings(state),
         cash=state["portfolio_state"].cash,
     )
@@ -301,6 +348,7 @@ PORTFOLIO MANAGER GUIDANCE (incorporate this into your decision):
     prompt = MODERATOR_PROMPT.format(
         strategy=config.strategy_prompt,
         user_context_section=user_context_section,
+        reflection_context=_get_reflection_context(state),
         bull_pitch=state.get("bull_pitch", "No pitch"),
         bear_pitch=state.get("bear_pitch", "No pitch"),
         neutral_pitch=state.get("neutral_pitch", "No analysis"),

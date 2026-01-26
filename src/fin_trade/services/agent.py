@@ -14,6 +14,9 @@ from fin_trade.models import (
 )
 from fin_trade.services.security import SecurityService
 from fin_trade.services.llm_provider import LLMProviderFactory
+from fin_trade.services.market_data import MarketDataService
+from fin_trade.services.reflection import ReflectionService
+from fin_trade.services.stock_data import StockDataService
 from fin_trade.prompts import SIMPLE_AGENT_PROMPT
 
 # Load .env file from project root
@@ -27,8 +30,17 @@ load_dotenv(_env_path)
 class AgentService:
     """Service for invoking LLM agents to get trading recommendations."""
 
-    def __init__(self, security_service: SecurityService | None = None):
+    def __init__(
+        self,
+        security_service: SecurityService | None = None,
+        market_data_service: MarketDataService | None = None,
+        reflection_service: ReflectionService | None = None,
+        stock_data_service: StockDataService | None = None,
+    ):
         self.security_service = security_service or SecurityService()
+        self.market_data_service = market_data_service or MarketDataService()
+        self.reflection_service = reflection_service or ReflectionService()
+        self.stock_data_service = stock_data_service or StockDataService()
         # Reload .env to ensure keys are available
         load_dotenv(_env_path)
         # Ensure logs directory exists
@@ -69,20 +81,11 @@ class AgentService:
         self, config: PortfolioConfig, state: PortfolioState
     ) -> str:
         """Build the prompt for the LLM with portfolio context."""
-        holdings_info = []
-        for h in state.holdings:
-            try:
-                current_price = self.security_service.get_price(h.ticker)
-                gain = ((current_price - h.avg_price) / h.avg_price) * 100
-                holdings_info.append(
-                    f"  - {h.ticker} ({h.name}): "
-                    f"{h.quantity} shares @ avg ${h.avg_price:.2f}, "
-                    f"current ${current_price:.2f} ({gain:+.1f}%)"
-                )
-            except Exception:
-                holdings_info.append(
-                    f"  - {h.ticker} ({h.name}): {h.quantity} shares @ avg ${h.avg_price:.2f}"
-                )
+        # Get rich price context for holdings (history, RSI, volume, MAs, short interest)
+        holding_tickers = [h.ticker for h in state.holdings]
+        holdings_info_str = self.stock_data_service.format_holdings_for_prompt(
+            state.holdings, security_service=self.security_service
+        )
 
         trades_info = []
         for t in state.trades:
@@ -91,14 +94,30 @@ class AgentService:
                 f"{t.ticker} ({t.name}) @ ${t.price:.2f}"
             )
 
+        # Fetch market data context for holdings
+        if holding_tickers:
+            market_data_context = self.market_data_service.get_full_context_for_holdings(
+                holding_tickers
+            )
+        else:
+            # Still fetch macro data even with no holdings
+            macro = self.market_data_service.get_macro_data()
+            market_data_context = macro.to_context_string()
+
+        # Generate self-reflection on past performance
+        reflection = self.reflection_service.analyze_performance(state)
+        reflection_context = reflection.to_context_string()
+
         return SIMPLE_AGENT_PROMPT.format(
             strategy_prompt=config.strategy_prompt,
             cash=state.cash,
             initial_amount=config.initial_amount,
-            holdings_info="\n".join(holdings_info) if holdings_info else "  None",
+            holdings_info=holdings_info_str,
             trades_info="\n".join(trades_info) if trades_info else "  None",
             trades_per_run=config.trades_per_run,
             num_initial_trades=config.num_initial_trades,
+            market_data_context=market_data_context,
+            reflection_context=reflection_context,
         )
 
     def _parse_response(self, response_text: str) -> AgentRecommendation:

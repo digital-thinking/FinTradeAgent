@@ -51,8 +51,6 @@ def render_trade_recommendations(
     # Initialize session state for ticker corrections and quantity adjustments
     if "ticker_corrections" not in st.session_state:
         st.session_state.ticker_corrections = {}
-    if "isin_inputs" not in st.session_state:
-        st.session_state.isin_inputs = {}
     if "quantity_adjustments" not in st.session_state:
         st.session_state.quantity_adjustments = {}
 
@@ -281,22 +279,6 @@ def render_trade_recommendations(
                             st.session_state.ticker_corrections[i] = new_ticker.upper()
                             st.rerun()
 
-            # Check if ISIN is missing/unknown
-            if security_info and security_info.isin.startswith("UNKNOWN-"):
-                with st.expander("📝 ISIN Missing - Please Provide", expanded=False):
-                    st.caption(
-                        f"yfinance couldn't find the ISIN for {corrected_ticker}. "
-                        "Please enter it manually for better tracking:"
-                    )
-                    isin_input = st.text_input(
-                        "ISIN",
-                        value=st.session_state.isin_inputs.get(i, ""),
-                        key=f"isin_input_{i}",
-                        placeholder="e.g., US0378331005",
-                    )
-                    if isin_input:
-                        st.session_state.isin_inputs[i] = isin_input
-
             st.caption(f"💭 {trade.reasoning}")
 
             # Track selected trades and update simulated state
@@ -349,20 +331,8 @@ def render_trade_recommendations(
         if st.button("✓ Accept Selected", type="primary", key="accept_trades",
                      disabled=len(selected_trades) == 0):
             if selected_trades and on_accept:
-                # Apply any user-provided ISINs before accepting
-                for i, isin in st.session_state.isin_inputs.items():
-                    if isin and i < len(recommendation.trades):
-                        ticker = st.session_state.ticker_corrections.get(
-                            i, recommendation.trades[i].ticker
-                        )
-                        try:
-                            security_service.update_isin(ticker, isin)
-                        except Exception:
-                            pass  # Ignore errors, the trade will still work
-
                 # Clear corrections and adjustments from session state
                 st.session_state.ticker_corrections = {}
-                st.session_state.isin_inputs = {}
                 st.session_state.quantity_adjustments = {}
                 on_accept(selected_trades)
                 return selected_trades
@@ -371,7 +341,6 @@ def render_trade_recommendations(
         if st.button("↻ Retry", key="retry_trades", type="secondary"):
             # Clear corrections and adjustments
             st.session_state.ticker_corrections = {}
-            st.session_state.isin_inputs = {}
             st.session_state.quantity_adjustments = {}
             if on_retry:
                 on_retry()
