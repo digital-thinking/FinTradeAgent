@@ -150,6 +150,161 @@ This means agents can research current prices, news, SEC filings, earnings dates
                                                 └─────────────────┘
 ```
 
+## Agent Workflow (Detailed)
+
+When you click "Run Agent", a comprehensive data collection and analysis pipeline executes before the LLM receives the prompt.
+
+### Data Collection Pipeline
+
+```
+AgentService.execute()
+├── _build_prompt()
+│   ├── StockDataService.format_holdings_for_prompt()
+│   │   └── get_price_context() [per holding]
+│   │       ├── SecurityService stored data (52w range, MAs, short interest)
+│   │       └── yfinance.history() → cached CSV (24h)
+│   │
+│   ├── MarketDataService.get_full_context_for_holdings()
+│   │   ├── get_macro_data() → S&P 500, NASDAQ, DOW, VIX, Treasury yields
+│   │   ├── get_earnings_info() [per holding] → upcoming earnings dates
+│   │   ├── get_sec_filings() [per holding] → recent 8-K, 10-Q, 10-K
+│   │   └── get_insider_trades() [per holding] → insider transactions
+│   │
+│   └── ReflectionService.analyze_performance()
+│       ├── _find_completed_trades() → FIFO match buys with sells
+│       ├── _calculate_metrics() → win rate, avg gain/loss, holding days
+│       ├── _analyze_biases() → patterns, warnings, themes
+│       └── _generate_insights() → actionable recommendations
+│
+├── LLMProvider.generate(prompt, model)
+├── _parse_response() → AgentRecommendation
+└── _save_log() → data/logs/{portfolio}_{timestamp}.md
+```
+
+### 1. Holdings Context (StockDataService)
+
+For each holding in the portfolio, the system fetches:
+
+| Data Point | Source | Purpose |
+|------------|--------|---------|
+| Current price | yfinance (cached 24h) | Position valuation |
+| 5-day change | Calculated from history | Short-term momentum |
+| 30-day change | Calculated from history | Medium-term trend |
+| 52-week high/low | SecurityService stored data | Range position |
+| RSI-14 | Calculated from price history | Overbought/oversold |
+| Volume vs 20-day avg | Calculated | Unusual activity detection |
+| 20-day & 50-day MAs | SecurityService or calculated | Trend analysis |
+| Short interest | SecurityService (if >10%) | Squeeze potential |
+| P/L from avg price | Calculated | Position performance |
+
+**Caching**: Price data is cached to CSV files in `data/stock_data/{TICKER}_prices.csv` for 24 hours. SecurityService stores ticker metadata in `{TICKER}_data.json` to minimize API calls.
+
+### 2. Market Data Context (MarketDataService)
+
+**Macro Data** (always fetched):
+- S&P 500, NASDAQ, DOW: price and daily % change
+- VIX: volatility index
+- Treasury yields: 2-year and 10-year
+
+**Per-Holding Data** (only when holdings exist):
+
+| Data Type | Source | What's Included |
+|-----------|--------|-----------------|
+| Earnings | yfinance calendar | Date, EPS estimate, revenue estimate, days until |
+| SEC Filings | yfinance sec_filings | Recent 8-K, 10-Q, 10-K with titles and dates |
+| Insider Trades | yfinance insider_transactions | Name, position, shares, value, transaction type |
+
+All market data is cached in memory for 24 hours.
+
+### 3. Reflection Context (ReflectionService)
+
+The reflection system analyzes past trade performance to help the agent learn from history. This runs **before every execution** with no external API calls.
+
+**Completed Trade Matching** (FIFO):
+- Groups trades by ticker
+- Matches BUYs with subsequent SELLs using first-in-first-out
+- Handles partial fills (buy 10, sell 5+5 = two completed trades)
+
+**Metrics Calculated**:
+- Win/loss count and win rate
+- Average gain per winner, average loss per loser
+- Average holding days (winners vs losers)
+- Total realized P/L
+- Best and worst trades with reasoning
+
+**Bias Detection**:
+| Bias | Detection Logic |
+|------|-----------------|
+| Quick trades | Held < 7 days |
+| Early profit-taking | Winners held < 50% of average |
+| Loss aversion | Losers held > 150% of average |
+| FOMO | Keyword detection in buy reasoning |
+| Overtrading | > 50% quick trades |
+
+**Generated Warnings**:
+- Low win rate (< 40% with 5+ trades)
+- Poor risk/reward ratio (avg loss > avg gain)
+- Pattern-based warnings (cutting winners, holding losers)
+
+**Actionable Insights**:
+- Win rate assessment
+- Risk/reward analysis
+- Holding period recommendations
+- Theme diversity suggestions
+
+### 4. Prompt Assembly
+
+All collected data is injected into the prompt template:
+
+```
+SYSTEM PROMPT
+├── Strategy definition (from portfolio YAML)
+├── Current state: cash balance, initial amount
+├── Holdings info (with all price context above)
+├── Trade history (all executed trades)
+├── Market intelligence:
+│   ├── Macro data
+│   ├── Upcoming earnings
+│   ├── SEC filings
+│   └── Insider trades
+├── Self-reflection (metrics, biases, insights)
+└── Constraints:
+    ├── Max trades per run
+    ├── Real tickers only
+    ├── No duplicate tickers
+    ├── 1% transaction cost assumption
+    └── BUY orders require stop_loss and take_profit
+```
+
+### 5. LLM Invocation
+
+Single call to the configured LLM provider (OpenAI or Anthropic) with the complete prompt. The response must be valid JSON containing:
+- `summary`: Overall market assessment
+- `trades`: Array of recommendations with ticker, action, quantity, reasoning
+- BUY orders include `stop_loss_price` and `take_profit_price`
+
+### 6. Logging
+
+Every execution saves a full log to `data/logs/{portfolio_name}_{timestamp}.md`:
+- Complete prompt sent
+- Raw LLM response
+- Useful for debugging and strategy iteration
+
+### Data Flow Timeline
+
+1. **User clicks "Run Agent"** → Optional user guidance captured
+2. **Load config/state** from YAML/JSON files
+3. **Parallel data collection** (cached when possible):
+   - Holdings price history
+   - Market macro data
+   - Earnings, filings, insider trades per holding
+4. **Reflection analysis** (instant, local data only)
+5. **Prompt assembly** with all context
+6. **Single LLM call** with complete prompt
+7. **Parse response** → structured recommendations
+8. **Save log** for debugging
+9. **Return to UI** for human review
+
 ## Project Structure
 
 ```
