@@ -5,9 +5,19 @@
       "Bash(poetry install:*)",
       "Bash(poetry lock:*)",
       "Bash(poetry run python:*)",
-      "Bash(python -c:*)",
+      "Bash(poetry run pytest:*)",
       "Bash(git add:*)",
-      "Bash(poetry run pytest:*)"
+      "Bash(git show:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(sed -i:*)",
+      "Bash(*gh.exe* pr view *\")",
+      "Bash(*gh.exe* pr diff *\")",
+      "Bash(*gh.exe* pr list *\")",
+      "Bash(*gh.exe* issue *\")",
+      "Bash(*gh.exe* repo view *\")",
+      "Bash(Select-String -Pattern \"^diff --git *\")",
+      "Bash(del pr_comment.md)",
+      "Bash(grep:*)"
     ]
   }
 }
