@@ -1,6 +1,7 @@
 """Portfolio detail page."""
 
 from collections.abc import Callable
+from datetime import datetime
 
 import streamlit as st
 import plotly.graph_objects as go
@@ -755,6 +756,9 @@ def _render_agent_execution(
                 st.session_state.last_metrics = None
                 st.session_state.debate_transcript = None
 
+            # Record execution time regardless of trades
+            state.last_execution = datetime.now()
+            portfolio_service.save_state(portfolio_name, state)
             st.session_state.recommendation = recommendation
             st.rerun()
         except Exception as e:
