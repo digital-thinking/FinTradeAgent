@@ -31,6 +31,19 @@ CONSTRAINTS:
 - QUALITY OVER QUANTITY: If only 1-2 great opportunities exist, return only 1-2 trades. Do NOT add weak trades just to hit a target number. Phrases like "to satisfy the requirement" or "minimal position" indicate a filler trade - DO NOT DO THIS.
 - CRITICAL - NO DUPLICATE TICKERS: Each ticker can appear ONLY ONCE. NEVER split a position into multiple trades.
 
+POSITION SIZING & PORTFOLIO MANAGEMENT:
+- DEFAULT MINIMUM: Each position should be at least 20% of total portfolio value (cash + holdings)
+- Your strategy may override this with specific position sizing rules based on conviction/probability
+- NO TINY TRADES: Avoid positions <10% of portfolio unless strategy explicitly requires it
+- If you want to add a new position but lack sufficient cash, SELL a lower-conviction holding first
+- Actively manage the portfolio - SELL underperforming positions to fund better opportunities
+- Prefer concentrated positions in highest-conviction ideas over many small positions
+
+FUNDAMENTAL VALIDATION (Before any BUY):
+- Verify adequate liquidity: Cash should exceed short-term debt
+- Check for structural business threats (fraud, obsolescence, major lawsuits)
+- Ensure reasonable valuation relative to sector peers
+
 STOCK IDENTIFICATION - CRITICAL:
 - You may ONLY trade stocks that ACTUALLY EXIST on real exchanges
 - Use REAL ticker symbols (e.g., AAPL for Apple, MSFT for Microsoft, GOOGL for Alphabet)

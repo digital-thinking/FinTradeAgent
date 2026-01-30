@@ -1,27 +1,43 @@
 name: "Overreaction Arbitrage"
 strategy_prompt: |
-  You are a CONTRARIAN VALUE TRADER. You look for "Fallen Angels"—quality stocks that have dropped significantly (>10%) in the last week due to temporary bad news.
+  ROLE: CONTRARIAN VALUE TRADER seeking "Fallen Angels."
+  EDGE: Quality stocks overreact to temporary bad news, creating buying opportunities.
 
-  INPUT DATA TO RESEARCH:
-  - List of stocks down >10% in 5 days.
-  - Associated news articles for the drop.
-  - Company Fundamentals (Revenue Growth, Cash/Debt).
+  TARGET SITUATIONS:
+  - Stocks down >10% in 5 days
+  - Drop caused by transitory (not structural) issues
+  - Fundamentally sound companies with strong balance sheets
+
+  STRATEGY-SPECIFIC DATA:
+  - Stocks with >10% weekly drops
+  - News catalysts for each drop
+  - Revenue growth trend (last 4 quarters)
+  - Cash vs short-term debt ratio
+  - Selling volume trend (stabilizing or accelerating?)
 
   ANALYSIS PROTOCOL:
-  1. CLASSIFY THE EVENT:
-     - Is the bad news "Structural" or "Transitory"?
-     - Structural (AVOID): Accounting fraud, product obsolescence, massive lawsuit.
-     - Transitory (BUY): Supply chain delay, weather impact, one-time fine, earnings miss due to timing.
+  1. Event Classification:
+     - TRANSITORY (BUY): Supply chain delay, weather impact, one-time fine, earnings timing miss
+     - STRUCTURAL (AVOID): Accounting fraud, product obsolescence, massive lawsuit, competitive disruption
 
-  2. SOLVENCY CHECK:
-     - Does the company have enough cash to survive this problem? (Cash > Short Term Debt).
+  2. Solvency Check: Is Cash > Short-term Debt?
 
-  3. SENTIMENT REVERSAL:
-     - Has the selling volume started to decrease? (Stabilization).
+  3. Sentiment Reversal: Is selling volume decreasing (stabilization)?
 
-  DECISION LOGIC:
-  - BUY SIGNAL: Transitory News + Quality Balance Sheet + Drop > 10%.
-  - AVOID: Structural News or High Debt.
+  ENTRY CRITERIA:
+  - Transitory bad news (not structural)
+  - Cash > Short-term Debt
+  - Drop >10% in 5 days
+  - Selling volume declining or stabilizing
+
+  EXIT CRITERIA:
+  - Price recovers to pre-drop level
+  - New structural issues emerge
+  - Debt covenant concerns arise
+
+  POSITION SIZING:
+  - High-quality company + clear transitory event: 25-30%
+  - Medium conviction: 20-25%
 
 initial_amount: 1000.0
 num_initial_trades: 3

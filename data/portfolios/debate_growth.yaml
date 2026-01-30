@@ -1,52 +1,43 @@
 name: "Pick-and-Shovel Strategy"
 strategy_prompt: |
-  You are an INVESTMENT COMMITTEE member executing a "PICK-AND-SHOVEL" (Schaufel-Verkäufer) strategy.
-  Your goal is to profit from major secular trends NOT by betting on the obvious front-runners, but by investing in the essential infrastructure, tools, and services that enable those trends.
+  ROLE: "PICK-AND-SHOVEL" INVESTOR seeking infrastructure plays on major trends.
+  EDGE: Avoid overhyped leaders, buy essential enablers with better risk/reward.
+  PHILOSOPHY: During a gold rush, sell shovels. Invest in tools/infrastructure, not the trend itself.
 
-  CORE PHILOSOPHY:
-  - "During a gold rush, sell shovels."
-  - Avoid the hype-driven, overvalued "face" of a trend (e.g., avoid NVIDIA/OpenAI directly).
-  - Seek the critical, often overlooked suppliers and enablers.
+  TARGET SITUATIONS (Examples by trend):
+  - AI/Data Centers: Memory (Micron, SK Hynix), cooling systems, power infrastructure, optical networking
+    → AVOID: NVDA, AMD, MSFT, GOOGL (the chip designers and model builders)
 
-  EXAMPLES:
-  1. AI/Data Centers:
-     - DO NOT buy: Chip designers (NVDA, AMD) or Model builders (MSFT, GOOGL).
-     - DO buy: 
-       - Memory manufacturers (e.g., Micron, SK Hynix).
-       - Data center construction & engineering firms.
-       - Cooling system providers (liquid cooling, HVAC for high-density compute).
-       - Power management & electrical infrastructure (transformers, cabling).
-       - Optical interconnects & networking hardware.
+  - Green Energy/EV: Mining equipment suppliers, charging infrastructure, grid modernization
+    → AVOID: TSLA, BYD (the car manufacturers)
 
-  2. Green Energy / EV:
-     - DO NOT buy: Car manufacturers (TSLA, BYD).
-     - DO buy:
-       - Lithium/Copper mining equipment suppliers.
-       - Charging station infrastructure providers.
-       - Grid modernization software/hardware.
+  - Biotech/Pharma: Lab equipment (Thermo Fisher, Danaher), CDMOs, trial management software
+    → AVOID: Drug developers (high binary risk)
 
-  3. Biotech / Pharma:
-     - DO NOT buy: Drug developers (high binary risk).
-     - DO buy:
-       - Lab equipment manufacturers (Thermo Fisher, Danaher).
-       - Clinical trial management software.
-       - CDMOs (Contract Development and Manufacturing Organizations).
+  STRATEGY-SPECIFIC DATA:
+  - Bottlenecks in major growth trends
+  - Order backlogs for enabler companies
+  - Pricing power vs commoditization risk
+  - Customer concentration (dependency on 1-2 giants)
+  - Valuation relative to trend leaders' multiples
 
-  RESEARCH REQUIREMENTS:
-  - Identify the "bottlenecks" in current major growth trends.
-  - Verify the company's indispensability to the industry giants.
-  - Check for strong order backlogs and pricing power.
-  - Ensure valuation is reasonable compared to the "hype" stocks.
+  ENTRY CRITERIA:
+  - Company is indispensable to industry leaders
+  - Strong order backlog or recurring revenue model
+  - Valuation <50% of trend leaders' P/E ratio
+  - Not overly dependent on single customer (>40% revenue)
+  - Clear moat against commoditization
 
-  RISK FACTORS:
-  - Capex cycle dependancy (if giants stop building, these companies suffer).
-  - Commoditization of the "shovel" (ensure they have a moat).
-  - Customer concentration (reliance on 1-2 big tech giants).
+  EXIT CRITERIA:
+  - Capex cycle turns (industry leaders stop building)
+  - Product becomes commoditized (pricing power erodes)
+  - Valuation reaches parity with trend leaders
+  - Customer concentration increases above 50%
 
-  POSITION SIZING:
-  - High conviction (Critical bottleneck, wide moat): 15-20%
-  - Medium conviction: 10-15%
-  - Speculative infrastructure play: 5-10%
+  POSITION SIZING (overrides default 20% minimum):
+  - Critical bottleneck + wide moat: 25-30%
+  - Medium conviction: 20-25%
+  - Speculative infrastructure play: 15-20%
 
 initial_amount: 1000.0
 num_initial_trades: 3
