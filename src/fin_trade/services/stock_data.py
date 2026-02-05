@@ -392,3 +392,53 @@ class StockDataService:
 
         return "\n".join(lines)
 
+    def get_benchmark_performance(
+        self,
+        symbol: str = "SPY",
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> pd.DataFrame:
+        """Get benchmark total return series for comparison.
+
+        Args:
+            symbol: Benchmark ticker symbol (default: SPY for S&P 500)
+            start_date: Start date for the series (default: 1 year ago)
+            end_date: End date for the series (default: today)
+
+        Returns:
+            DataFrame with columns: date, price, cumulative_return
+            cumulative_return is normalized to 0% at start_date
+        """
+        # Default to 1 year of data
+        if end_date is None:
+            end_date = datetime.now()
+        if start_date is None:
+            start_date = end_date - timedelta(days=365)
+
+        # Get historical data
+        df = self.get_history(symbol, days=365)
+
+        if df.empty:
+            raise ValueError(f"No benchmark data available for {symbol}")
+
+        # Filter by date range
+        df = df[(df.index >= start_date) & (df.index <= end_date)]
+
+        if df.empty:
+            raise ValueError(f"No benchmark data in date range for {symbol}")
+
+        # Calculate cumulative return from start
+        start_price = df["Close"].iloc[0]
+        df = df.copy()
+        df["cumulative_return"] = ((df["Close"] / start_price) - 1) * 100
+
+        # Create clean output DataFrame
+        result = pd.DataFrame({
+            "date": df.index,
+            "price": df["Close"].values,
+            "cumulative_return": df["cumulative_return"].values,
+        })
+        result = result.reset_index(drop=True)
+
+        return result
+

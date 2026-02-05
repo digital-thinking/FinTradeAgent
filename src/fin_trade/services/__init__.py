@@ -8,6 +8,7 @@ from fin_trade.services.execution_log import ExecutionLogService
 from fin_trade.services.attribution import AttributionService
 from fin_trade.services.market_data import MarketDataService
 from fin_trade.services.reflection import ReflectionService
+from fin_trade.services.comparison import ComparisonService, PortfolioMetrics
 
 __all__ = [
     "StockDataService",
@@ -19,4 +20,6 @@ __all__ = [
     "AttributionService",
     "MarketDataService",
     "ReflectionService",
+    "ComparisonService",
+    "PortfolioMetrics",
 ]

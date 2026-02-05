@@ -7,6 +7,7 @@ from fin_trade.pages.portfolio_detail import render_portfolio_detail_page
 from fin_trade.pages.system_health import render_system_health_page
 from fin_trade.pages.dashboard import render_dashboard_page
 from fin_trade.pages.pending_trades import render_pending_trades_page
+from fin_trade.pages.comparison import render_comparison_page
 
 
 def load_css():
@@ -67,6 +68,14 @@ def main():
         if st.button("📋 Pending Trades", use_container_width=True,
                      type="primary" if st.session_state.current_page == "pending_trades" else "secondary"):
             st.session_state.current_page = "pending_trades"
+            st.session_state.selected_portfolio = None
+            if "recommendation" in st.session_state:
+                del st.session_state.recommendation
+            st.rerun()
+
+        if st.button("📈 Compare", use_container_width=True,
+                     type="primary" if st.session_state.current_page == "comparison" else "secondary"):
+            st.session_state.current_page = "comparison"
             st.session_state.selected_portfolio = None
             if "recommendation" in st.session_state:
                 del st.session_state.recommendation
@@ -141,6 +150,9 @@ def main():
 
     elif st.session_state.current_page == "pending_trades":
         render_pending_trades_page()
+
+    elif st.session_state.current_page == "comparison":
+        render_comparison_page(portfolio_service)
 
     elif st.session_state.current_page == "system_health":
         render_system_health_page()
