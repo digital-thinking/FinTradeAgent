@@ -120,12 +120,20 @@ def main():
                     del st.session_state.recommendation
                 st.rerun()
 
+            def on_navigate_to_portfolio(name: str):
+                st.session_state.selected_portfolio = name
+                st.session_state.current_page = "detail"
+                if "recommendation" in st.session_state:
+                    del st.session_state.recommendation
+                st.rerun()
+
             render_portfolio_detail_page(
                 st.session_state.selected_portfolio,
                 portfolio_service,
                 agent_service,
                 security_service,
                 on_back=on_back,
+                on_navigate_to_portfolio=on_navigate_to_portfolio,
             )
         else:
             st.session_state.current_page = "overview"

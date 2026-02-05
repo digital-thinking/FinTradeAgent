@@ -891,3 +891,334 @@ class TestLoadStateStopLoss:
 
         assert state.holdings[0].stop_loss_price is None
         assert state.holdings[0].take_profit_price is None
+
+
+class TestClonePortfolio:
+    """Tests for clone_portfolio method."""
+
+    def test_clone_portfolio_config_only(
+        self, temp_data_dir, mock_security_service, sample_yaml_config
+    ):
+        """Test cloning a portfolio without state."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        # Create state for source portfolio
+        state_data = {"cash": 5000.0, "holdings": [], "trades": []}
+        state_path = temp_data_dir["state"] / "test_portfolio.json"
+        state_path.write_text(json.dumps(state_data))
+
+        # Clone without state
+        cloned_config = service.clone_portfolio(
+            "test_portfolio", "cloned_portfolio", include_state=False
+        )
+
+        assert cloned_config.name == "cloned_portfolio"
+        assert cloned_config.initial_amount == 10000.0
+
+        # Verify config file was created
+        cloned_config_path = temp_data_dir["portfolios"] / "cloned_portfolio.yaml"
+        assert cloned_config_path.exists()
+
+        # Verify no state file was created
+        cloned_state_path = temp_data_dir["state"] / "cloned_portfolio.json"
+        assert not cloned_state_path.exists()
+
+    def test_clone_portfolio_with_state(
+        self, temp_data_dir, mock_security_service, sample_yaml_config
+    ):
+        """Test cloning a portfolio with state."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        # Create state for source portfolio
+        state_data = {
+            "cash": 5000.0,
+            "holdings": [
+                {
+                    "ticker": "AAPL",
+                    "name": "Apple Inc.",
+                    "quantity": 10,
+                    "avg_price": 150.0,
+                }
+            ],
+            "trades": [],
+        }
+        state_path = temp_data_dir["state"] / "test_portfolio.json"
+        state_path.write_text(json.dumps(state_data))
+
+        # Clone with state
+        cloned_config = service.clone_portfolio(
+            "test_portfolio", "cloned_with_state", include_state=True
+        )
+
+        assert cloned_config.name == "cloned_with_state"
+
+        # Verify state file was copied
+        cloned_state_path = temp_data_dir["state"] / "cloned_with_state.json"
+        assert cloned_state_path.exists()
+
+        cloned_state_data = json.loads(cloned_state_path.read_text())
+        assert cloned_state_data["cash"] == 5000.0
+        assert len(cloned_state_data["holdings"]) == 1
+        assert cloned_state_data["holdings"][0]["ticker"] == "AAPL"
+
+    def test_clone_portfolio_duplicate_name_error(
+        self, temp_data_dir, mock_security_service, sample_yaml_config
+    ):
+        """Test cloning fails when target name already exists."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        # Create another portfolio with the target name
+        (temp_data_dir["portfolios"] / "existing.yaml").write_text("name: Existing")
+
+        with pytest.raises(ValueError, match="Portfolio already exists"):
+            service.clone_portfolio("test_portfolio", "existing")
+
+    def test_clone_portfolio_source_not_found(
+        self, temp_data_dir, mock_security_service
+    ):
+        """Test cloning fails when source doesn't exist."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        with pytest.raises(FileNotFoundError, match="Source portfolio not found"):
+            service.clone_portfolio("nonexistent", "new_name")
+
+    def test_clone_portfolio_invalid_name_characters(
+        self, temp_data_dir, mock_security_service, sample_yaml_config
+    ):
+        """Test cloning fails with invalid characters in name."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        with pytest.raises(ValueError, match="invalid characters"):
+            service.clone_portfolio("test_portfolio", "bad/name")
+
+        with pytest.raises(ValueError, match="invalid characters"):
+            service.clone_portfolio("test_portfolio", "bad:name")
+
+    def test_clone_portfolio_empty_name(
+        self, temp_data_dir, mock_security_service, sample_yaml_config
+    ):
+        """Test cloning fails with empty name."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        with pytest.raises(ValueError, match="cannot be empty"):
+            service.clone_portfolio("test_portfolio", "")
+
+        with pytest.raises(ValueError, match="cannot be empty"):
+            service.clone_portfolio("test_portfolio", "   ")
+
+
+class TestResetPortfolio:
+    """Tests for reset_portfolio method."""
+
+    def test_reset_portfolio_with_archive(
+        self, temp_data_dir, mock_security_service, sample_yaml_config
+    ):
+        """Test resetting a portfolio archives the state."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        # Create state with holdings
+        state_data = {
+            "cash": 5000.0,
+            "holdings": [
+                {
+                    "ticker": "AAPL",
+                    "name": "Apple Inc.",
+                    "quantity": 10,
+                    "avg_price": 150.0,
+                }
+            ],
+            "trades": [
+                {
+                    "timestamp": "2024-01-15T10:30:00",
+                    "ticker": "AAPL",
+                    "name": "Apple Inc.",
+                    "action": "BUY",
+                    "quantity": 10,
+                    "price": 150.0,
+                    "reasoning": "Test",
+                }
+            ],
+        }
+        state_path = temp_data_dir["state"] / "test_portfolio.json"
+        state_path.write_text(json.dumps(state_data))
+
+        # Reset with archive
+        service.reset_portfolio("test_portfolio", archive=True)
+
+        # Verify archive was created
+        archive_dir = temp_data_dir["state"] / "archive"
+        assert archive_dir.exists()
+        archive_files = list(archive_dir.glob("test_portfolio_*.json"))
+        assert len(archive_files) == 1
+
+        # Verify archived content
+        archived_data = json.loads(archive_files[0].read_text())
+        assert archived_data["cash"] == 5000.0
+        assert len(archived_data["holdings"]) == 1
+
+        # Verify new state is fresh
+        _, new_state = service.load_portfolio("test_portfolio")
+        assert new_state.cash == 10000.0  # initial_amount from config
+        assert new_state.holdings == []
+        assert new_state.trades == []
+
+    def test_reset_portfolio_no_archive(
+        self, temp_data_dir, mock_security_service, sample_yaml_config
+    ):
+        """Test resetting a portfolio without archiving."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        # Create state
+        state_data = {"cash": 5000.0, "holdings": [], "trades": []}
+        state_path = temp_data_dir["state"] / "test_portfolio.json"
+        state_path.write_text(json.dumps(state_data))
+
+        # Reset without archive
+        service.reset_portfolio("test_portfolio", archive=False)
+
+        # Verify no archive was created
+        archive_dir = temp_data_dir["state"] / "archive"
+        assert not archive_dir.exists() or not list(archive_dir.glob("*.json"))
+
+        # Verify state was reset
+        _, new_state = service.load_portfolio("test_portfolio")
+        assert new_state.cash == 10000.0
+
+    def test_reset_portfolio_preserves_config(
+        self, temp_data_dir, mock_security_service, sample_yaml_config
+    ):
+        """Test reset doesn't modify the config file."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        # Get original config content
+        config_path = temp_data_dir["portfolios"] / "test_portfolio.yaml"
+        original_content = config_path.read_text()
+
+        # Create and reset state
+        state_path = temp_data_dir["state"] / "test_portfolio.json"
+        state_path.write_text(json.dumps({"cash": 5000.0, "holdings": [], "trades": []}))
+
+        service.reset_portfolio("test_portfolio")
+
+        # Verify config unchanged
+        assert config_path.read_text() == original_content
+
+    def test_reset_portfolio_no_state_file(
+        self, temp_data_dir, mock_security_service, sample_yaml_config
+    ):
+        """Test reset works when no state file exists."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        # Reset without existing state file
+        service.reset_portfolio("test_portfolio", archive=True)
+
+        # Verify fresh state was created
+        _, new_state = service.load_portfolio("test_portfolio")
+        assert new_state.cash == 10000.0
+        assert new_state.holdings == []
+
+    def test_reset_portfolio_not_found(
+        self, temp_data_dir, mock_security_service
+    ):
+        """Test reset fails when portfolio doesn't exist."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        with pytest.raises(FileNotFoundError):
+            service.reset_portfolio("nonexistent")
+
+
+class TestDeletePortfolio:
+    """Tests for delete_portfolio method."""
+
+    def test_delete_portfolio_with_archive(
+        self, temp_data_dir, mock_security_service, sample_yaml_config
+    ):
+        """Test deleting a portfolio archives the state."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        # Create state
+        state_path = temp_data_dir["state"] / "test_portfolio.json"
+        state_path.write_text(json.dumps({"cash": 5000.0, "holdings": [], "trades": []}))
+
+        service.delete_portfolio("test_portfolio", archive_state=True)
+
+        # Verify config deleted
+        config_path = temp_data_dir["portfolios"] / "test_portfolio.yaml"
+        assert not config_path.exists()
+
+        # Verify state archived
+        archive_dir = temp_data_dir["state"] / "archive"
+        archive_files = list(archive_dir.glob("test_portfolio_*.json"))
+        assert len(archive_files) == 1
+
+    def test_delete_portfolio_without_archive(
+        self, temp_data_dir, mock_security_service, sample_yaml_config
+    ):
+        """Test deleting a portfolio without archiving."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        # Create state
+        state_path = temp_data_dir["state"] / "test_portfolio.json"
+        state_path.write_text(json.dumps({"cash": 5000.0, "holdings": [], "trades": []}))
+
+        service.delete_portfolio("test_portfolio", archive_state=False)
+
+        # Verify config deleted
+        assert not (temp_data_dir["portfolios"] / "test_portfolio.yaml").exists()
+
+        # Verify state deleted (not archived)
+        assert not state_path.exists()
+        archive_dir = temp_data_dir["state"] / "archive"
+        assert not archive_dir.exists() or not list(archive_dir.glob("*.json"))

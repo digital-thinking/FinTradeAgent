@@ -27,6 +27,7 @@ def render_portfolio_detail_page(
     agent_service: AgentService,
     security_service: SecurityService,
     on_back: Callable | None = None,
+    on_navigate_to_portfolio: Callable[[str], None] | None = None,
 ) -> None:
     """Render the portfolio detail page."""
     try:
@@ -37,7 +38,7 @@ def render_portfolio_detail_page(
             on_back()
         return
 
-    col1, col2 = st.columns([1, 4])
+    col1, col2, col3 = st.columns([1, 3, 1])
     with col1:
         if st.button("← Back to Overview", type="secondary"):
             if on_back:
@@ -45,6 +46,11 @@ def render_portfolio_detail_page(
 
     with col2:
         st.title(config.name)
+
+    with col3:
+        _render_portfolio_actions(
+            portfolio_name, config, state, portfolio_service, on_back, on_navigate_to_portfolio
+        )
 
     _render_summary(config, state, portfolio_service, security_service)
 
@@ -112,6 +118,120 @@ def _render_summary(
         st.write(f"**Trades per Run:** {config.trades_per_run}")
         st.write(f"**LLM:** {config.llm_provider} / {config.llm_model}")
         st.write(f"**Agent Mode:** {getattr(config, 'agent_mode', 'simple')}")
+
+
+def _render_portfolio_actions(
+    portfolio_name: str,
+    config: PortfolioConfig,
+    state: PortfolioState,
+    portfolio_service: PortfolioService,
+    on_back: Callable | None,
+    on_navigate_to_portfolio: Callable[[str], None] | None,
+) -> None:
+    """Render Clone and Reset action buttons."""
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("Clone", key="clone_btn", help="Create a copy of this portfolio"):
+            st.session_state.show_clone_dialog = True
+
+    with col2:
+        if st.button("Reset", key="reset_btn", type="secondary", help="Reset to initial state"):
+            st.session_state.show_reset_dialog = True
+
+    # Clone Dialog
+    if st.session_state.get("show_clone_dialog", False):
+        _render_clone_dialog(portfolio_name, portfolio_service, on_navigate_to_portfolio)
+
+    # Reset Dialog
+    if st.session_state.get("show_reset_dialog", False):
+        _render_reset_dialog(portfolio_name, config, state, portfolio_service)
+
+
+@st.dialog("Clone Portfolio")
+def _render_clone_dialog(
+    portfolio_name: str,
+    portfolio_service: PortfolioService,
+    on_navigate_to_portfolio: Callable[[str], None] | None,
+) -> None:
+    """Render the clone portfolio dialog."""
+    new_name = st.text_input(
+        "New Portfolio Name",
+        value=f"{portfolio_name}_copy",
+        help="Enter a unique name for the cloned portfolio",
+    )
+
+    include_state = st.checkbox(
+        "Include current state (holdings & trades)",
+        value=False,
+        help="If checked, the clone will have the same holdings and trade history",
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Clone", type="primary", key="confirm_clone"):
+            try:
+                portfolio_service.clone_portfolio(
+                    portfolio_name, new_name.strip(), include_state=include_state
+                )
+                st.success(f"Portfolio '{new_name}' created successfully!")
+                st.session_state.show_clone_dialog = False
+
+                # Navigate to new portfolio
+                if on_navigate_to_portfolio:
+                    on_navigate_to_portfolio(new_name.strip())
+                st.rerun()
+            except ValueError as e:
+                st.error(str(e))
+            except FileNotFoundError as e:
+                st.error(str(e))
+
+    with col2:
+        if st.button("Cancel", key="cancel_clone"):
+            st.session_state.show_clone_dialog = False
+            st.rerun()
+
+
+@st.dialog("Reset Portfolio")
+def _render_reset_dialog(
+    portfolio_name: str,
+    config: PortfolioConfig,
+    state: PortfolioState,
+    portfolio_service: PortfolioService,
+) -> None:
+    """Render the reset portfolio dialog with confirmation."""
+    st.warning("This action will reset your portfolio to its initial state.")
+
+    # Show what will be lost
+    st.markdown("**What will be lost:**")
+    current_value = portfolio_service.calculate_value(state)
+    st.markdown(f"- **{len(state.trades)}** trades")
+    st.markdown(f"- **{len(state.holdings)}** holdings")
+    st.markdown(f"- **${current_value:,.2f}** current value")
+
+    st.divider()
+
+    archive = st.checkbox(
+        "Archive current state before reset",
+        value=True,
+        help="Save a backup of the current state in data/state/archive/",
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Reset Portfolio", type="primary", key="confirm_reset"):
+            try:
+                portfolio_service.reset_portfolio(portfolio_name, archive=archive)
+                st.success("Portfolio reset successfully!")
+                st.session_state.show_reset_dialog = False
+                st.rerun()
+            except FileNotFoundError as e:
+                st.error(str(e))
+
+    with col2:
+        if st.button("Cancel", key="cancel_reset"):
+            st.session_state.show_reset_dialog = False
+            st.rerun()
 
 
 def _render_holdings(state: PortfolioState, security_service: SecurityService) -> None:

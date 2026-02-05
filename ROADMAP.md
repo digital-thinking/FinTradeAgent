@@ -153,6 +153,30 @@ Run the same strategy prompt across different LLM providers/models simultaneousl
 
 ---
 
+### 3.3 Cryptocurrency Support
+
+Enable crypto-only portfolios as a separate asset class (no mixing with stocks).
+
+**What it involves:**
+- yfinance already supports crypto tickers (`BTC-USD`, `ETH-USD`, etc.) -- no new data source needed
+- Add `asset_class` field to portfolio config: `stocks` or `crypto` (no mixed mode)
+- Crypto portfolios use crypto-specific prompts, UI labels ("units" not "shares"), and benchmarks (BTC not S&P 500)
+- Skip stock-specific context (earnings, SEC filings, insider trades) for crypto portfolios
+
+**Pros:**
+- Clean separation avoids complexity of mixed portfolios
+- Expands experimentation surface -- crypto markets behave very differently than equities
+- Zero additional infrastructure cost (yfinance provides the data)
+- Interesting test case for LLM strategies: can they handle 24/7 volatile markets?
+
+**Cons:**
+- Crypto lacks fundamental data (no P/E, no earnings, no SEC filings) -- agents have less context
+- Higher volatility may cause strategies to look worse (larger drawdowns, more noise)
+- Need separate prompt templates for crypto strategies
+- Fractional unit handling (0.00001 BTC display formatting)
+
+---
+
 ## Phase 4: Collaboration & Persistence
 
 Features for users who want to share findings or run longer experiments.

@@ -1,6 +1,8 @@
 """Portfolio management service."""
 
 import json
+import re
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -321,3 +323,145 @@ class PortfolioService:
             trades=trades,
             last_execution=datetime.now(),
         )
+
+    def _validate_portfolio_name(self, name: str) -> None:
+        """Validate portfolio name for filesystem safety.
+
+        Raises:
+            ValueError: If name is invalid or contains forbidden characters.
+        """
+        if not name or not name.strip():
+            raise ValueError("Portfolio name cannot be empty")
+
+        # Check for invalid filename characters
+        invalid_chars = r'[<>:"/\\|?*]'
+        if re.search(invalid_chars, name):
+            raise ValueError(
+                f"Portfolio name contains invalid characters. "
+                f"Avoid: < > : \" / \\ | ? *"
+            )
+
+        # Check for reserved names (Windows)
+        reserved = {"CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4",
+                    "LPT1", "LPT2", "LPT3", "LPT4"}
+        if name.upper() in reserved:
+            raise ValueError(f"'{name}' is a reserved name and cannot be used")
+
+    def clone_portfolio(
+        self, source_name: str, new_name: str, include_state: bool = False
+    ) -> PortfolioConfig:
+        """Clone a portfolio configuration.
+
+        Args:
+            source_name: Name of the portfolio to clone.
+            new_name: Name for the new portfolio.
+            include_state: If True, also copy the state JSON. If False, new
+                portfolio starts fresh (no state file).
+
+        Returns:
+            The cloned PortfolioConfig.
+
+        Raises:
+            FileNotFoundError: If source portfolio doesn't exist.
+            ValueError: If new_name already exists or contains invalid characters.
+        """
+        # Validate new name
+        self._validate_portfolio_name(new_name)
+
+        # Check source exists
+        source_config_path = self.portfolios_dir / f"{source_name}.yaml"
+        if not source_config_path.exists():
+            raise FileNotFoundError(f"Source portfolio not found: {source_name}")
+
+        # Check new name doesn't exist
+        new_config_path = self.portfolios_dir / f"{new_name}.yaml"
+        if new_config_path.exists():
+            raise ValueError(f"Portfolio already exists: {new_name}")
+
+        # Load and modify config
+        with open(source_config_path, "r", encoding="utf-8") as f:
+            config_data = yaml.safe_load(f)
+
+        # Update the name in the config
+        config_data["name"] = new_name
+
+        # Write new config file
+        with open(new_config_path, "w", encoding="utf-8") as f:
+            yaml.dump(config_data, f, default_flow_style=False, allow_unicode=True)
+
+        # Copy state if requested
+        if include_state:
+            source_state_path = self.state_dir / f"{source_name}.json"
+            if source_state_path.exists():
+                new_state_path = self.state_dir / f"{new_name}.json"
+                shutil.copy2(source_state_path, new_state_path)
+
+        return self._load_config(new_name)
+
+    def reset_portfolio(self, name: str, archive: bool = True) -> None:
+        """Reset portfolio to initial state.
+
+        Args:
+            name: Name of the portfolio to reset.
+            archive: If True, move current state to data/state/archive/ before reset.
+
+        Raises:
+            FileNotFoundError: If portfolio config doesn't exist.
+        """
+        # Verify config exists
+        config = self._load_config(name)
+
+        state_path = self.state_dir / f"{name}.json"
+
+        # Archive existing state if requested and state file exists
+        if archive and state_path.exists():
+            archive_dir = self.state_dir / "archive"
+            archive_dir.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            archive_path = archive_dir / f"{name}_{timestamp}.json"
+            shutil.move(str(state_path), str(archive_path))
+        elif state_path.exists():
+            # Delete without archiving
+            state_path.unlink()
+
+        # Create fresh state with initial amount from config
+        fresh_state = PortfolioState(
+            cash=config.initial_amount,
+            holdings=[],
+            trades=[],
+            last_execution=None,
+            initial_investment=None,
+        )
+        self.save_state(name, fresh_state)
+
+    def delete_portfolio(self, name: str, archive_state: bool = True) -> None:
+        """Delete a portfolio configuration and optionally archive its state.
+
+        Args:
+            name: Name of the portfolio to delete.
+            archive_state: If True, archive state before deleting. If False,
+                delete both config and state.
+
+        Raises:
+            FileNotFoundError: If portfolio config doesn't exist.
+        """
+        config_path = self.portfolios_dir / f"{name}.yaml"
+        if not config_path.exists():
+            raise FileNotFoundError(f"Portfolio not found: {name}")
+
+        state_path = self.state_dir / f"{name}.json"
+
+        # Archive state if requested
+        if archive_state and state_path.exists():
+            archive_dir = self.state_dir / "archive"
+            archive_dir.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            archive_path = archive_dir / f"{name}_{timestamp}.json"
+            shutil.move(str(state_path), str(archive_path))
+        elif state_path.exists():
+            state_path.unlink()
+
+        # Delete config
+        config_path.unlink()

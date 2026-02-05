@@ -17,7 +17,8 @@
       "Bash(*gh.exe* repo view *\")",
       "Bash(Select-String -Pattern \"^diff --git *\")",
       "Bash(del pr_comment.md)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(wc:*)"
     ]
   }
 }

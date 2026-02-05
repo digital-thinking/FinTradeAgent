@@ -1,169 +1,592 @@
-# Parallel Development Task Packages
+# Implementation Tasks
 
-**INSTRUCTIONS FOR AGENTS:**
-1.  **Select a single package** to work on. Do not mix tasks from different packages to avoid merge conflicts.
-2.  **Scope isolation**: Try to limit your changes to the files listed in the "Primary Files" section of your package.
-3.  **Shared Resources**: If you must modify shared files (e.g., `app.py`, `services/__init__.py`), check if other active agents are modifying them.
-4.  **New Files**: Prefer creating new files/modules over heavily modifying existing large files.
-5.  **Marking Progress**: When you start a package, assume you own it until completion.
-6.  **Atomic Commits**: After completing each individual task (bullet point) within a package, ask the user to commit the changes before moving to the next task. Do not accumulate multiple features in a single commit.
+Detailed implementation plans for ROADMAP.md features.
 
 ---
 
-## 📦 Package A: Backend Architecture (Refactoring)
-*Focus: Code structure, maintainability, and resilience.*
-*Primary Files: `src/fin_trade/services/agent.py`, `src/fin_trade/services/llm_provider.py` (new), `src/fin_trade/prompts/` (new)*
+## Phase 1: Experiment Infrastructure
 
-- [ ] **Scheduled Execution**
-    - Implement background job runner (e.g., APScheduler) to run agents automatically at defined intervals (daily/weekly).
-    - Create a `SchedulerService` to manage job persistence and execution.
-    - Add UI controls to enable/disable auto-execution per portfolio.
+### 1.2 Portfolio Cloning & Reset
 
-## 📦 Package F: Testing & Optimization
-*Focus: Quality assurance, performance, and stability.*
-*Primary Files: `tests/`, `src/fin_trade/services/stock_data.py`, `src/fin_trade/app.py`*
+**Status:** Completed
 
-- [ ] **Asynchronous Execution**
-    - Optimize backend processing to ensure UI responsiveness.
+**Goal:** Enable A/B testing of strategies by cloning portfolios and resetting them to initial state.
 
+#### Implementation Plan
 
-## 📦 Package I: Enhanced Holdings Context
-*Focus: Improve agent decision quality by providing richer context about current holdings.*
-*Primary Files: `src/fin_trade/services/stock_data.py`, `src/fin_trade/agents/nodes/`, `src/fin_trade/prompts/`*
+**1. Add clone/reset functions to PortfolioService** (`src/fin_trade/services/portfolio.py`)
 
-### Problem Analysis (from Short Squeeze Hunter execution log)
+```python
+def clone_portfolio(self, source_name: str, new_name: str, include_state: bool = False) -> PortfolioConfig:
+    """
+    Clone a portfolio configuration.
+    - Copy YAML config with new name
+    - If include_state=True, also copy the state JSON
+    - If include_state=False, new portfolio starts fresh (no state file)
+    """
 
-The current agent context is missing critical information for making informed decisions:
+def reset_portfolio(self, name: str, archive: bool = True) -> None:
+    """
+    Reset portfolio to initial state.
+    - If archive=True, move current state to data/state/archive/{name}_{timestamp}.json
+    - Delete or recreate state file (cash = initial_amount, holdings = [], trades = [])
+    """
+```
 
-1. **Holdings lack price history**: Only shows `current $1.74 (+0.0%)` - no trend data or chart context
-2. **Research node gets minimal ticker context**: Just ticker symbols, no price levels or performance
-3. **BUY candidates missing current prices**: Agent couldn't calculate position sizes because prices weren't provided
-4. **No technical indicators**: RSI, volume trends, moving averages not available
-5. **Short squeeze specific data missing**: Short interest %, days-to-cover, borrow fees not auto-fetched
+**2. Add UI controls** (`src/fin_trade/pages/portfolio_detail.py`)
 
-### Implementation Plan
+- Add "Clone" button in portfolio header area
+  - Opens modal/expander with:
+    - Text input for new name (validate: no duplicates, valid filename)
+    - Checkbox: "Include current state (holdings & trades)"
+    - Clone button
+  - On success: redirect to new portfolio detail page
 
-#### Task 1: Add Price History to Holdings Context
-- [x] Extend `StockDataService` to fetch 30-day price history with daily OHLCV
-- [x] Calculate key metrics: 5-day change, 30-day change, 52-week high/low distance
-- [x] Format as compact chart summary for agent consumption (e.g., "↗ trending up 15% over 5 days")
+- Add "Reset" button (with warning styling)
+  - Opens confirmation dialog
+  - Shows what will be lost: X trades, Y holdings, $Z current value
+  - Checkbox: "Archive current state before reset" (default: checked)
+  - Reset button
 
-#### Task 2: Add Technical Indicators
-- [x] Calculate RSI (14-day) for holdings and watch candidates
-- [x] Add volume analysis (avg volume, recent volume vs avg ratio)
-- [x] Include moving average context (price vs 20-day MA, 50-day MA)
-- [x] Add 52-week range position (e.g., "trading at 15% of 52-week range")
+**3. Archive directory structure**
 
-#### Task 3: Fetch Current Prices for BUY Candidates
-- [x] ~~Moved to Package J Task 6~~
+```
+data/
+├── state/
+│   ├── archive/                    # New directory
+│   │   └── {name}_{timestamp}.json # Archived states
+│   └── {name}.json                 # Active states
+```
 
-#### Task 5: Update Prompts with Rich Context
-- [x] Update holdings section in prompts to show price history summary
-- [x] Add technical indicator section when relevant to strategy
+**4. Add tests** (`tests/test_portfolio_service.py`)
 
-#### Task 6: Add Unit Tests
-- [x] Test price history formatting
-- [x] Test technical indicator calculations
+- `test_clone_portfolio_config_only` - Clone without state
+- `test_clone_portfolio_with_state` - Clone with state
+- `test_clone_portfolio_duplicate_name_error` - Reject duplicate names
+- `test_reset_portfolio_with_archive` - Reset and verify archive created
+- `test_reset_portfolio_no_archive` - Reset without archiving
+- `test_reset_portfolio_preserves_config` - Config unchanged after reset
+
+#### Files to Modify
+
+| File | Changes |
+|------|---------|
+| `src/fin_trade/services/portfolio.py` | Add `clone_portfolio()`, `reset_portfolio()` |
+| `src/fin_trade/pages/portfolio_detail.py` | Add Clone/Reset UI controls |
+| `tests/test_portfolio_service.py` | Add clone/reset tests |
+
+#### Edge Cases
+
+- Clone name conflicts with existing portfolio
+- Clone/reset while portfolio has pending (unapplied) trades in execution log
+- Reset portfolio that has never been executed (no state file exists)
+- Invalid characters in clone name (spaces, special chars)
 
 ---
 
-## 📦 Package J: Consolidate yfinance Data Fetching & Remove ISINs
-*Focus: Eliminate redundant API calls, reuse stored data, and simplify storage to use ticker symbols only.*
-*Primary Files: `src/fin_trade/services/security.py`, `src/fin_trade/services/stock_data.py`, `src/fin_trade/services/market_data.py`, `src/fin_trade/models/`*
+### 2.1 Strategy Benchmarking
 
-### Problem Analysis
+**Status:** Not Started
 
-**Issue 1: Redundant API Calls**
-The codebase has **9 separate `yf.Ticker()` calls** across 3 services. Meanwhile, stored data files contain rich data that's largely unused.
+**Goal:** Compare portfolio performance against S&P 500 and other portfolios.
 
-**Issue 2: ISIN-based Storage is Unnecessary**
-- Files are stored as `{ISIN}_data.json` but ISINs add complexity without benefit
-- Many tickers have `UNKNOWN-{ticker}` ISINs anyway
-- Tickers are the primary lookup key everywhere in the codebase
-- yfinance uses tickers, not ISINs
+#### Implementation Plan
 
-**Stored but not being used:**
-- `sharesShort`, `shortRatio`, `shortPercentOfFloat` - Short squeeze data
-- `fiftyTwoWeekHigh`, `fiftyTwoWeekLow` - Already calculated 52w range
-- `fiftyDayAverage`, `twoHundredDayAverage` - Moving averages
-- `earningsTimestamp` - Earnings date
-- `averageVolume`, `averageVolume10days` - Volume data
-- `targetMeanPrice`, `recommendationKey` - Analyst ratings
+**1. Add benchmark data fetching** (`src/fin_trade/services/stock_data.py`)
 
-**Current yf.Ticker() calls (redundant):**
-1. `security.py:135` - lookup_ticker()
-2. `security.py:200` - get_stock_info()
-3. `security.py:236` - refresh_security_data()
-4. `stock_data.py:97` - update_data() (fetches 365 days to calculate 52w range)
-5. `market_data.py:160` - get_earnings_info()
-6. `market_data.py:225` - get_insider_trades()
-7. `market_data.py:295` - get_sec_filings()
-8. `market_data.py:365,381` - get_macro_data()
+```python
+def get_benchmark_performance(self, symbol: str = "SPY", start_date: date, end_date: date) -> pd.DataFrame:
+    """
+    Get benchmark total return series.
+    Returns DataFrame with columns: date, price, cumulative_return
+    Uses existing caching infrastructure.
+    """
+```
 
-### Implementation Plan
+**2. Add portfolio comparison service** (`src/fin_trade/services/comparison.py` - new file)
 
-#### Task 0: Migrate Storage from ISIN to Ticker-based
-- [ ] Rename data files from `{ISIN}_data.json` to `{TICKER}_data.json`
-- [ ] Write migration script to rename existing files (preserve data)
-- [ ] Update `SecurityService._get_data_file_path()` to use ticker instead of ISIN
-- [ ] Update `SecurityService._load_persisted_securities()` to load by ticker
-- [ ] Update `SecurityService._save_security_data()` to save by ticker
-- [ ] Remove `_by_isin` cache dict (keep only `_by_ticker`)
-- [ ] Remove `get_by_isin()` method
-- [ ] Update `Holding` model: remove `isin` field (ticker is sufficient)
-- [ ] Update `Trade` model: remove `isin` field
-- [ ] Update `PortfolioService` to not require ISIN
-- [ ] Update price CSV files to use `{TICKER}_prices.csv` (already does this)
-- [ ] Clean up any ISIN references in UI components
+```python
+class ComparisonService:
+    def get_normalized_returns(self, portfolio_names: list[str], start_date: date = None) -> pd.DataFrame:
+        """
+        Get normalized (rebased to 100) return series for multiple portfolios.
+        Aligns to common start date (latest first trade across all portfolios).
+        """
 
-#### Task 1: Extend SecurityService with Rich Data Methods
-- [ ] Add `get_short_interest(ticker)` → returns {shares_short, short_ratio, short_percent_float}
-- [ ] Add `get_52w_range(ticker)` → returns {high_52w, low_52w}
-- [ ] Add `get_moving_averages(ticker)` → returns {ma_50, ma_200}
-- [ ] Add `get_analyst_data(ticker)` → returns {target_price, recommendation}
-- [ ] Add `get_volume_data(ticker)` → returns {avg_volume, avg_volume_10d}
-- [ ] Add `get_earnings_timestamp(ticker)` → returns datetime from earningsTimestamp
-- [ ] Add `is_data_stale(ticker, max_age_hours=24)` → checks _saved_at timestamp
+    def calculate_metrics(self, portfolio_name: str, benchmark_symbol: str = "SPY") -> dict:
+        """
+        Calculate comparison metrics:
+        - Alpha (excess return vs benchmark)
+        - Beta (correlation with benchmark)
+        - Sharpe ratio (return / volatility)
+        - Max drawdown
+        - Win rate (% of trades profitable)
+        """
+```
 
-#### Task 2: Update StockDataService to Use Stored Data
-- [ ] Modify `get_price_context()` to accept SecurityService parameter
-- [ ] Use stored 52w range instead of calculating from 365 days of data
-- [ ] Use stored MAs (50d, 200d) when available
-- [ ] Reduce history fetch from 365 days to 30 days (for RSI and recent changes only)
-- [ ] Add short interest fields to PriceContext dataclass
+**3. Update performance chart** (`src/fin_trade/pages/portfolio_detail.py`)
 
-#### Task 3: Add Short Squeeze Context to PriceContext
-- [ ] Add `shares_short`, `short_ratio`, `short_percent_float` to PriceContext
-- [ ] Update `to_context_string()` to show SI% and days-to-cover for high SI stocks
-- [ ] Format: "SI: 36.5% (5.4 days to cover)" when SI > 10%
+- Add toggle: "Show S&P 500 benchmark"
+- When enabled, overlay SPY normalized return on the chart
+- Add secondary y-axis or normalize both to percentage returns
 
-#### Task 4: Update MarketDataService to Check Stored Data First
-- [ ] Modify `get_earnings_info()` to check SecurityService.get_earnings_timestamp() first
-- [ ] Only call yf.Ticker().calendar if earnings not in stored data
-- [ ] Consider file-based caching for insider trades and SEC filings
+**4. Add comparison page** (`src/fin_trade/pages/comparison.py` - new file)
 
-#### Task 5: Wire Up Services in Agent Nodes
-- [ ] Update `analysis.py` to pass SecurityService to StockDataService methods
-- [ ] Update `debate.py` to pass SecurityService to _format_holdings()
-- [ ] Update `agent.py` (simple agent) to use SecurityService for stored data
+- Multi-select: choose 2+ portfolios to compare
+- Normalized performance chart (all rebased to 100 at start)
+- Metrics table side-by-side:
+  | Metric | Portfolio A | Portfolio B | S&P 500 |
+  |--------|-------------|-------------|---------|
+  | Total Return | +15% | +8% | +12% |
+  | Sharpe Ratio | 1.2 | 0.8 | 1.0 |
+  | Max Drawdown | -8% | -15% | -10% |
+  | Win Rate | 65% | 45% | N/A |
 
-#### Task 6: Fetch Current Prices for BUY Candidates (from Package I Task 3)
-- [ ] During research/analysis phase, fetch current prices for tickers agent is considering
-- [ ] Store fetched BUY candidate data in `{TICKER}_data.json` for reuse
-- [ ] Provide bid/ask spread context when available (from stored `bid`, `ask` fields)
-- [ ] Include current price in generate_trades prompt so agent can calculate quantities
+**5. Update navigation** (`src/fin_trade/app.py`)
 
-#### Task 7: Add Unit Tests
-- [ ] Test SecurityService rich data methods
-- [ ] Test StockDataService using stored 52w/MA data
-- [ ] Test short interest formatting in PriceContext
-- [ ] Test data staleness checking
+- Add "Compare" page to sidebar navigation
 
-### Expected Benefits
-- **Simplified data model**: Ticker-only storage, no more ISIN complexity
-- **Cleaner file naming**: `AAPL_data.json` instead of `US0378331005_data.json`
-- **Reduced yfinance API calls**: 365→30 day history fetch
-- **Short squeeze data**: Automatically in prompts (SI%, days-to-cover)
-- **Faster agent execution**: Less network I/O
-- **Single source of truth**: One file per ticker for all static data
+#### Files to Create/Modify
 
+| File | Changes |
+|------|---------|
+| `src/fin_trade/services/stock_data.py` | Add `get_benchmark_performance()` |
+| `src/fin_trade/services/comparison.py` | New file: ComparisonService |
+| `src/fin_trade/pages/portfolio_detail.py` | Add benchmark overlay toggle |
+| `src/fin_trade/pages/comparison.py` | New file: comparison page |
+| `src/fin_trade/app.py` | Add comparison page to navigation |
+| `tests/test_comparison_service.py` | New file: comparison tests |
+
+#### Edge Cases
+
+- Portfolio with no trades yet (can't calculate metrics)
+- Portfolios with very different start dates (normalization challenges)
+- Benchmark data unavailable for date range
+- Division by zero in Sharpe calculation (zero volatility)
+
+---
+
+### 2.2 Execution Replay
+
+**Status:** Not Started
+
+**Goal:** Browse past executions with full context and post-execution outcomes.
+
+#### Implementation Plan
+
+**1. Enhance ExecutionLogService** (`src/fin_trade/services/execution_log.py`)
+
+```python
+def get_execution_with_context(self, execution_id: int) -> dict:
+    """
+    Get full execution record including:
+    - Original recommendations
+    - Which were applied/rejected
+    - Portfolio state at time of execution
+    - Market context (from log file if available)
+    """
+
+def get_recommendation_outcomes(self, execution_id: int) -> list[dict]:
+    """
+    For each recommendation in an execution:
+    - Get the recommended ticker and action
+    - Get price at recommendation time
+    - Get current price (or price at sell if position closed)
+    - Calculate hypothetical P/L if recommendation was followed
+    - Calculate actual P/L if recommendation was applied
+    """
+```
+
+**2. Add execution history tab** (`src/fin_trade/pages/portfolio_detail.py`)
+
+- New tab: "Execution History" (rename current "Trade History" to "Trade Log")
+- Timeline view of executions:
+  - Date/time
+  - Model used
+  - # recommendations made
+  - # applied / # rejected
+  - Quick outcome indicator (green/red based on subsequent performance)
+
+**3. Execution detail view** (expandable or modal)
+
+- Show for each execution:
+  - Full agent reasoning
+  - Each recommendation with:
+    - Ticker, action, quantity
+    - Price at recommendation
+    - Current/exit price
+    - Outcome: +X% / -X%
+    - Status: Applied / Rejected
+  - Debate transcript (if debate mode)
+  - Research gathered
+  - Tokens used, duration
+
+**4. Parse markdown logs** (`src/fin_trade/services/execution_log.py`)
+
+- The markdown log files contain rich context not in SQLite
+- Add function to parse and extract sections from log files:
+  - Research results
+  - Analysis/debate transcript
+  - Full prompt
+
+#### Files to Modify
+
+| File | Changes |
+|------|---------|
+| `src/fin_trade/services/execution_log.py` | Add context and outcome functions |
+| `src/fin_trade/pages/portfolio_detail.py` | Add execution history tab and detail view |
+| `tests/test_execution_log.py` | Add tests for new functions |
+
+#### Edge Cases
+
+- Log file missing or corrupted
+- Recommendation for ticker that no longer exists
+- Price data unavailable for outcome calculation
+- Very old executions where log format may differ
+
+---
+
+### 3.1 Local LLM Support (Ollama)
+
+**Status:** Not Started
+
+**Goal:** Enable zero-cost experimentation with local models.
+
+#### Implementation Plan
+
+**1. Add Ollama provider** (`src/fin_trade/services/llm_provider.py`)
+
+```python
+class OllamaProvider(LLMProvider):
+    def __init__(self, model: str, base_url: str = "http://localhost:11434"):
+        self.model = model
+        self.base_url = base_url
+        self.client = OpenAI(base_url=f"{base_url}/v1", api_key="ollama")  # Ollama uses OpenAI-compatible API
+
+    def generate(self, messages: list[dict], **kwargs) -> LLMResponse:
+        # Same as OpenAI provider but:
+        # - No web search support
+        # - Different token counting
+        # - Handle connection errors gracefully (Ollama not running)
+
+    @property
+    def supports_web_search(self) -> bool:
+        return False
+```
+
+**2. Update provider factory** (`src/fin_trade/services/llm_provider.py`)
+
+```python
+def create_provider(provider_name: str, model: str, **kwargs) -> LLMProvider:
+    if provider_name == "ollama":
+        base_url = kwargs.get("ollama_base_url", "http://localhost:11434")
+        return OllamaProvider(model=model, base_url=base_url)
+    # ... existing providers
+```
+
+**3. Update portfolio config model** (`src/fin_trade/models/portfolio.py`)
+
+```python
+@dataclass
+class PortfolioConfig:
+    # ... existing fields
+    ollama_base_url: str = "http://localhost:11434"  # Only used if llm_provider == "ollama"
+```
+
+**4. Handle no web search in agents** (`src/fin_trade/agents/nodes/research.py`)
+
+- Check if provider supports web search
+- If not, skip web search step and use only:
+  - Cached market data
+  - Technical indicators
+  - Holdings context
+- Add warning in UI that research capabilities are limited
+
+**5. Add Ollama health check** (`src/fin_trade/services/llm_provider.py`)
+
+```python
+def check_ollama_status(base_url: str = "http://localhost:11434") -> dict:
+    """
+    Check if Ollama is running and list available models.
+    Returns: {"status": "ok"|"error", "models": [...], "error": "..."}
+    """
+```
+
+**6. UI for Ollama setup** (`src/fin_trade/pages/system_health.py`)
+
+- Show Ollama connection status
+- List available local models
+- Link to Ollama installation instructions if not running
+
+#### Files to Modify
+
+| File | Changes |
+|------|---------|
+| `src/fin_trade/services/llm_provider.py` | Add OllamaProvider, health check |
+| `src/fin_trade/models/portfolio.py` | Add ollama_base_url field |
+| `src/fin_trade/agents/nodes/research.py` | Handle no web search |
+| `src/fin_trade/pages/system_health.py` | Add Ollama status display |
+| `tests/test_llm_provider.py` | Add Ollama provider tests (mocked) |
+
+#### Edge Cases
+
+- Ollama not installed or not running
+- Model not downloaded locally
+- Connection timeout (slow inference)
+- Model doesn't support the message format
+- Very long responses from verbose local models
+
+---
+
+### 4.2 Execution Notes & Annotations
+
+**Status:** Not Started
+
+**Goal:** Let users attach notes to executions and time periods.
+
+#### Implementation Plan
+
+**1. Add notes table to SQLite** (`src/fin_trade/services/execution_log.py`)
+
+```sql
+CREATE TABLE IF NOT EXISTS execution_notes (
+    id INTEGER PRIMARY KEY,
+    execution_id INTEGER,           -- NULL if note is standalone (date-based)
+    portfolio_name TEXT NOT NULL,
+    note_date DATE NOT NULL,
+    note_text TEXT NOT NULL,
+    tags TEXT,                      -- JSON array of tags
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (execution_id) REFERENCES execution_logs(id)
+);
+```
+
+**2. Add note service methods** (`src/fin_trade/services/execution_log.py`)
+
+```python
+def add_note(self, portfolio_name: str, note_text: str,
+             execution_id: int = None, note_date: date = None,
+             tags: list[str] = None) -> int:
+    """Add a note to an execution or date."""
+
+def get_notes(self, portfolio_name: str,
+              start_date: date = None, end_date: date = None) -> list[dict]:
+    """Get notes for a portfolio, optionally filtered by date range."""
+
+def update_note(self, note_id: int, note_text: str = None, tags: list[str] = None):
+    """Update an existing note."""
+
+def delete_note(self, note_id: int):
+    """Delete a note."""
+```
+
+**3. Add note UI in execution history** (`src/fin_trade/pages/portfolio_detail.py`)
+
+- "Add Note" button next to each execution
+- Expandable text area for note content
+- Tag input (comma-separated or chip-style)
+- Common tags as quick-select: "Earnings", "Fed Decision", "Market Correction", "Strategy Tweak"
+
+**4. Show notes on performance chart** (`src/fin_trade/pages/portfolio_detail.py`)
+
+- Add markers/annotations on the chart at note dates
+- Hover to see note preview
+- Click to expand full note
+
+**5. Notes panel in portfolio detail**
+
+- Collapsible sidebar or tab showing all notes
+- Filter by tag
+- Search notes
+
+#### Files to Modify
+
+| File | Changes |
+|------|---------|
+| `src/fin_trade/services/execution_log.py` | Add notes table and CRUD methods |
+| `src/fin_trade/pages/portfolio_detail.py` | Add note UI in execution history and chart |
+| `tests/test_execution_log.py` | Add note CRUD tests |
+
+#### Edge Cases
+
+- Note on date with no execution
+- Very long notes (truncate in display, show full on expand)
+- Special characters in notes/tags
+- Migration: existing databases need new table
+
+---
+
+### 3.3 Cryptocurrency Support
+
+**Status:** Not Started
+
+**Goal:** Enable crypto-only portfolios as a separate asset class (no mixing with stocks).
+
+#### Implementation Plan
+
+**1. Add asset class to portfolio config** (`src/fin_trade/models/portfolio.py`)
+
+```python
+from enum import Enum
+
+class AssetClass(str, Enum):
+    STOCKS = "stocks"
+    CRYPTO = "crypto"
+
+@dataclass
+class PortfolioConfig:
+    # ... existing fields
+    asset_class: AssetClass = AssetClass.STOCKS
+```
+
+**2. Update Holding model for fractional units** (`src/fin_trade/models/portfolio.py`)
+
+```python
+@dataclass
+class Holding:
+    ticker: str
+    name: str
+    quantity: float  # Change from int to float for fractional crypto
+    avg_price: float
+    # ... existing fields
+```
+
+**3. Add crypto ticker validation** (`src/fin_trade/services/security.py`)
+
+```python
+CRYPTO_SUFFIXES = ["-USD", "-EUR", "-GBP"]
+
+def is_crypto_ticker(self, ticker: str) -> bool:
+    """Check if ticker is a cryptocurrency (e.g., BTC-USD, ETH-USD)."""
+    return any(ticker.upper().endswith(suffix) for suffix in CRYPTO_SUFFIXES)
+
+def validate_ticker_for_asset_class(self, ticker: str, asset_class: AssetClass) -> bool:
+    """Ensure ticker matches portfolio's asset class. Raises ValueError if mismatch."""
+    is_crypto = self.is_crypto_ticker(ticker)
+    if asset_class == AssetClass.CRYPTO and not is_crypto:
+        raise ValueError(f"Ticker {ticker} is not a crypto ticker. Use format like BTC-USD.")
+    if asset_class == AssetClass.STOCKS and is_crypto:
+        raise ValueError(f"Ticker {ticker} is a crypto ticker. This portfolio only allows stocks.")
+    return True
+```
+
+**4. Skip stock-specific market data for crypto** (`src/fin_trade/services/market_data.py`)
+
+```python
+def get_holdings_context(self, holdings: list, asset_class: AssetClass) -> dict:
+    """
+    Get market context appropriate for the asset class.
+    - Stocks: earnings, SEC filings, insider trades
+    - Crypto: skip all (not applicable)
+    """
+    if asset_class == AssetClass.CRYPTO:
+        return {}  # No fundamental data for crypto
+    # ... existing stock logic
+```
+
+**5. Separate prompt template for crypto** (`src/fin_trade/prompts/crypto_agent.py` - new file)
+
+```python
+CRYPTO_SYSTEM_PROMPT = """
+You are a cryptocurrency trading agent.
+
+IMPORTANT RULES:
+- Only trade cryptocurrencies (BTC-USD, ETH-USD, SOL-USD, etc.)
+- Always use the -USD suffix for tickers
+- No fundamental analysis available (no earnings, no SEC filings)
+- Focus on: technical analysis, market sentiment, news, on-chain metrics
+
+{strategy_prompt}
+
+Current Holdings:
+{holdings_context}
+
+Available Cash: ${cash:.2f}
+"""
+```
+
+**6. Add appropriate benchmark for crypto** (`src/fin_trade/services/comparison.py`)
+
+```python
+def get_default_benchmark(self, asset_class: AssetClass) -> str:
+    """Return appropriate benchmark for asset class."""
+    if asset_class == AssetClass.CRYPTO:
+        return "BTC-USD"
+    return "SPY"
+```
+
+**7. Update UI for crypto portfolios** (`src/fin_trade/pages/portfolio_detail.py`)
+
+```python
+def get_unit_label(asset_class: AssetClass) -> str:
+    return "units" if asset_class == AssetClass.CRYPTO else "shares"
+
+def format_quantity(quantity: float, asset_class: AssetClass) -> str:
+    if asset_class == AssetClass.CRYPTO:
+        return f"{quantity:.8f}".rstrip('0').rstrip('.')
+    return str(int(quantity))
+```
+
+**8. Add crypto portfolio example** (`data/portfolios/crypto_momentum.yaml`)
+
+```yaml
+name: "Crypto Momentum"
+asset_class: crypto
+strategy_prompt: |
+  You are a cryptocurrency momentum trader.
+
+  TARGET: Large-cap cryptocurrencies (BTC, ETH, SOL, AVAX, etc.)
+
+  SIGNALS:
+    - BUY: Breaking resistance with volume, positive sentiment shift
+    - SELL: Breaking support, momentum reversal, negative news
+
+  Always use -USD suffix (e.g., BTC-USD, ETH-USD).
+
+initial_amount: 10000.0
+num_initial_trades: 3
+trades_per_run: 2
+run_frequency: daily
+llm_provider: openai
+llm_model: gpt-5.2
+agent_mode: langgraph
+```
+
+#### Files to Create/Modify
+
+| File | Changes |
+|------|---------|
+| `src/fin_trade/models/portfolio.py` | Add `AssetClass` enum, change `quantity` to float |
+| `src/fin_trade/services/security.py` | Add `is_crypto_ticker()`, `validate_ticker_for_asset_class()` |
+| `src/fin_trade/services/market_data.py` | Skip stock-specific data for crypto |
+| `src/fin_trade/services/comparison.py` | Add `get_default_benchmark()` |
+| `src/fin_trade/prompts/crypto_agent.py` | New file: crypto-specific prompt template |
+| `src/fin_trade/pages/portfolio_detail.py` | Update UI labels and quantity formatting |
+| `data/portfolios/crypto_momentum.yaml` | New example crypto strategy |
+| `tests/test_security_service.py` | Add crypto validation tests |
+
+#### Edge Cases
+
+- Agent outputs ticker without -USD suffix (validation should catch and reject)
+- Extremely small quantities (0.00000001 BTC) -- display formatting
+- 24/7 market means "daily" execution timing is arbitrary
+- Stablecoins (USDT-USD, USDC-USD) -- technically crypto but effectively cash
+
+#### Migration Considerations
+
+- Existing portfolios default to `asset_class: stocks` (backward compatible)
+- Existing holdings with integer quantities still work (float accepts int)
+- No database migration needed (state is JSON)
+
+---
+
+## Implementation Priority
+
+Recommended order based on value and dependencies:
+
+1. **1.2 Portfolio Cloning & Reset** - Quick win, enables experimentation
+2. **2.1 Strategy Benchmarking** - Core value for understanding performance
+3. **3.3 Cryptocurrency Support** - Expands experimentation surface, low effort (yfinance already works)
+4. **3.1 Local LLM Support (Ollama)** - Enables free experimentation
+5. **2.2 Execution Replay** - Deep insight into agent decisions
+6. **4.2 Execution Notes** - Nice-to-have, low priority
