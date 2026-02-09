@@ -9,9 +9,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yfinance as yf
+from fin_trade.models import AssetClass
 
 if TYPE_CHECKING:
     from fin_trade.services.stock_data import StockDataService
+
+CRYPTO_SUFFIXES = ("-USD", "-EUR", "-GBP")
 
 
 @dataclass
@@ -141,6 +144,25 @@ class SecurityService:
     def get_price(self, ticker: str) -> float:
         """Get the current price for a ticker symbol (cached, auto-updates if >24h old)."""
         return self._stock_data_service.get_price(ticker)
+
+    def is_crypto_ticker(self, ticker: str) -> bool:
+        """Check whether a ticker is a crypto symbol with fiat quote suffix."""
+        normalized = ticker.upper()
+        return any(normalized.endswith(suffix) for suffix in CRYPTO_SUFFIXES)
+
+    def validate_ticker_for_asset_class(self, ticker: str, asset_class: AssetClass) -> bool:
+        """Validate that ticker matches portfolio asset class."""
+        normalized = ticker.upper()
+        is_crypto = self.is_crypto_ticker(normalized)
+        if asset_class == AssetClass.CRYPTO and not is_crypto:
+            raise ValueError(
+                f"Ticker {normalized} is not a crypto ticker. Use format like BTC-USD."
+            )
+        if asset_class == AssetClass.STOCKS and is_crypto:
+            raise ValueError(
+                f"Ticker {normalized} is a crypto ticker. This portfolio only allows stocks."
+            )
+        return True
 
     def force_update_price(self, ticker: str) -> float:
         """Force refresh price data for a ticker and return current price."""

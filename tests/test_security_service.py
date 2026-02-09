@@ -5,6 +5,7 @@ import pytest
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
+from fin_trade.models import AssetClass
 from fin_trade.services.security import SecurityService, Security
 
 
@@ -535,3 +536,42 @@ class TestGetValuationMetrics:
         assert metrics["beta"] == 2.314
         assert metrics["pe_trailing"] == 44.58
         assert metrics["pe_forward"] == 23.57
+
+
+class TestCryptoTickerValidation:
+    """Tests for crypto ticker helpers."""
+
+    def test_is_crypto_ticker_true_for_supported_suffixes(self, tmp_path):
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=tmp_path, stock_data_service=mock_stock_service)
+
+        assert service.is_crypto_ticker("BTC-USD") is True
+        assert service.is_crypto_ticker("eth-eur") is True
+        assert service.is_crypto_ticker("SOL-GBP") is True
+
+    def test_is_crypto_ticker_false_for_stock_ticker(self, tmp_path):
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=tmp_path, stock_data_service=mock_stock_service)
+
+        assert service.is_crypto_ticker("AAPL") is False
+
+    def test_validate_ticker_for_crypto_portfolio_rejects_stock(self, tmp_path):
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=tmp_path, stock_data_service=mock_stock_service)
+
+        with pytest.raises(ValueError, match="not a crypto ticker"):
+            service.validate_ticker_for_asset_class("AAPL", AssetClass.CRYPTO)
+
+    def test_validate_ticker_for_stock_portfolio_rejects_crypto(self, tmp_path):
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=tmp_path, stock_data_service=mock_stock_service)
+
+        with pytest.raises(ValueError, match="crypto ticker"):
+            service.validate_ticker_for_asset_class("BTC-USD", AssetClass.STOCKS)
+
+    def test_validate_ticker_for_matching_asset_class_passes(self, tmp_path):
+        mock_stock_service = MagicMock()
+        service = SecurityService(data_dir=tmp_path, stock_data_service=mock_stock_service)
+
+        assert service.validate_ticker_for_asset_class("AAPL", AssetClass.STOCKS) is True
+        assert service.validate_ticker_for_asset_class("BTC-USD", AssetClass.CRYPTO) is True

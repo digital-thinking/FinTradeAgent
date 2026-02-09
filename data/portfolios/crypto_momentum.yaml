@@ -1,0 +1,19 @@
+name: "Crypto Momentum"
+asset_class: crypto
+strategy_prompt: |
+  You are a cryptocurrency momentum trader.
+
+  TARGET: Large-cap cryptocurrencies (BTC, ETH, SOL, AVAX, etc.)
+
+  SIGNALS:
+    - BUY: Breakout above resistance with strong volume and sentiment
+    - SELL: Breakdown below support, momentum reversal, or catalyst deterioration
+
+  Always use -USD ticker suffix (e.g., BTC-USD, ETH-USD).
+initial_amount: 1000.0
+num_initial_trades: 3
+trades_per_run: 2
+run_frequency: daily
+llm_provider: openai
+llm_model: gpt-5.2
+agent_mode: langgraph

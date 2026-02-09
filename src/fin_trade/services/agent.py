@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 
 from fin_trade.models import (
     AgentRecommendation,
+    AssetClass,
     PortfolioConfig,
     PortfolioState,
     TradeRecommendation,
@@ -17,7 +18,7 @@ from fin_trade.services.llm_provider import LLMProviderFactory
 from fin_trade.services.market_data import MarketDataService
 from fin_trade.services.reflection import ReflectionService
 from fin_trade.services.stock_data import StockDataService
-from fin_trade.prompts import SIMPLE_AGENT_PROMPT
+from fin_trade.prompts import CRYPTO_SYSTEM_PROMPT, SIMPLE_AGENT_PROMPT
 
 # Load .env file from project root
 # agent.py -> services -> fin_trade -> src -> project_root
@@ -81,6 +82,8 @@ class AgentService:
         self, config: PortfolioConfig, state: PortfolioState
     ) -> str:
         """Build the prompt for the LLM with portfolio context."""
+        unit_label = "units" if config.asset_class == AssetClass.CRYPTO else "shares"
+
         # Get rich price context for holdings (history, RSI, volume, MAs, short interest)
         holding_tickers = [h.ticker for h in state.holdings]
         holdings_info_str = self.stock_data_service.format_holdings_for_prompt(
@@ -91,22 +94,24 @@ class AgentService:
         for t in state.trades:
             trades_info.append(
                 f"  - {t.timestamp.strftime('%Y-%m-%d')}: {t.action} {t.quantity} "
-                f"{t.ticker} ({t.name}) @ ${t.price:.2f}"
+                f"{unit_label} {t.ticker} ({t.name}) @ ${t.price:.2f}"
             )
 
         # Fetch market data context for holdings
-        if holding_tickers:
-            market_data_context = self.market_data_service.get_full_context_for_holdings(
-                holding_tickers
-            )
-        else:
-            # Still fetch macro data even with no holdings
-            macro = self.market_data_service.get_macro_data()
-            market_data_context = macro.to_context_string()
+        market_data_context = self.market_data_service.get_holdings_context(
+            holding_tickers, config.asset_class
+        )
 
         # Generate self-reflection on past performance
         reflection = self.reflection_service.analyze_performance(state)
         reflection_context = reflection.to_context_string()
+
+        if config.asset_class == AssetClass.CRYPTO:
+            return CRYPTO_SYSTEM_PROMPT.format(
+                strategy_prompt=config.strategy_prompt,
+                holdings_context=holdings_info_str,
+                cash=state.cash,
+            )
 
         return SIMPLE_AGENT_PROMPT.format(
             strategy_prompt=config.strategy_prompt,
@@ -139,7 +144,7 @@ class AgentService:
                     ticker=t["ticker"],
                     name=t.get("name", t["ticker"]),  # Fallback to ticker if name missing
                     action=t["action"],
-                    quantity=int(t["quantity"]),
+                    quantity=float(t["quantity"]),
                     reasoning=t["reasoning"],
                 )
                 for t in data.get("trades", [])

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 import yfinance as yf
+from fin_trade.models import AssetClass
 
 if TYPE_CHECKING:
     from fin_trade.services.security import SecurityService
@@ -355,6 +356,7 @@ class StockDataService:
         holdings: list,
         price_contexts: dict[str, PriceContext] | None = None,
         security_service: SecurityService | None = None,
+        asset_class: AssetClass = AssetClass.STOCKS,
     ) -> str:
         """Format holdings with rich context for agent prompts.
 
@@ -373,20 +375,30 @@ class StockDataService:
             tickers = [h.ticker for h in holdings]
             price_contexts = self.get_holdings_context(tickers, security_service)
 
+        unit_label = "units" if asset_class == AssetClass.CRYPTO else "shares"
+
         lines = []
         for h in holdings:
             ctx = price_contexts.get(h.ticker)
+            quantity = (
+                f"{h.quantity:.8f}".rstrip("0").rstrip(".")
+                if asset_class == AssetClass.CRYPTO
+                else f"{int(h.quantity)}"
+            )
 
             if ctx:
                 gain = ((ctx.current_price - h.avg_price) / h.avg_price * 100) if h.avg_price > 0 else 0
                 line = (
-                    f"  - {h.ticker} - {h.name}: {h.quantity} shares @ avg ${h.avg_price:.2f}\n"
+                    f"  - {h.ticker} - {h.name}: {quantity} {unit_label} @ avg ${h.avg_price:.2f}\n"
                     f"    Current: {ctx.to_context_string()}\n"
                     f"    P/L: {gain:+.1f}%"
                 )
             else:
                 # Fallback without context
-                line = f"  - {h.ticker} - {h.name}: {h.quantity} shares @ avg ${h.avg_price:.2f}"
+                line = (
+                    f"  - {h.ticker} - {h.name}: {quantity} {unit_label} "
+                    f"@ avg ${h.avg_price:.2f}"
+                )
 
             lines.append(line)
 

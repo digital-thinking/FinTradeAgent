@@ -26,9 +26,9 @@ def extract_tickers_from_text(text: str) -> list[str]:
         "SEC", "Q1", "Q2", "Q3", "Q4", "YTD", "ATH", "ATL", "AI", "AI.",
     }
 
-    # Match uppercase words of 1-5 characters that look like tickers
-    # Pattern includes optional exchange suffix (.DE, .L, etc.)
-    pattern = r'\b([A-Z]{1,5}(?:\.[A-Z]{1,2})?)\b'
+    # Match uppercase words of 1-5 characters that look like tickers.
+    # Pattern includes optional exchange suffix (.DE) and crypto quote suffix (-USD).
+    pattern = r"\b([A-Z]{1,5}(?:-[A-Z]{3}|\.[A-Z]{1,2})?)\b"
     matches = re.findall(pattern, text)
 
     # Filter and deduplicate

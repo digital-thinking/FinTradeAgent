@@ -418,7 +418,7 @@ def delete_note(self, note_id: int):
 
 ### 3.3 Cryptocurrency Support
 
-**Status:** Not Started
+**Status:** Completed
 
 **Goal:** Enable crypto-only portfolios as a separate asset class (no mixing with stocks).
 

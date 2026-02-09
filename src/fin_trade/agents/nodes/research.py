@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from fin_trade.agents.state import SimpleAgentState
 from fin_trade.agents.tools.price_lookup import get_stock_prices
+from fin_trade.models import AssetClass
 from fin_trade.services.security import SecurityService
 from fin_trade.prompts import RESEARCH_PROMPT
 
@@ -34,6 +35,23 @@ def _build_research_prompt(state) -> str:
     # Get current holdings tickers for price lookup
     holdings_tickers = [h.ticker for h in portfolio_state.holdings]
     holdings_info = ", ".join(holdings_tickers) if holdings_tickers else "None"
+
+    if config.asset_class == AssetClass.CRYPTO:
+        return f"""You are a crypto market research assistant.
+
+STRATEGY:
+{config.strategy_prompt}
+
+CURRENT HOLDINGS:
+{holdings_info}
+
+RESEARCH TASK:
+1. Gather current crypto market conditions and macro signals.
+2. Find actionable, recent catalysts for major crypto assets.
+3. Focus on REAL crypto tickers in Yahoo format (BTC-USD, ETH-USD, SOL-USD).
+4. Do not include stocks or ETFs.
+5. Prioritize concise insights useful for immediate trading decisions.
+"""
 
     return RESEARCH_PROMPT.format(
         strategy_prompt=config.strategy_prompt,

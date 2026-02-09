@@ -14,7 +14,7 @@ from fin_trade.agents.tools.price_lookup import (
     fetch_buy_candidate_data,
     format_buy_candidates_for_prompt,
 )
-from fin_trade.models import AgentRecommendation, TradeRecommendation
+from fin_trade.models import AgentRecommendation, AssetClass, TradeRecommendation
 from fin_trade.prompts import GENERATE_TRADES_PROMPT
 from fin_trade.services.security import SecurityService
 
@@ -45,12 +45,18 @@ def _build_generate_prompt(state) -> str:
     price_data = state.get("price_data", {})
     user_context = state.get("user_context")
     buy_candidates_section = state.get("buy_candidates_section", "")
+    unit_label = "units" if config.asset_class == AssetClass.CRYPTO else "shares"
 
     # Format holdings for context
     holdings_info = []
     for h in portfolio_state.holdings:
         current_price = price_data.get(h.ticker, h.avg_price)
-        holdings_info.append(f"  - {h.ticker}: {h.quantity} shares @ ${current_price:.2f}")
+        quantity = (
+            f"{h.quantity:.8f}".rstrip("0").rstrip(".")
+            if config.asset_class == AssetClass.CRYPTO
+            else f"{int(h.quantity)}"
+        )
+        holdings_info.append(f"  - {h.ticker}: {quantity} {unit_label} @ ${current_price:.2f}")
 
     # Determine if this is initial portfolio setup
     is_initial = len(portfolio_state.holdings) == 0 and len(portfolio_state.trades) == 0
@@ -60,6 +66,22 @@ def _build_generate_prompt(state) -> str:
 to establish positions. Use the full ${config.initial_amount:.2f} initial investment wisely."""
     else:
         trade_instruction = f"""Maximum {config.trades_per_run} trades allowed."""
+
+    asset_class_rules = ""
+    if config.asset_class == AssetClass.CRYPTO:
+        asset_class_rules = (
+            "\nASSET CLASS RULES:\n"
+            "- Only recommend crypto tickers with -USD suffix.\n"
+            "- Never recommend stocks or ETFs.\n"
+            "- Fractional quantities are allowed and expected."
+        )
+    else:
+        asset_class_rules = (
+            "\nASSET CLASS RULES:\n"
+            "- Only recommend stock tickers.\n"
+            "- Crypto tickers like BTC-USD are not allowed.\n"
+            "- Quantities must be whole numbers."
+        )
 
     # Build user context section if provided
     user_context_section = ""
@@ -72,7 +94,7 @@ USER GUIDANCE (incorporate this into trade generation):
 
     return GENERATE_TRADES_PROMPT.format(
         user_context_section=user_context_section,
-        analysis=analysis,
+        analysis=f"{analysis}{asset_class_rules}",
         cash=portfolio_state.cash,
         trade_instruction=trade_instruction,
         holdings_info="\n".join(holdings_info) if holdings_info else "  None (empty portfolio)",
@@ -100,7 +122,7 @@ def _parse_json_response(response_text: str) -> AgentRecommendation:
             ticker=t["ticker"].upper(),
             name=t.get("name", t["ticker"]),
             action=t["action"].upper(),
-            quantity=int(t["quantity"]),
+            quantity=float(t["quantity"]),
             reasoning=t["reasoning"],
             stop_loss_price=float(t["stop_loss_price"]) if t.get("stop_loss_price") else None,
             take_profit_price=float(t["take_profit_price"]) if t.get("take_profit_price") else None,

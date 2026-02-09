@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 import yfinance as yf
+from fin_trade.models import AssetClass
 
 if TYPE_CHECKING:
     from fin_trade.services.security import SecurityService
@@ -477,3 +478,18 @@ class MarketDataService:
                 lines.append(f"  {trade.to_context_string()}")
 
         return "\n".join(lines) if lines else "No additional market data available."
+
+    def get_holdings_context(
+        self,
+        tickers: list[str],
+        asset_class: AssetClass = AssetClass.STOCKS,
+    ) -> str:
+        """Get holdings context aligned to asset class."""
+        if asset_class == AssetClass.CRYPTO:
+            macro = self.get_macro_data()
+            return (
+                f"{macro.to_context_string()}\n\n"
+                "CRYPTO NOTE: Stock fundamentals (earnings, SEC filings, insider trades) "
+                "are not applicable."
+            )
+        return self.get_full_context_for_holdings(tickers)

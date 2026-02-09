@@ -2,16 +2,24 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from typing import Literal
+
+
+class AssetClass(str, Enum):
+    """Supported portfolio asset classes."""
+
+    STOCKS = "stocks"
+    CRYPTO = "crypto"
 
 
 @dataclass
 class Holding:
-    """Represents a stock holding in a portfolio."""
+    """Represents a holding in a portfolio."""
 
     ticker: str
     name: str
-    quantity: int
+    quantity: float
     avg_price: float
     stop_loss_price: float | None = None
     take_profit_price: float | None = None
@@ -25,7 +33,7 @@ class Trade:
     ticker: str
     name: str
     action: Literal["BUY", "SELL"]
-    quantity: int
+    quantity: float
     price: float
     reasoning: str
     stop_loss_price: float | None = None
@@ -52,6 +60,7 @@ class PortfolioConfig:
     run_frequency: Literal["daily", "weekly", "monthly"]
     llm_provider: Literal["anthropic", "openai"]
     llm_model: str
+    asset_class: AssetClass = AssetClass.STOCKS
     agent_mode: Literal["simple", "langgraph", "debate"] = "langgraph"
     debate_config: DebateConfig | None = None
 

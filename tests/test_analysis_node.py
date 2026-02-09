@@ -11,7 +11,13 @@ from fin_trade.models import (
 )
 
 
-def _mock_format_holdings(holdings, price_contexts=None, security_service=None, prices=None):
+def _mock_format_holdings(
+    holdings,
+    price_contexts=None,
+    security_service=None,
+    prices=None,
+    asset_class=None,
+):
     """Create a mock holdings format that uses provided prices."""
     if not holdings:
         return "  None (empty portfolio)"
@@ -99,8 +105,14 @@ class TestBuildAnalysisPrompt:
         """Mock StockDataService and SecurityService for all tests."""
         self._mock_prices = {}
 
-        def format_holdings(holdings, price_contexts=None, security_service=None):
-            return _mock_format_holdings(holdings, price_contexts, security_service, self._mock_prices)
+        def format_holdings(holdings, price_contexts=None, security_service=None, asset_class=None):
+            return _mock_format_holdings(
+                holdings,
+                price_contexts,
+                security_service,
+                self._mock_prices,
+                asset_class,
+            )
 
         mock_service = MagicMock()
         mock_service.format_holdings_for_prompt.side_effect = format_holdings

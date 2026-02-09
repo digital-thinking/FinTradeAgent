@@ -10,6 +10,7 @@ from typing import Literal
 import yaml
 
 from fin_trade.models import (
+    AssetClass,
     DebateConfig,
     Holding,
     PortfolioConfig,
@@ -74,6 +75,7 @@ class PortfolioService:
             run_frequency=data["run_frequency"],
             llm_provider=data["llm_provider"],
             llm_model=data["llm_model"],
+            asset_class=AssetClass(data.get("asset_class", AssetClass.STOCKS.value)),
             agent_mode=data.get("agent_mode", "langgraph"),
             debate_config=debate_config,
         )
@@ -99,7 +101,7 @@ class PortfolioService:
             Holding(
                 ticker=h.get("ticker", h.get("isin", "UNKNOWN")),
                 name=h.get("name", h.get("ticker", "Unknown")),
-                quantity=int(h["quantity"]),
+                quantity=float(h["quantity"]),
                 avg_price=float(h["avg_price"]),
                 stop_loss_price=h.get("stop_loss_price"),
                 take_profit_price=h.get("take_profit_price"),
@@ -113,7 +115,7 @@ class PortfolioService:
                 ticker=t.get("ticker", t.get("isin", "UNKNOWN")),
                 name=t.get("name", t.get("ticker", "Unknown")),
                 action=t["action"],
-                quantity=int(t["quantity"]),
+                quantity=float(t["quantity"]),
                 price=float(t["price"]),
                 reasoning=t["reasoning"],
                 stop_loss_price=t.get("stop_loss_price"),
@@ -235,14 +237,21 @@ class PortfolioService:
         state: PortfolioState,
         ticker: str,
         action: Literal["BUY", "SELL"],
-        quantity: int,
+        quantity: float,
         reasoning: str,
         stop_loss_price: float | None = None,
         take_profit_price: float | None = None,
+        asset_class: AssetClass = AssetClass.STOCKS,
     ) -> PortfolioState:
         """Execute a trade and return updated state."""
+        quantity = float(quantity)
         if quantity <= 0:
             raise ValueError(f"Invalid quantity: {quantity}. Must be greater than 0.")
+        if asset_class == AssetClass.STOCKS and not quantity.is_integer():
+            raise ValueError(f"Stock quantities must be whole numbers, got {quantity}.")
+
+        self.security_service.validate_ticker_for_asset_class(ticker, asset_class)
+
         # Lookup security info from ticker
         security = self.security_service.lookup_ticker(ticker)
         # Force update price when executing trades to ensure fresh data
@@ -322,6 +331,7 @@ class PortfolioService:
             holdings=holdings,
             trades=trades,
             last_execution=datetime.now(),
+            initial_investment=state.initial_investment,
         )
 
     def _validate_portfolio_name(self, name: str) -> None:

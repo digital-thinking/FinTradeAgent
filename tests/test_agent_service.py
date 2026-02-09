@@ -238,8 +238,8 @@ class TestParseResponse:
         with pytest.raises(ValueError, match="Failed to parse LLM response"):
             agent_service._parse_response(response)
 
-    def test_converts_quantity_to_int(self, agent_service):
-        """Test that quantity is converted to int."""
+    def test_converts_quantity_to_float(self, agent_service):
+        """Test that quantity is converted to float."""
         response = json.dumps({
             "trades": [
                 {"ticker": "AAPL", "name": "Apple", "action": "BUY", "quantity": "10", "reasoning": "Test"}
@@ -249,8 +249,8 @@ class TestParseResponse:
 
         result = agent_service._parse_response(response)
 
-        assert result.trades[0].quantity == 10
-        assert isinstance(result.trades[0].quantity, int)
+        assert result.trades[0].quantity == 10.0
+        assert isinstance(result.trades[0].quantity, float)
 
 
 class TestSaveLog:

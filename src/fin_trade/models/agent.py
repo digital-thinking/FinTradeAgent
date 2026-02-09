@@ -11,7 +11,7 @@ class TradeRecommendation:
     ticker: str
     name: str
     action: Literal["BUY", "SELL"]
-    quantity: int
+    quantity: float
     reasoning: str
     stop_loss_price: float | None = None  # Required for BUY orders
     take_profit_price: float | None = None  # Required for BUY orders
