@@ -254,21 +254,28 @@ class ComparisonService:
                     # FIFO: sell oldest shares first
                     remaining_to_sell = trade.quantity
                     sell_price = trade.price
+                    total_cost = 0.0
+                    total_shares_closed = 0
 
                     while remaining_to_sell > 0 and positions[trade.ticker]:
                         buy_price, buy_qty = positions[trade.ticker][0]
                         shares_to_close = min(remaining_to_sell, buy_qty)
 
-                        # Calculate P/L for this lot
-                        if sell_price > buy_price:
-                            profitable += 1
-                        total_closed += 1
+                        total_cost += buy_price * shares_to_close
+                        total_shares_closed += shares_to_close
 
                         remaining_to_sell -= shares_to_close
                         if shares_to_close >= buy_qty:
                             positions[trade.ticker].pop(0)
                         else:
                             positions[trade.ticker][0] = (buy_price, buy_qty - shares_to_close)
+
+                    # Count once per sell trade
+                    if total_shares_closed > 0:
+                        avg_cost = total_cost / total_shares_closed
+                        if sell_price > avg_cost:
+                            profitable += 1
+                        total_closed += 1
 
         if total_closed == 0:
             return None

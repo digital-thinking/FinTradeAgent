@@ -427,8 +427,9 @@ class StockDataService:
         if start_date is None:
             start_date = end_date - timedelta(days=365)
 
-        # Get historical data
-        df = self.get_history(symbol, days=365)
+        # Get historical data - calculate days needed from date range
+        days_needed = (end_date - start_date).days + 10
+        df = self.get_history(symbol, days=days_needed)
 
         if df.empty:
             raise ValueError(f"No benchmark data available for {symbol}")
