@@ -1,0 +1,433 @@
+"""Portfolio comparison and benchmarking service."""
+
+from dataclasses import dataclass
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+import numpy as np
+import pandas as pd
+
+if TYPE_CHECKING:
+    from fin_trade.services.portfolio import PortfolioService
+    from fin_trade.services.stock_data import StockDataService
+
+
+@dataclass
+class PortfolioMetrics:
+    """Performance metrics for a portfolio."""
+
+    total_return_pct: float
+    annualized_return_pct: float | None
+    volatility_pct: float | None  # Annualized standard deviation
+    sharpe_ratio: float | None  # (return - risk_free_rate) / volatility
+    max_drawdown_pct: float
+    win_rate_pct: float | None  # % of trades that were profitable
+    alpha_pct: float | None  # Excess return vs benchmark
+    beta: float | None  # Correlation with benchmark
+    days_active: int
+    num_trades: int
+
+
+class ComparisonService:
+    """Service for comparing portfolio performance against benchmarks."""
+
+    RISK_FREE_RATE = 0.05  # 5% annual risk-free rate assumption
+
+    def __init__(
+        self,
+        portfolio_service: "PortfolioService",
+        stock_data_service: "StockDataService",
+    ):
+        self.portfolio_service = portfolio_service
+        self.stock_data_service = stock_data_service
+
+    def _build_portfolio_value_series(
+        self,
+        portfolio_name: str,
+    ) -> pd.DataFrame:
+        """Build a time series of portfolio values from trade history.
+
+        Returns DataFrame with columns: date, value
+        """
+        config, state = self.portfolio_service.load_portfolio(portfolio_name)
+
+        if not state.trades:
+            return pd.DataFrame(columns=["date", "value"])
+
+        # Reconstruct portfolio value over time
+        initial_cash = state.initial_investment or config.initial_amount
+        cash = initial_cash
+        holdings: dict[str, dict] = {}  # ticker -> {quantity, avg_price}
+
+        records = []
+
+        for trade in state.trades:
+            trade_cost = trade.price * trade.quantity
+
+            if trade.action == "BUY":
+                cash -= trade_cost
+                if trade.ticker in holdings:
+                    existing = holdings[trade.ticker]
+                    total_qty = existing["quantity"] + trade.quantity
+                    avg_price = (
+                        existing["avg_price"] * existing["quantity"] + trade_cost
+                    ) / total_qty
+                    holdings[trade.ticker] = {"quantity": total_qty, "avg_price": avg_price}
+                else:
+                    holdings[trade.ticker] = {"quantity": trade.quantity, "avg_price": trade.price}
+            else:  # SELL
+                cash += trade_cost
+                if trade.ticker in holdings:
+                    holdings[trade.ticker]["quantity"] -= trade.quantity
+                    if holdings[trade.ticker]["quantity"] <= 0:
+                        del holdings[trade.ticker]
+
+            # Calculate portfolio value at this point using trade prices
+            holdings_value = sum(
+                h["quantity"] * h["avg_price"] for h in holdings.values()
+            )
+            total_value = cash + holdings_value
+
+            records.append({
+                "date": trade.timestamp,
+                "value": total_value,
+            })
+
+        # Add current value as final point
+        current_holdings_value = 0.0
+        for ticker, h in holdings.items():
+            try:
+                current_price = self.stock_data_service.get_price(ticker)
+                current_holdings_value += h["quantity"] * current_price
+            except Exception:
+                current_holdings_value += h["quantity"] * h["avg_price"]
+
+        current_total = cash + current_holdings_value
+        records.append({
+            "date": datetime.now(),
+            "value": current_total,
+        })
+
+        df = pd.DataFrame(records)
+        df["date"] = pd.to_datetime(df["date"])
+        return df
+
+    def get_normalized_returns(
+        self,
+        portfolio_names: list[str],
+        start_date: datetime | None = None,
+        include_benchmark: bool = True,
+        benchmark_symbol: str = "SPY",
+    ) -> pd.DataFrame:
+        """Get normalized (rebased to 100) return series for multiple portfolios.
+
+        Args:
+            portfolio_names: List of portfolio names to compare
+            start_date: Optional start date (uses latest first trade if None)
+            include_benchmark: Include benchmark (SPY) in comparison
+            benchmark_symbol: Benchmark ticker symbol
+
+        Returns:
+            DataFrame with columns: date, {portfolio_name}_return, ..., benchmark_return
+            All returns are rebased to 100 at the start date.
+        """
+        all_series = {}
+        earliest_dates = []
+
+        # Get portfolio value series
+        for name in portfolio_names:
+            df = self._build_portfolio_value_series(name)
+            if df.empty:
+                continue
+            # Convert to date only (no time component) for proper comparison
+            df = df.copy()
+            df["date"] = pd.to_datetime(df["date"]).dt.normalize()
+            all_series[name] = df
+            earliest_dates.append(df["date"].min())
+
+        if not all_series:
+            return pd.DataFrame()
+
+        # Use provided start_date or latest first trade
+        if start_date is None:
+            start_date = max(earliest_dates)
+        else:
+            start_date = pd.to_datetime(start_date).normalize()
+
+        # Get benchmark data if requested
+        if include_benchmark:
+            end_date = datetime.now()
+            benchmark_df = self.stock_data_service.get_benchmark_performance(
+                symbol=benchmark_symbol,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            benchmark_df = benchmark_df.copy()
+            benchmark_df["date"] = pd.to_datetime(benchmark_df["date"]).dt.normalize()
+            # Rebase to 100
+            benchmark_df["value"] = 100 * (1 + benchmark_df["cumulative_return"] / 100)
+            all_series[f"{benchmark_symbol}_benchmark"] = benchmark_df[["date", "value"]]
+
+        # Create unified date range (daily) from all series
+        min_date = min(df["date"].min() for df in all_series.values())
+        max_date = max(df["date"].max() for df in all_series.values())
+        date_range = pd.date_range(start=min_date, end=max_date, freq="D")
+
+        result_data = {"date": date_range}
+
+        # Resample each series to daily using forward fill
+        for name, df in all_series.items():
+            # Filter to start_date
+            df_filtered = df[df["date"] >= start_date].copy()
+            if df_filtered.empty:
+                continue
+
+            # Get start value for normalization
+            start_value = df_filtered["value"].iloc[0]
+            if start_value == 0:
+                continue
+
+            # Create normalized values (rebased to 100)
+            df_filtered["normalized"] = (df_filtered["value"] / start_value) * 100
+
+            # Set date as index and reindex to full date range with forward fill
+            df_indexed = df_filtered.set_index("date")["normalized"]
+            # Remove duplicates by keeping last value for each date
+            df_indexed = df_indexed[~df_indexed.index.duplicated(keep="last")]
+            # Reindex to full date range and forward fill
+            df_reindexed = df_indexed.reindex(date_range, method="ffill")
+
+            # Set values before start_date to None
+            df_reindexed[date_range < start_date] = None
+
+            col_name = f"{name}_return" if not name.endswith("_benchmark") else name
+            result_data[col_name] = df_reindexed.values
+
+        return pd.DataFrame(result_data)
+
+    def _calculate_max_drawdown(self, values: list[float]) -> float:
+        """Calculate maximum drawdown percentage."""
+        if not values or len(values) < 2:
+            return 0.0
+
+        peak = values[0]
+        max_dd = 0.0
+
+        for value in values:
+            if value > peak:
+                peak = value
+            drawdown = (peak - value) / peak * 100 if peak > 0 else 0
+            max_dd = max(max_dd, drawdown)
+
+        return max_dd
+
+    def _calculate_win_rate(self, trades: list) -> float | None:
+        """Calculate percentage of profitable trades."""
+        if not trades:
+            return None
+
+        # Track positions and realized P/L
+        positions: dict[str, list[tuple[float, int]]] = {}  # ticker -> [(price, qty), ...]
+        profitable = 0
+        total_closed = 0
+
+        for trade in trades:
+            if trade.action == "BUY":
+                if trade.ticker not in positions:
+                    positions[trade.ticker] = []
+                positions[trade.ticker].append((trade.price, trade.quantity))
+            else:  # SELL
+                if trade.ticker in positions and positions[trade.ticker]:
+                    # FIFO: sell oldest shares first
+                    remaining_to_sell = trade.quantity
+                    sell_price = trade.price
+
+                    while remaining_to_sell > 0 and positions[trade.ticker]:
+                        buy_price, buy_qty = positions[trade.ticker][0]
+                        shares_to_close = min(remaining_to_sell, buy_qty)
+
+                        # Calculate P/L for this lot
+                        if sell_price > buy_price:
+                            profitable += 1
+                        total_closed += 1
+
+                        remaining_to_sell -= shares_to_close
+                        if shares_to_close >= buy_qty:
+                            positions[trade.ticker].pop(0)
+                        else:
+                            positions[trade.ticker][0] = (buy_price, buy_qty - shares_to_close)
+
+        if total_closed == 0:
+            return None
+
+        return (profitable / total_closed) * 100
+
+    def calculate_metrics(
+        self,
+        portfolio_name: str,
+        benchmark_symbol: str = "SPY",
+    ) -> PortfolioMetrics:
+        """Calculate comprehensive performance metrics for a portfolio.
+
+        Args:
+            portfolio_name: Name of the portfolio
+            benchmark_symbol: Benchmark ticker for alpha/beta calculation
+
+        Returns:
+            PortfolioMetrics dataclass with all calculated metrics
+        """
+        config, state = self.portfolio_service.load_portfolio(portfolio_name)
+
+        if not state.trades:
+            return PortfolioMetrics(
+                total_return_pct=0.0,
+                annualized_return_pct=None,
+                volatility_pct=None,
+                sharpe_ratio=None,
+                max_drawdown_pct=0.0,
+                win_rate_pct=None,
+                alpha_pct=None,
+                beta=None,
+                days_active=0,
+                num_trades=0,
+            )
+
+        # Build value series
+        value_df = self._build_portfolio_value_series(portfolio_name)
+        if value_df.empty:
+            raise ValueError(f"No value data for portfolio {portfolio_name}")
+
+        initial_value = state.initial_investment or config.initial_amount
+        current_value = value_df["value"].iloc[-1]
+
+        # Total return
+        total_return = ((current_value - initial_value) / initial_value) * 100
+
+        # Days active
+        first_trade = state.trades[0].timestamp
+        days_active = (datetime.now() - first_trade).days
+        days_active = max(days_active, 1)  # Avoid division by zero
+
+        # Annualized return
+        years = days_active / 365
+        annualized_return = None
+        if years > 0 and current_value > 0 and initial_value > 0:
+            annualized_return = ((current_value / initial_value) ** (1 / years) - 1) * 100
+
+        # Calculate daily returns for volatility and Sharpe
+        value_df = value_df.sort_values("date")
+        value_df["daily_return"] = value_df["value"].pct_change()
+        daily_returns = value_df["daily_return"].dropna()
+
+        volatility = None
+        sharpe_ratio = None
+        if len(daily_returns) > 1:
+            # Annualized volatility (std * sqrt(252 trading days))
+            volatility = float(daily_returns.std() * np.sqrt(252) * 100)
+
+            if volatility > 0 and annualized_return is not None:
+                # Sharpe ratio
+                excess_return = annualized_return - self.RISK_FREE_RATE * 100
+                sharpe_ratio = excess_return / volatility
+
+        # Max drawdown
+        max_drawdown = self._calculate_max_drawdown(value_df["value"].tolist())
+
+        # Win rate
+        win_rate = self._calculate_win_rate(state.trades)
+
+        # Alpha and Beta (vs benchmark)
+        alpha = None
+        beta = None
+        try:
+            benchmark_df = self.stock_data_service.get_benchmark_performance(
+                symbol=benchmark_symbol,
+                start_date=first_trade,
+                end_date=datetime.now(),
+            )
+            if not benchmark_df.empty and len(benchmark_df) > 10:
+                # Calculate benchmark return over same period
+                benchmark_return = benchmark_df["cumulative_return"].iloc[-1]
+
+                # Alpha = portfolio return - benchmark return
+                alpha = total_return - benchmark_return
+
+                # Beta requires daily returns correlation
+                # Simplified: use total return ratio as proxy
+                if benchmark_return != 0:
+                    beta = total_return / benchmark_return
+        except Exception:
+            pass  # Benchmark data unavailable
+
+        return PortfolioMetrics(
+            total_return_pct=total_return,
+            annualized_return_pct=annualized_return,
+            volatility_pct=volatility,
+            sharpe_ratio=sharpe_ratio,
+            max_drawdown_pct=max_drawdown,
+            win_rate_pct=win_rate,
+            alpha_pct=alpha,
+            beta=beta,
+            days_active=days_active,
+            num_trades=len(state.trades),
+        )
+
+    def get_comparison_table(
+        self,
+        portfolio_names: list[str],
+        benchmark_symbol: str = "SPY",
+    ) -> pd.DataFrame:
+        """Get a comparison table of metrics for multiple portfolios.
+
+        Args:
+            portfolio_names: List of portfolio names to compare
+            benchmark_symbol: Benchmark ticker symbol
+
+        Returns:
+            DataFrame with portfolios as columns and metrics as rows
+        """
+        metrics_data = {}
+
+        for name in portfolio_names:
+            try:
+                metrics = self.calculate_metrics(name, benchmark_symbol)
+                metrics_data[name] = {
+                    "Total Return": f"{metrics.total_return_pct:+.1f}%",
+                    "Annualized Return": f"{metrics.annualized_return_pct:+.1f}%" if metrics.annualized_return_pct else "N/A",
+                    "Volatility": f"{metrics.volatility_pct:.1f}%" if metrics.volatility_pct else "N/A",
+                    "Sharpe Ratio": f"{metrics.sharpe_ratio:.2f}" if metrics.sharpe_ratio else "N/A",
+                    "Max Drawdown": f"-{metrics.max_drawdown_pct:.1f}%",
+                    "Win Rate": f"{metrics.win_rate_pct:.0f}%" if metrics.win_rate_pct else "N/A",
+                    "Alpha": f"{metrics.alpha_pct:+.1f}%" if metrics.alpha_pct else "N/A",
+                    "Beta": f"{metrics.beta:.2f}" if metrics.beta else "N/A",
+                    "Days Active": str(metrics.days_active),
+                    "Trades": str(metrics.num_trades),
+                }
+            except Exception as e:
+                metrics_data[name] = {"Error": str(e)}
+
+        # Add benchmark column
+        try:
+            benchmark_df = self.stock_data_service.get_benchmark_performance(
+                symbol=benchmark_symbol,
+                start_date=datetime.now() - pd.Timedelta(days=365),
+                end_date=datetime.now(),
+            )
+            if not benchmark_df.empty:
+                benchmark_return = benchmark_df["cumulative_return"].iloc[-1]
+                metrics_data[benchmark_symbol] = {
+                    "Total Return": f"{benchmark_return:+.1f}%",
+                    "Annualized Return": f"{benchmark_return:+.1f}%",  # Approximate for 1 year
+                    "Volatility": "~15%",  # Historical average
+                    "Sharpe Ratio": "N/A",
+                    "Max Drawdown": "N/A",
+                    "Win Rate": "N/A",
+                    "Alpha": "0.0%",  # Benchmark is reference
+                    "Beta": "1.00",
+                    "Days Active": "365",
+                    "Trades": "N/A",
+                }
+        except Exception:
+            pass
+
+        return pd.DataFrame(metrics_data)

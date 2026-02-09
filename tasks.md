@@ -86,7 +86,7 @@ data/
 
 ### 2.1 Strategy Benchmarking
 
-**Status:** Not Started
+**Status:** Completed
 
 **Goal:** Compare portfolio performance against S&P 500 and other portfolios.
 

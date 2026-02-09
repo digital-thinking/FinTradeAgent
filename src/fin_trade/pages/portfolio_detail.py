@@ -307,6 +307,7 @@ def _render_performance_chart(
 ) -> None:
     """Render the portfolio performance chart with interactive features."""
     from datetime import datetime, timedelta
+    from fin_trade.services import StockDataService
 
     st.subheader("Performance")
 
@@ -329,8 +330,8 @@ def _render_performance_chart(
     # Calculate key metrics
     metrics = _calculate_performance_metrics(config, state, values, timestamps)
 
-    # Time period selector
-    col1, col2 = st.columns([3, 1])
+    # Time period selector and benchmark toggle
+    col1, col2, col3 = st.columns([2, 1, 1])
     with col2:
         time_range = st.selectbox(
             "Time Range",
@@ -338,6 +339,8 @@ def _render_performance_chart(
             index=4,
             key="perf_time_range",
         )
+    with col3:
+        show_benchmark = st.checkbox("Show S&P 500", value=False, key="show_benchmark")
 
     # Filter data by time range
     filtered_timestamps, filtered_values, filtered_cash, filtered_holdings, filtered_trades = _filter_by_time_range(
@@ -350,6 +353,28 @@ def _render_performance_chart(
     # Display metrics row
     _render_performance_metrics(metrics, initial_investment)
 
+    # Get benchmark data if requested
+    benchmark_data = None
+    if show_benchmark and filtered_timestamps:
+        try:
+            stock_data_service = StockDataService()
+            start_date = filtered_timestamps[0]
+            end_date = filtered_timestamps[-1] if len(filtered_timestamps) > 1 else datetime.now()
+            benchmark_df = stock_data_service.get_benchmark_performance(
+                symbol="SPY",
+                start_date=start_date,
+                end_date=end_date,
+            )
+            if not benchmark_df.empty:
+                # Normalize benchmark to start at same value as portfolio
+                start_portfolio_value = filtered_values[0]
+                benchmark_data = {
+                    "dates": benchmark_df["date"].tolist(),
+                    "values": (benchmark_df["cumulative_return"] / 100 + 1) * start_portfolio_value,
+                }
+        except Exception:
+            pass  # Silently skip benchmark if unavailable
+
     # Build the interactive chart
     fig = _build_performance_figure(
         filtered_timestamps,
@@ -358,6 +383,7 @@ def _render_performance_chart(
         filtered_holdings,
         filtered_trades,
         initial_investment,
+        benchmark_data=benchmark_data,
     )
 
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
@@ -585,6 +611,7 @@ def _build_performance_figure(
     holdings_values: list[float],
     trade_points: list[dict],
     initial_amount: float,
+    benchmark_data: dict | None = None,
 ) -> go.Figure:
     """Build the interactive stacked area Plotly figure."""
     fig = go.Figure()
@@ -685,6 +712,24 @@ def _build_performance_figure(
                     customdata=sell_hover,
                 )
             )
+
+    # Benchmark overlay (S&P 500)
+    if benchmark_data:
+        benchmark_hover = [
+            f"<b>S&P 500</b><br>${v:,.2f}"
+            for v in benchmark_data["values"]
+        ]
+        fig.add_trace(
+            go.Scatter(
+                x=benchmark_data["dates"],
+                y=benchmark_data["values"],
+                mode="lines",
+                name="S&P 500",
+                line=dict(color="#FF9800", width=2, dash="dot"),
+                hovertemplate="%{customdata}<extra></extra>",
+                customdata=benchmark_hover,
+            )
+        )
 
     # Initial investment line
     fig.add_hline(
