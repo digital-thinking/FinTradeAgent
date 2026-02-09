@@ -839,6 +839,12 @@ def _render_agent_execution(
     mode_color = mode_colors.get(agent_mode, "gray")
     st.caption(f"Agent Mode: :{mode_color}[{agent_mode}]")
 
+    if config.llm_provider == "ollama":
+        st.warning(
+            "Ollama does not provide built-in web search. "
+            "Research uses local holdings and cached price context only."
+        )
+
     if "recommendation" not in st.session_state:
         st.session_state.recommendation = None
     if "last_metrics" not in st.session_state:

@@ -59,6 +59,39 @@ RESEARCH TASK:
     )
 
 
+def _build_local_research_prompt(state, price_data: dict[str, float]) -> str:
+    """Build a local-only research prompt for providers without web search."""
+    config = state["portfolio_config"]
+    portfolio_state = state["portfolio_state"]
+
+    if portfolio_state.holdings:
+        holdings_lines = []
+        for holding in portfolio_state.holdings:
+            price = price_data.get(holding.ticker, holding.avg_price)
+            holdings_lines.append(
+                f"- {holding.ticker}: qty={holding.quantity}, avg=${holding.avg_price:.2f}, "
+                f"latest=${price:.2f}"
+            )
+        holdings_context = "\n".join(holdings_lines)
+    else:
+        holdings_context = "None"
+
+    return f"""You are a market research assistant running in local mode without web search.
+
+STRATEGY:
+{config.strategy_prompt}
+
+CURRENT HOLDINGS AND CACHED PRICES:
+{holdings_context}
+
+RESEARCH RULES:
+1. Use only the portfolio context and cached prices provided above.
+2. Do not claim to have accessed live web/news/search data.
+3. Focus on risk, momentum, and position management guidance from available data.
+4. If data is insufficient, explicitly state uncertainty and what is missing.
+"""
+
+
 def _invoke_research_openai(prompt: str, model: str) -> LLMResponse:
     """Invoke OpenAI with web search for research."""
     import openai
@@ -153,6 +186,45 @@ def _invoke_research_anthropic(prompt: str, model: str) -> LLMResponse:
     )
 
 
+def _invoke_research_ollama(prompt: str, model: str, base_url: str) -> LLMResponse:
+    """Invoke Ollama without web search."""
+    import openai
+
+    normalized_url = base_url.rstrip("/")
+    client = openai.OpenAI(
+        base_url=f"{normalized_url}/v1",
+        api_key="ollama",
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2048,
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to connect to Ollama at {normalized_url}. "
+            f"Ensure Ollama is running and model '{model}' is available."
+        ) from e
+
+    input_tokens = 0
+    output_tokens = 0
+    if response.usage:
+        input_tokens = response.usage.prompt_tokens or 0
+        output_tokens = response.usage.completion_tokens or 0
+
+    text = response.choices[0].message.content or ""
+    if not text:
+        raise RuntimeError("Ollama returned an empty research response")
+
+    return LLMResponse(
+        text=text,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
+
+
 def research_node(state) -> dict:
     """Research node: gathers market data via web search.
 
@@ -166,8 +238,22 @@ def research_node(state) -> dict:
     config = state["portfolio_config"]
     portfolio_state = state["portfolio_state"]
 
-    # Build and execute research prompt
-    prompt = _build_research_prompt(state)
+    # Get current prices for holdings
+    holdings_tickers = [h.ticker for h in portfolio_state.holdings]
+    security_service = SecurityService()
+    price_data = get_stock_prices(holdings_tickers, security_service)
+
+    supports_web_search = config.llm_provider in {"openai", "anthropic"}
+    research_warning = None
+
+    if supports_web_search:
+        prompt = _build_research_prompt(state)
+    else:
+        prompt = _build_local_research_prompt(state, price_data)
+        research_warning = (
+            "Web search is unavailable for Ollama. "
+            "Research is limited to holdings and cached price context."
+        )
 
     start_time = time.time()
 
@@ -175,17 +261,18 @@ def research_node(state) -> dict:
         response = _invoke_research_openai(prompt, config.llm_model)
     elif config.llm_provider == "anthropic":
         response = _invoke_research_anthropic(prompt, config.llm_model)
+    elif config.llm_provider == "ollama":
+        response = _invoke_research_ollama(
+            prompt,
+            config.llm_model,
+            config.ollama_base_url,
+        )
     else:
         raise ValueError(f"Unknown LLM provider: {config.llm_provider}")
 
     duration_ms = int((time.time() - start_time) * 1000)
 
-    # Get current prices for holdings
-    holdings_tickers = [h.ticker for h in portfolio_state.holdings]
-    security_service = SecurityService()
-    price_data = get_stock_prices(holdings_tickers, security_service)
-
-    return {
+    result = {
         "market_research": response.text,
         "price_data": price_data,
         "_prompt_research": prompt,
@@ -195,3 +282,8 @@ def research_node(state) -> dict:
             "output_tokens": response.output_tokens,
         },
     }
+
+    if research_warning:
+        result["research_warning"] = research_warning
+
+    return result

@@ -163,7 +163,11 @@ class AgentService:
         """Execute the agent to get trading recommendations."""
         prompt = self._build_prompt(config, state)
 
-        provider = LLMProviderFactory.get_provider(config.llm_provider)
+        provider = LLMProviderFactory.get_provider(
+            config.llm_provider,
+            model=config.llm_model,
+            ollama_base_url=config.ollama_base_url,
+        )
         response = provider.generate(prompt, config.llm_model)
 
         # Save log for debugging

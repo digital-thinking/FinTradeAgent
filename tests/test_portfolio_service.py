@@ -144,6 +144,55 @@ debate_config:
         assert config.debate_config.rounds == 3
         assert config.debate_config.include_neutral is False
 
+    def test_loads_default_ollama_base_url(
+        self, temp_data_dir, mock_security_service
+    ):
+        """Test config defaults ollama_base_url when omitted."""
+        config_content = """name: Ollama Portfolio
+strategy_prompt: Test strategy
+initial_amount: 10000.0
+num_initial_trades: 3
+trades_per_run: 2
+run_frequency: weekly
+llm_provider: ollama
+llm_model: llama3.2
+"""
+        (temp_data_dir["portfolios"] / "ollama_default.yaml").write_text(config_content)
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        config = service._load_config("ollama_default")
+        assert config.ollama_base_url == "http://localhost:11434"
+
+    def test_loads_custom_ollama_base_url(
+        self, temp_data_dir, mock_security_service
+    ):
+        """Test config reads custom ollama_base_url."""
+        config_content = """name: Ollama Portfolio
+strategy_prompt: Test strategy
+initial_amount: 10000.0
+num_initial_trades: 3
+trades_per_run: 2
+run_frequency: weekly
+llm_provider: ollama
+llm_model: llama3.2
+ollama_base_url: http://127.0.0.1:11434
+"""
+        (temp_data_dir["portfolios"] / "ollama_custom.yaml").write_text(config_content)
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        config = service._load_config("ollama_custom")
+        assert config.ollama_base_url == "http://127.0.0.1:11434"
+
 
 class TestLoadState:
     """Tests for _load_state method."""

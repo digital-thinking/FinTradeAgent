@@ -35,14 +35,20 @@ class LLMResponse:
     output_tokens: int
 
 
-def _invoke_llm(prompt: str, provider: str, model: str) -> LLMResponse:
+def _invoke_llm(
+    prompt: str,
+    provider: str,
+    model: str,
+    ollama_base_url: str = "http://localhost:11434",
+) -> LLMResponse:
     """Invoke the LLM with the given prompt."""
     if provider == "openai":
         return _invoke_openai(prompt, model)
-    elif provider == "anthropic":
+    if provider == "anthropic":
         return _invoke_anthropic(prompt, model)
-    else:
-        raise ValueError(f"Unknown LLM provider: {provider}")
+    if provider == "ollama":
+        return _invoke_ollama(prompt, model, ollama_base_url)
+    raise ValueError(f"Unknown LLM provider: {provider}")
 
 
 def _invoke_openai(prompt: str, model: str) -> LLMResponse:
@@ -110,6 +116,45 @@ def _invoke_anthropic(prompt: str, model: str) -> LLMResponse:
 
     return LLMResponse(
         text=result_text,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
+
+
+def _invoke_ollama(prompt: str, model: str, base_url: str) -> LLMResponse:
+    """Invoke Ollama."""
+    import openai
+
+    normalized_url = base_url.rstrip("/")
+    client = openai.OpenAI(
+        base_url=f"{normalized_url}/v1",
+        api_key="ollama",
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=4096,
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to connect to Ollama at {normalized_url}. "
+            f"Ensure Ollama is running and model '{model}' is available."
+        ) from e
+
+    input_tokens = 0
+    output_tokens = 0
+    if response.usage:
+        input_tokens = response.usage.prompt_tokens or 0
+        output_tokens = response.usage.completion_tokens or 0
+
+    text = response.choices[0].message.content or ""
+    if not text:
+        raise RuntimeError("Ollama returned an empty response")
+
+    return LLMResponse(
+        text=text,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
     )
@@ -206,7 +251,12 @@ def bull_pitch_node(state) -> dict:
         cash=state["portfolio_state"].cash,
     )
 
-    response = _invoke_llm(prompt, config.llm_provider, config.llm_model)
+    response = _invoke_llm(
+        prompt,
+        config.llm_provider,
+        config.llm_model,
+        config.ollama_base_url,
+    )
     duration_ms = int((time.time() - start_time) * 1000)
 
     return {
@@ -234,7 +284,12 @@ def bear_pitch_node(state) -> dict:
         cash=state["portfolio_state"].cash,
     )
 
-    response = _invoke_llm(prompt, config.llm_provider, config.llm_model)
+    response = _invoke_llm(
+        prompt,
+        config.llm_provider,
+        config.llm_model,
+        config.ollama_base_url,
+    )
     duration_ms = int((time.time() - start_time) * 1000)
 
     return {
@@ -262,7 +317,12 @@ def neutral_pitch_node(state) -> dict:
         cash=state["portfolio_state"].cash,
     )
 
-    response = _invoke_llm(prompt, config.llm_provider, config.llm_model)
+    response = _invoke_llm(
+        prompt,
+        config.llm_provider,
+        config.llm_model,
+        config.ollama_base_url,
+    )
     duration_ms = int((time.time() - start_time) * 1000)
 
     return {
@@ -317,7 +377,12 @@ NEUTRAL's initial analysis:
         round_num=current_round,
         previous_statements=previous_statements,
     )
-    bull_response = _invoke_llm(bull_prompt, config.llm_provider, config.llm_model)
+    bull_response = _invoke_llm(
+        bull_prompt,
+        config.llm_provider,
+        config.llm_model,
+        config.ollama_base_url,
+    )
     new_messages.append({"agent": "bull", "message": bull_response.text, "round": current_round})
     total_input_tokens += bull_response.input_tokens
     total_output_tokens += bull_response.output_tokens
@@ -328,7 +393,12 @@ NEUTRAL's initial analysis:
         round_num=current_round,
         previous_statements=previous_statements,
     )
-    bear_response = _invoke_llm(bear_prompt, config.llm_provider, config.llm_model)
+    bear_response = _invoke_llm(
+        bear_prompt,
+        config.llm_provider,
+        config.llm_model,
+        config.ollama_base_url,
+    )
     new_messages.append({"agent": "bear", "message": bear_response.text, "round": current_round})
     total_input_tokens += bear_response.input_tokens
     total_output_tokens += bear_response.output_tokens
@@ -379,7 +449,12 @@ PORTFOLIO MANAGER GUIDANCE (incorporate this into your decision):
         holdings=_format_holdings(state),
     )
 
-    response = _invoke_llm(prompt, config.llm_provider, config.llm_model)
+    response = _invoke_llm(
+        prompt,
+        config.llm_provider,
+        config.llm_model,
+        config.ollama_base_url,
+    )
     duration_ms = int((time.time() - start_time) * 1000)
 
     return {

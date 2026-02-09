@@ -248,7 +248,7 @@ def get_recommendation_outcomes(self, execution_id: int) -> list[dict]:
 
 ### 3.1 Local LLM Support (Ollama)
 
-**Status:** Not Started
+**Status:** Completed
 
 **Goal:** Enable zero-cost experimentation with local models.
 
