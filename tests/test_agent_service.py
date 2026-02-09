@@ -315,7 +315,11 @@ class TestExecute:
 
         assert len(result.trades) == 1
         assert result.trades[0].ticker == "AAPL"
-        mock_factory.get_provider.assert_called_once_with("openai")
+        mock_factory.get_provider.assert_called_once_with(
+            "openai",
+            model="gpt-4o",
+            ollama_base_url="http://localhost:11434",
+        )
         mock_provider.generate.assert_called_once()
 
     def test_execute_saves_log(

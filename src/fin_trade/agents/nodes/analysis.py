@@ -180,6 +180,45 @@ def _invoke_analysis_anthropic(prompt: str, model: str) -> LLMResponse:
     )
 
 
+def _invoke_analysis_ollama(prompt: str, model: str, base_url: str) -> LLMResponse:
+    """Invoke Ollama for analysis."""
+    import openai
+
+    normalized_url = base_url.rstrip("/")
+    client = openai.OpenAI(
+        base_url=f"{normalized_url}/v1",
+        api_key="ollama",
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2048,
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to connect to Ollama at {normalized_url}. "
+            f"Ensure Ollama is running and model '{model}' is available."
+        ) from e
+
+    input_tokens = 0
+    output_tokens = 0
+    if response.usage:
+        input_tokens = response.usage.prompt_tokens or 0
+        output_tokens = response.usage.completion_tokens or 0
+
+    text = response.choices[0].message.content or ""
+    if not text:
+        raise RuntimeError("Ollama returned an empty analysis response")
+
+    return LLMResponse(
+        text=text,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
+
+
 def analysis_node(state: SimpleAgentState) -> dict:
     """Analysis node: applies strategy logic to research findings.
 
@@ -197,6 +236,12 @@ def analysis_node(state: SimpleAgentState) -> dict:
         response = _invoke_analysis_openai(prompt, config.llm_model)
     elif config.llm_provider == "anthropic":
         response = _invoke_analysis_anthropic(prompt, config.llm_model)
+    elif config.llm_provider == "ollama":
+        response = _invoke_analysis_ollama(
+            prompt,
+            config.llm_model,
+            config.ollama_base_url,
+        )
     else:
         raise ValueError(f"Unknown LLM provider: {config.llm_provider}")
 

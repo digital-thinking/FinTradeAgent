@@ -58,8 +58,9 @@ class PortfolioConfig:
     num_initial_trades: int
     trades_per_run: int
     run_frequency: Literal["daily", "weekly", "monthly"]
-    llm_provider: Literal["anthropic", "openai"]
+    llm_provider: Literal["anthropic", "openai", "ollama"]
     llm_model: str
+    ollama_base_url: str = "http://localhost:11434"
     asset_class: AssetClass = AssetClass.STOCKS
     agent_mode: Literal["simple", "langgraph", "debate"] = "langgraph"
     debate_config: DebateConfig | None = None

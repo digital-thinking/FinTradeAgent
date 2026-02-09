@@ -36,6 +36,19 @@ class TestLLMProviderFactory:
             provider = LLMProviderFactory.get_provider("openai")
             assert isinstance(provider, OpenAIProvider)
 
+    def test_returns_ollama_provider(self):
+        """Test returns OllamaProvider for 'ollama'."""
+        mock_openai = MagicMock()
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            from fin_trade.services.llm_provider import LLMProviderFactory, OllamaProvider
+
+            provider = LLMProviderFactory.get_provider(
+                "ollama",
+                model="llama3.2",
+                ollama_base_url="http://localhost:11434",
+            )
+            assert isinstance(provider, OllamaProvider)
+
 
 class TestAnthropicProvider:
     """Tests for AnthropicProvider."""
@@ -265,3 +278,105 @@ class TestOpenAIProvider:
 
             call_kwargs = mock_client.chat.completions.create.call_args[1]
             assert "web_search_options" in call_kwargs
+
+
+class TestOllamaProvider:
+    """Tests for OllamaProvider."""
+
+    def test_initializes_with_openai_compatible_client(self):
+        """Test Ollama provider configures OpenAI client with local base URL."""
+        mock_openai = MagicMock()
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            from fin_trade.services.llm_provider import OllamaProvider
+
+            provider = OllamaProvider(model="llama3.2", base_url="http://127.0.0.1:11434")
+
+            assert provider.supports_web_search is False
+            mock_openai.OpenAI.assert_called_once_with(
+                base_url="http://127.0.0.1:11434/v1",
+                api_key="ollama",
+            )
+
+    def test_generate_calls_chat_completions(self):
+        """Test generate sends prompt to Ollama chat completions API."""
+        mock_openai = MagicMock()
+        mock_message = MagicMock()
+        mock_message.content = "Local response"
+        mock_choice = MagicMock()
+        mock_choice.message = mock_message
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.OpenAI.return_value = mock_client
+
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            from fin_trade.services.llm_provider import OllamaProvider
+
+            provider = OllamaProvider(model="llama3.2")
+            result = provider.generate("test prompt", "llama3.2")
+
+            assert result == "Local response"
+            call_kwargs = mock_client.chat.completions.create.call_args[1]
+            assert call_kwargs["model"] == "llama3.2"
+
+    def test_generate_raises_with_missing_model(self):
+        """Test generate fails fast if no model is provided."""
+        mock_openai = MagicMock()
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            from fin_trade.services.llm_provider import OllamaProvider
+
+            provider = OllamaProvider(model=None)
+            with pytest.raises(ValueError, match="Ollama model is required"):
+                provider.generate("prompt", None)
+
+    def test_generate_wraps_connection_errors(self):
+        """Test connection errors are converted to RuntimeError."""
+        mock_openai = MagicMock()
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = Exception("connection refused")
+        mock_openai.OpenAI.return_value = mock_client
+
+        with patch.dict(sys.modules, {"openai": mock_openai}):
+            from fin_trade.services.llm_provider import OllamaProvider
+
+            provider = OllamaProvider(model="llama3.2", base_url="http://localhost:11434")
+            with pytest.raises(RuntimeError, match="Failed to connect to Ollama"):
+                provider.generate("prompt", "llama3.2")
+
+
+class TestCheckOllamaStatus:
+    """Tests for check_ollama_status."""
+
+    @patch("fin_trade.services.llm_provider.requests.get")
+    def test_returns_ok_with_models(self, mock_get):
+        """Test health check parses model list on success."""
+        from fin_trade.services.llm_provider import check_ollama_status
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "models": [{"name": "llama3.2"}, {"name": "mistral"}]
+        }
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = check_ollama_status("http://localhost:11434")
+
+        assert result["status"] == "ok"
+        assert result["models"] == ["llama3.2", "mistral"]
+        assert result["error"] == ""
+
+    @patch("fin_trade.services.llm_provider.requests.get")
+    def test_returns_error_when_unavailable(self, mock_get):
+        """Test health check returns error status on request failure."""
+        from fin_trade.services.llm_provider import check_ollama_status
+        import requests
+
+        mock_get.side_effect = requests.RequestException("connection refused")
+
+        result = check_ollama_status("http://localhost:11434")
+
+        assert result["status"] == "error"
+        assert result["models"] == []
+        assert "connection refused" in result["error"]

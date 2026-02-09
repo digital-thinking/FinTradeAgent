@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 
 from fin_trade.services.execution_log import ExecutionLogService
 from fin_trade.services import PortfolioService
+from fin_trade.services.llm_provider import check_ollama_status
 from fin_trade.services.security import SecurityService
 
 
@@ -61,6 +62,10 @@ def render_system_health_page() -> None:
     with col4:
         avg_duration_sec = stats["avg_duration_ms"] / 1000
         st.metric("Avg Duration", f"{avg_duration_sec:.1f}s")
+
+    st.divider()
+
+    _render_ollama_status()
 
     st.divider()
 
@@ -398,6 +403,24 @@ def _render_recommendations_section(
                 _apply_pending_trades(log, recommendations, selected_indices, log_service)
     else:
         st.success("All recommendations from this execution have been applied.")
+
+
+def _render_ollama_status() -> None:
+    """Render Ollama local model status."""
+    st.subheader("Ollama Status")
+
+    status = check_ollama_status()
+    if status["status"] == "ok":
+        st.success("Ollama is running.")
+        if status["models"]:
+            st.write("Available local models:")
+            for model in status["models"]:
+                st.write(f"- `{model}`")
+        else:
+            st.warning("Ollama is running but no local models are installed.")
+    else:
+        st.error(f"Ollama unavailable: {status['error']}")
+        st.markdown("[Install Ollama](https://ollama.com/download)")
 
 
 def _apply_pending_trades(
