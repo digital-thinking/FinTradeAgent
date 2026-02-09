@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from fin_trade.models import (
+    AssetClass,
     Holding,
     Trade,
     PortfolioConfig,
@@ -34,6 +35,20 @@ def mock_security_service():
         )
 
     mock.lookup_ticker.side_effect = lookup_ticker
+    mock.is_crypto_ticker.side_effect = lambda ticker: ticker.upper().endswith("-USD")
+
+    def validate_ticker_for_asset_class(ticker: str, asset_class: AssetClass) -> bool:
+        normalized = ticker.upper()
+        is_crypto = normalized.endswith("-USD")
+        if asset_class == AssetClass.CRYPTO and not is_crypto:
+            raise ValueError(f"Ticker {normalized} is not a crypto ticker. Use format like BTC-USD.")
+        if asset_class == AssetClass.STOCKS and is_crypto:
+            raise ValueError(
+                f"Ticker {normalized} is a crypto ticker. This portfolio only allows stocks."
+            )
+        return True
+
+    mock.validate_ticker_for_asset_class.side_effect = validate_ticker_for_asset_class
 
     return mock
 
@@ -177,18 +192,29 @@ def mock_stock_data_service():
     mock._mock_prices = {}  # Initialize to empty dict to avoid MagicMock auto-creation
 
     # Default behavior - returns formatted string for holdings
-    def format_holdings(holdings, price_contexts=None, security_service=None):
+    def format_holdings(
+        holdings,
+        price_contexts=None,
+        security_service=None,
+        asset_class=AssetClass.STOCKS,
+    ):
         if not holdings:
             return "  None (empty portfolio)"
 
+        unit_label = "units" if asset_class == AssetClass.CRYPTO else "shares"
         lines = []
         for h in holdings:
             # Use the _mock_prices dict if set, otherwise default
             price = getattr(mock, "_mock_prices", {}).get(h.ticker, h.avg_price * 1.1)
             gain = ((price - h.avg_price) / h.avg_price * 100) if h.avg_price > 0 else 0
+            quantity = (
+                f"{h.quantity:.8f}".rstrip("0").rstrip(".")
+                if asset_class == AssetClass.CRYPTO
+                else f"{int(h.quantity)}"
+            )
             line = (
-                f"  - {h.ticker} - {h.name}: {h.quantity} shares @ avg ${h.avg_price:.2f}\n"
-                f"    Current: ${price:.2f} | ↗+5.0% (5d) | +10.0% (30d)\n"
+                f"  - {h.ticker} - {h.name}: {quantity} {unit_label} @ avg ${h.avg_price:.2f}\n"
+                f"    Current: ${price:.2f} | +5.0% (5d) | +10.0% (30d)\n"
                 f"    P/L: {gain:+.1f}%"
             )
             lines.append(line)
@@ -216,3 +242,4 @@ def mock_stock_data_service():
     mock.set_prices = set_prices
 
     return mock
+

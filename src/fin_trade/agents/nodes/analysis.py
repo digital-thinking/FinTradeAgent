@@ -8,6 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from fin_trade.agents.state import SimpleAgentState
+from fin_trade.models import AssetClass
 from fin_trade.prompts import ANALYSIS_PROMPT
 from fin_trade.services.market_data import MarketDataService
 from fin_trade.services.reflection import ReflectionService
@@ -46,7 +47,10 @@ def _build_analysis_prompt(state: SimpleAgentState) -> str:
 
     # Format holdings with rich context (price history, RSI, volume, MAs, short interest)
     holdings_info_str = stock_data_service.format_holdings_for_prompt(
-        portfolio_state.holdings, price_contexts, security_service
+        portfolio_state.holdings,
+        price_contexts,
+        security_service,
+        asset_class=config.asset_class,
     )
 
     # Build user context section if provided
@@ -62,11 +66,10 @@ USER GUIDANCE (from portfolio manager - incorporate this into your analysis):
     market_data_context = ""
     try:
         market_data_service = MarketDataService()
-        if holding_tickers:
-            market_data_context = market_data_service.get_full_context_for_holdings(holding_tickers)
-        else:
-            macro = market_data_service.get_macro_data()
-            market_data_context = macro.to_context_string()
+        market_data_context = market_data_service.get_holdings_context(
+            holding_tickers,
+            config.asset_class,
+        )
     except Exception:
         market_data_context = "Market data temporarily unavailable."
 
@@ -79,9 +82,25 @@ USER GUIDANCE (from portfolio manager - incorporate this into your analysis):
     except Exception:
         reflection_context = "Performance reflection temporarily unavailable."
 
+    asset_class_rules = ""
+    if config.asset_class == AssetClass.CRYPTO:
+        asset_class_rules = (
+            "\n\nASSET CLASS RULES:\n"
+            "- This is a crypto portfolio.\n"
+            "- Recommend only crypto tickers with -USD suffix.\n"
+            "- Do not recommend stocks or ETFs.\n"
+            "- Use technical and sentiment-driven reasoning."
+        )
+    else:
+        asset_class_rules = (
+            "\n\nASSET CLASS RULES:\n"
+            "- This is a stock portfolio.\n"
+            "- Do not recommend crypto tickers such as BTC-USD."
+        )
+
     return ANALYSIS_PROMPT.format(
         user_context_section=user_context_section,
-        strategy_prompt=config.strategy_prompt,
+        strategy_prompt=f"{config.strategy_prompt}{asset_class_rules}",
         cash=portfolio_state.cash,
         initial_amount=config.initial_amount,
         holdings_info=holdings_info_str,

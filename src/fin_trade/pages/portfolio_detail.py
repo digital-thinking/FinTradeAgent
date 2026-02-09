@@ -6,7 +6,7 @@ from datetime import datetime
 import streamlit as st
 import plotly.graph_objects as go
 
-from fin_trade.models import PortfolioConfig, PortfolioState, TradeRecommendation
+from fin_trade.models import AssetClass, PortfolioConfig, PortfolioState, TradeRecommendation
 from fin_trade.services import PortfolioService, AgentService, SecurityService
 from fin_trade.agents.service import (
     DebateAgentService,
@@ -19,6 +19,18 @@ from fin_trade.components.trade_display import (
     render_trade_recommendations,
     render_trade_history,
 )
+
+
+def get_unit_label(asset_class: AssetClass) -> str:
+    """Get the quantity unit label for a portfolio asset class."""
+    return "units" if asset_class == AssetClass.CRYPTO else "shares"
+
+
+def format_quantity(quantity: float, asset_class: AssetClass) -> str:
+    """Format quantities for UI display."""
+    if asset_class == AssetClass.CRYPTO:
+        return f"{quantity:.8f}".rstrip("0").rstrip(".")
+    return str(int(quantity))
 
 
 def render_portfolio_detail_page(
@@ -59,7 +71,7 @@ def render_portfolio_detail_page(
     tab1, tab2, tab3, tab4 = st.tabs(["Holdings", "Performance", "Execute Agent", "Trade History"])
 
     with tab1:
-        _render_holdings(state, security_service)
+        _render_holdings(config, state, security_service)
 
     with tab2:
         _render_performance_chart(config, state, security_service)
@@ -70,7 +82,7 @@ def render_portfolio_detail_page(
         )
 
     with tab4:
-        render_trade_history(state.trades, security_service)
+        render_trade_history(state.trades, security_service, config.asset_class)
 
 
 def _render_summary(
@@ -84,14 +96,14 @@ def _render_summary(
     abs_gain, pct_gain = portfolio_service.calculate_gain(config, state)
     is_overdue = portfolio_service.is_execution_overdue(config, state)
 
-    # Calculate stock holdings value
-    stock_value = 0.0
+    # Calculate holdings value
+    holdings_value = 0.0
     for holding in state.holdings:
         try:
             price = security_service.get_price(holding.ticker)
-            stock_value += price * holding.quantity
+            holdings_value += price * holding.quantity
         except Exception:
-            stock_value += holding.avg_price * holding.quantity
+            holdings_value += holding.avg_price * holding.quantity
 
     col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -103,7 +115,8 @@ def _render_summary(
         st.metric("Gain/Loss", f"${abs_gain:,.2f}", delta=gain_delta)
 
     with col3:
-        st.metric("Stock Holdings", f"${stock_value:,.2f}")
+        holdings_label = "Crypto Holdings" if config.asset_class == AssetClass.CRYPTO else "Stock Holdings"
+        st.metric(holdings_label, f"${holdings_value:,.2f}")
 
     with col4:
         st.metric("Cash Available", f"${state.cash:,.2f}")
@@ -234,7 +247,11 @@ def _render_reset_dialog(
             st.rerun()
 
 
-def _render_holdings(state: PortfolioState, security_service: SecurityService) -> None:
+def _render_holdings(
+    config: PortfolioConfig,
+    state: PortfolioState,
+    security_service: SecurityService,
+) -> None:
     """Render the holdings table."""
     import pandas as pd
 
@@ -267,7 +284,7 @@ def _render_holdings(state: PortfolioState, security_service: SecurityService) -
         holdings_data.append({
             "Ticker": holding.ticker,
             "Name": holding.name,
-            "Shares": holding.quantity,
+            "Quantity": format_quantity(holding.quantity, config.asset_class),
             "Avg Price": holding.avg_price,
             "Current Price": current_price,
             "Value": current_value,
@@ -276,6 +293,8 @@ def _render_holdings(state: PortfolioState, security_service: SecurityService) -
             "Stop Loss": holding.stop_loss_price,
             "Take Profit": holding.take_profit_price,
         })
+
+    unit_label = get_unit_label(config.asset_class).capitalize()
 
     df = pd.DataFrame(holdings_data)
 
@@ -286,7 +305,7 @@ def _render_holdings(state: PortfolioState, security_service: SecurityService) -
             column_config={
                 "Ticker": st.column_config.TextColumn("Ticker", width="small"),
                 "Name": st.column_config.TextColumn("Name", width="medium"),
-                "Shares": st.column_config.NumberColumn("Shares", format="%d"),
+                "Quantity": st.column_config.TextColumn(unit_label, width="small"),
                 "Avg Price": st.column_config.NumberColumn("Avg Price", format="$%.2f"),
                 "Current Price": st.column_config.NumberColumn("Current", format="$%.2f"),
                 "Value": st.column_config.NumberColumn("Value", format="$%.2f"),
@@ -340,7 +359,9 @@ def _render_performance_chart(
             key="perf_time_range",
         )
     with col3:
-        show_benchmark = st.checkbox("Show S&P 500", value=False, key="show_benchmark")
+        benchmark_symbol = "BTC-USD" if config.asset_class == AssetClass.CRYPTO else "SPY"
+        benchmark_label = "BTC" if config.asset_class == AssetClass.CRYPTO else "S&P 500"
+        show_benchmark = st.checkbox(f"Show {benchmark_label}", value=False, key="show_benchmark")
 
     # Filter data by time range
     filtered_timestamps, filtered_values, filtered_cash, filtered_holdings, filtered_trades = _filter_by_time_range(
@@ -361,7 +382,7 @@ def _render_performance_chart(
             start_date = filtered_timestamps[0]
             end_date = filtered_timestamps[-1] if len(filtered_timestamps) > 1 else datetime.now()
             benchmark_df = stock_data_service.get_benchmark_performance(
-                symbol="SPY",
+                symbol=benchmark_symbol,
                 start_date=start_date,
                 end_date=end_date,
             )
@@ -371,6 +392,7 @@ def _render_performance_chart(
                 benchmark_data = {
                     "dates": benchmark_df["date"].tolist(),
                     "values": (benchmark_df["cumulative_return"] / 100 + 1) * start_portfolio_value,
+                    "label": benchmark_label,
                 }
         except Exception:
             pass  # Silently skip benchmark if unavailable
@@ -383,6 +405,7 @@ def _render_performance_chart(
         filtered_holdings,
         filtered_trades,
         initial_investment,
+        asset_class=config.asset_class,
         benchmark_data=benchmark_data,
     )
 
@@ -611,10 +634,12 @@ def _build_performance_figure(
     holdings_values: list[float],
     trade_points: list[dict],
     initial_amount: float,
+    asset_class: AssetClass = AssetClass.STOCKS,
     benchmark_data: dict | None = None,
 ) -> go.Figure:
     """Build the interactive stacked area Plotly figure."""
     fig = go.Figure()
+    unit_label = get_unit_label(asset_class)
 
     # Create hover text for cash
     cash_hover = [
@@ -668,7 +693,7 @@ def _build_performance_figure(
         if buy_trades:
             buy_hover = [
                 f"<b>BUY {tp['ticker']}</b><br>"
-                f"{tp['quantity']} shares @ ${tp['price']:.2f}<br>"
+                f"{format_quantity(tp['quantity'], asset_class)} {unit_label} @ ${tp['price']:.2f}<br>"
                 f"Portfolio: ${tp['value']:,.2f}"
                 for tp in buy_trades
             ]
@@ -692,7 +717,7 @@ def _build_performance_figure(
         if sell_trades:
             sell_hover = [
                 f"<b>SELL {tp['ticker']}</b><br>"
-                f"{tp['quantity']} shares @ ${tp['price']:.2f}<br>"
+                f"{format_quantity(tp['quantity'], asset_class)} {unit_label} @ ${tp['price']:.2f}<br>"
                 f"Portfolio: ${tp['value']:,.2f}"
                 for tp in sell_trades
             ]
@@ -715,8 +740,9 @@ def _build_performance_figure(
 
     # Benchmark overlay (S&P 500)
     if benchmark_data:
+        benchmark_label = benchmark_data.get("label", "Benchmark")
         benchmark_hover = [
-            f"<b>S&P 500</b><br>${v:,.2f}"
+            f"<b>{benchmark_label}</b><br>${v:,.2f}"
             for v in benchmark_data["values"]
         ]
         fig.add_trace(
@@ -724,7 +750,7 @@ def _build_performance_figure(
                 x=benchmark_data["dates"],
                 y=benchmark_data["values"],
                 mode="lines",
-                name="S&P 500",
+                name=benchmark_label,
                 line=dict(color="#FF9800", width=2, dash="dot"),
                 hovertemplate="%{customdata}<extra></extra>",
                 customdata=benchmark_hover,
@@ -998,6 +1024,7 @@ def _render_agent_execution(
                         trade.reasoning,
                         stop_loss_price=trade.stop_loss_price,
                         take_profit_price=trade.take_profit_price,
+                        asset_class=config.asset_class,
                     )
                 portfolio_service.save_state(portfolio_name, state)
                 st.session_state.recommendation = None
@@ -1015,6 +1042,7 @@ def _render_agent_execution(
             security_service,
             available_cash=state.cash,
             holdings=state.holdings,
+            asset_class=config.asset_class,
             on_accept=on_accept,
             on_retry=on_retry,
         )

@@ -6,6 +6,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 
+from fin_trade.models import AssetClass
 from fin_trade.services import PortfolioService, StockDataService, ComparisonService
 
 
@@ -28,18 +29,6 @@ def render_comparison_page(portfolio_service: PortfolioService) -> None:
         help="Choose 2 or more portfolios to compare their performance",
     )
 
-    # Benchmark options
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        include_benchmark = st.checkbox("Include S&P 500 benchmark", value=True)
-    with col2:
-        benchmark_symbol = st.selectbox(
-            "Benchmark",
-            options=["SPY", "QQQ", "DIA", "IWM"],
-            index=0,
-            disabled=not include_benchmark,
-        )
-
     if len(selected_portfolios) < 1:
         st.warning("Select at least one portfolio to view comparison.")
         return
@@ -50,6 +39,41 @@ def render_comparison_page(portfolio_service: PortfolioService) -> None:
         portfolio_service=portfolio_service,
         stock_data_service=stock_data_service,
     )
+
+    selected_asset_classes = set()
+    for name in selected_portfolios:
+        config, _ = portfolio_service.load_portfolio(name)
+        selected_asset_classes.add(config.asset_class)
+
+    if len(selected_asset_classes) > 1:
+        st.error("Comparison supports one asset class at a time. Select either stock or crypto portfolios.")
+        return
+
+    selected_asset_class = next(iter(selected_asset_classes), AssetClass.STOCKS)
+    default_benchmark = comparison_service.get_default_benchmark(selected_asset_class)
+
+    if selected_asset_class == AssetClass.CRYPTO:
+        benchmark_options = ["BTC-USD", "ETH-USD"]
+    else:
+        benchmark_options = ["SPY", "QQQ", "DIA", "IWM"]
+
+    benchmark_index = (
+        benchmark_options.index(default_benchmark)
+        if default_benchmark in benchmark_options
+        else 0
+    )
+
+    # Benchmark options
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        include_benchmark = st.checkbox("Include benchmark", value=True)
+    with col2:
+        benchmark_symbol = st.selectbox(
+            "Benchmark",
+            options=benchmark_options,
+            index=benchmark_index,
+            disabled=not include_benchmark,
+        )
 
     # Tab layout for different views
     tab1, tab2 = st.tabs(["Performance Chart", "Metrics Table"])

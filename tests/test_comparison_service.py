@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from fin_trade.models import PortfolioConfig, PortfolioState, Trade, Holding
+from fin_trade.models import AssetClass, Holding, PortfolioConfig, PortfolioState, Trade
 from fin_trade.services.comparison import ComparisonService, PortfolioMetrics
 
 
@@ -376,3 +376,13 @@ class TestPortfolioMetricsDataclass:
         assert metrics.annualized_return_pct is None
         assert metrics.sharpe_ratio is None
         assert metrics.win_rate_pct is None
+
+
+class TestDefaultBenchmark:
+    """Tests for asset-class default benchmark selection."""
+
+    def test_returns_spy_for_stocks(self, comparison_service):
+        assert comparison_service.get_default_benchmark(AssetClass.STOCKS) == "SPY"
+
+    def test_returns_btc_for_crypto(self, comparison_service):
+        assert comparison_service.get_default_benchmark(AssetClass.CRYPTO) == "BTC-USD"

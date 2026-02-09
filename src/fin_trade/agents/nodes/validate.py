@@ -3,6 +3,7 @@
 import time
 
 from fin_trade.agents.tools.price_lookup import get_stock_price
+from fin_trade.models import AssetClass
 from fin_trade.services.security import SecurityService
 
 
@@ -14,7 +15,7 @@ def validate_node(state) -> dict:
     Validates:
     - SELL orders have sufficient shares owned
     - BUY orders have sufficient cash (estimates if price not in state)
-    - Trade quantities are positive integers
+    - Trade quantities are positive
     - Actions are valid (BUY/SELL)
 
     Updates state with:
@@ -35,7 +36,10 @@ def validate_node(state) -> dict:
         }
 
     portfolio_state = state["portfolio_state"]
+    portfolio_config = state.get("portfolio_config")
     price_data = state.get("price_data", {})
+    asset_class = getattr(portfolio_config, "asset_class", AssetClass.STOCKS)
+    unit_label = "units" if asset_class == AssetClass.CRYPTO else "shares"
 
     # Build holdings lookup
     holdings_by_ticker = {h.ticker.upper(): h for h in portfolio_state.holdings}
@@ -49,6 +53,12 @@ def validate_node(state) -> dict:
     for trade in recommendations.trades:
         ticker = trade.ticker.upper()
 
+        try:
+            security_service.validate_ticker_for_asset_class(ticker, asset_class)
+        except ValueError as e:
+            errors.append(str(e))
+            continue
+
         # Validate action
         if trade.action not in ("BUY", "SELL"):
             errors.append(f"{ticker}: Invalid action '{trade.action}', must be BUY or SELL")
@@ -58,6 +68,9 @@ def validate_node(state) -> dict:
         if trade.quantity <= 0:
             errors.append(f"{ticker}: Quantity must be positive, got {trade.quantity}")
             continue
+        if asset_class == AssetClass.STOCKS and not float(trade.quantity).is_integer():
+            errors.append(f"{ticker}: Stock quantity must be a whole number, got {trade.quantity}")
+            continue
 
         if trade.action == "SELL":
             # Check if we own the stock
@@ -65,7 +78,7 @@ def validate_node(state) -> dict:
                 errors.append(f"{ticker}: Cannot SELL - not in holdings")
             elif holdings_by_ticker[ticker].quantity < trade.quantity:
                 errors.append(
-                    f"{ticker}: Cannot SELL {trade.quantity} shares - only own "
+                    f"{ticker}: Cannot SELL {trade.quantity} {unit_label} - only own "
                     f"{holdings_by_ticker[ticker].quantity}"
                 )
             else:

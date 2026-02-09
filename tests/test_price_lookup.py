@@ -31,6 +31,14 @@ class TestExtractTickersFromText:
         assert "SAP.DE" in tickers
         assert "BAS.DE" in tickers
 
+    def test_extracts_crypto_tickers_with_quote_suffix(self):
+        """Test extraction of crypto tickers with fiat quote suffix."""
+        text = "Momentum is strongest in BTC-USD and ETH-USD today."
+        tickers = extract_tickers_from_text(text)
+
+        assert "BTC-USD" in tickers
+        assert "ETH-USD" in tickers
+
     def test_excludes_common_words(self):
         """Test that common words are excluded."""
         text = "THE BUY signal for NVDA is strong AND NOT to be ignored."

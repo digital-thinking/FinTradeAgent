@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
+from fin_trade.models import AssetClass
 from fin_trade.services.market_data import (
     EarningsInfo,
     InsiderTrade,
@@ -462,3 +463,41 @@ class TestGetFullContextForHoldings:
             result = service.get_full_context_for_holdings([])
 
             assert "MARKET OVERVIEW" in result
+
+
+class TestGetHoldingsContextByAssetClass:
+    """Tests for asset-class-aware holdings context."""
+
+    def test_crypto_context_skips_stock_specific_calls(self, tmp_path):
+        service = MarketDataService(cache_dir=tmp_path)
+        service.get_macro_data = MagicMock(return_value=MacroData(
+            sp500_price=4800.0,
+            sp500_change_pct=1.0,
+            nasdaq_price=None,
+            nasdaq_change_pct=None,
+            dow_price=None,
+            dow_change_pct=None,
+            treasury_10y=None,
+            treasury_2y=None,
+            vix=None,
+            timestamp=datetime.now(),
+        ))
+        service.get_earnings_info = MagicMock()
+        service.get_sec_filings = MagicMock()
+        service.get_insider_trades = MagicMock()
+
+        result = service.get_holdings_context(["BTC-USD"], AssetClass.CRYPTO)
+
+        assert "CRYPTO NOTE" in result
+        service.get_earnings_info.assert_not_called()
+        service.get_sec_filings.assert_not_called()
+        service.get_insider_trades.assert_not_called()
+
+    def test_stock_context_uses_full_context(self, tmp_path):
+        service = MarketDataService(cache_dir=tmp_path)
+        service.get_full_context_for_holdings = MagicMock(return_value="stock context")
+
+        result = service.get_holdings_context(["AAPL"], AssetClass.STOCKS)
+
+        assert result == "stock context"
+        service.get_full_context_for_holdings.assert_called_once_with(["AAPL"])

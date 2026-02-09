@@ -5,6 +5,7 @@ import json
 import streamlit as st
 import pandas as pd
 
+from fin_trade.models import AssetClass
 from fin_trade.services.execution_log import ExecutionLogService
 from fin_trade.services import PortfolioService
 from fin_trade.services.security import SecurityService
@@ -132,15 +133,21 @@ def _render_pending_trades_for_log(
     portfolios = portfolio_service.list_portfolios()
     portfolio_filename = None
     portfolio_state = None
+    portfolio_config = None
     
     for filename in portfolios:
         config, state = portfolio_service.load_portfolio(filename)
         if config.name == log.portfolio_name:
             portfolio_filename = filename
             portfolio_state = state
+            portfolio_config = config
             break
 
     available_cash = portfolio_state.cash if portfolio_state else 0.0
+    asset_class = (
+        portfolio_config.asset_class if portfolio_config else AssetClass.STOCKS
+    )
+    unit_label = "units" if asset_class == AssetClass.CRYPTO else "shares"
     is_empty_portfolio = (
         portfolio_state is not None
         and len(portfolio_state.holdings) == 0
@@ -243,23 +250,35 @@ def _render_pending_trades_for_log(
                 qty_key = f"pending_qty_{log.id}_{i}"
 
                 if price:
-                    st.caption(f"${price:.2f}/share")
-                    # Editable quantity input
-                    adjusted_qty = st.number_input(
-                        "Shares",
-                        min_value=0,
-                        value=st.session_state.pending_qty_adjustments.get(qty_key, original_quantity),
-                        step=1,
-                        key=qty_key,
-                        label_visibility="collapsed",
-                        disabled=not is_valid,
-                    )
+                    unit_singular = unit_label[:-1] if unit_label.endswith("s") else unit_label
+                    st.caption(f"${price:.2f}/{unit_singular}")
+                    if asset_class == AssetClass.CRYPTO:
+                        adjusted_qty = st.number_input(
+                            "Units",
+                            min_value=0.0,
+                            value=float(st.session_state.pending_qty_adjustments.get(qty_key, original_quantity)),
+                            step=0.0001,
+                            format="%.8f",
+                            key=qty_key,
+                            label_visibility="collapsed",
+                            disabled=not is_valid,
+                        )
+                    else:
+                        adjusted_qty = st.number_input(
+                            "Shares",
+                            min_value=0,
+                            value=int(st.session_state.pending_qty_adjustments.get(qty_key, original_quantity)),
+                            step=1,
+                            key=qty_key,
+                            label_visibility="collapsed",
+                            disabled=not is_valid,
+                        )
                     st.session_state.pending_qty_adjustments[qty_key] = adjusted_qty
                     cost = price * adjusted_qty
                     if adjusted_qty != original_quantity:
-                        st.caption(f"~~{original_quantity}~~ → **{adjusted_qty}** = ${cost:,.2f}")
+                        st.caption(f"~~{original_quantity}~~ -> **{adjusted_qty}** {unit_label} = ${cost:,.2f}")
                     else:
-                        st.caption(f"= ${cost:,.2f}")
+                        st.caption(f"{adjusted_qty} {unit_label} = ${cost:,.2f}")
                     # Show stop-loss and take-profit for BUY orders
                     action = rec.get("action", "")
                     stop_loss = rec.get("stop_loss_price")
@@ -268,13 +287,13 @@ def _render_pending_trades_for_log(
                         sl_tp_parts = []
                         if stop_loss:
                             sl_pct = ((stop_loss - price) / price) * 100
-                            sl_tp_parts.append(f"🛑 ${stop_loss:.2f} ({sl_pct:+.1f}%)")
+                            sl_tp_parts.append(f"Stop-loss ${stop_loss:.2f} ({sl_pct:+.1f}%)")
                         if take_profit:
                             tp_pct = ((take_profit - price) / price) * 100
-                            sl_tp_parts.append(f"🎯 ${take_profit:.2f} ({tp_pct:+.1f}%)")
+                            sl_tp_parts.append(f"Take-profit ${take_profit:.2f} ({tp_pct:+.1f}%)")
                         st.caption(" | ".join(sl_tp_parts))
                 else:
-                    st.write(f"{original_quantity} shares")
+                    st.write(f"{original_quantity} {unit_label}")
 
             with col5:
                 # Delete button
@@ -411,7 +430,7 @@ def _apply_pending_trades(
     selected_indices: list[int],
     log_service: ExecutionLogService,
     ticker_corrections: dict[int, str] | None = None,
-    quantity_adjustments: dict[int, int] | None = None,
+    quantity_adjustments: dict[int, float] | None = None,
     increase_cash_if_needed: bool = False,
 ) -> None:
     """Apply selected pending trades to the portfolio.
@@ -507,6 +526,7 @@ def _apply_pending_trades(
                 reasoning,
                 stop_loss_price=stop_loss_price,
                 take_profit_price=take_profit_price,
+                asset_class=config.asset_class,
             )
             applied_indices.append(i)
         except Exception as e:
@@ -545,3 +565,4 @@ def _apply_pending_trades(
         st.session_state["pending_trades_messages"] = messages
 
     st.rerun()
+

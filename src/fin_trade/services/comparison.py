@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from fin_trade.models import AssetClass
+
 if TYPE_CHECKING:
     from fin_trade.services.portfolio import PortfolioService
     from fin_trade.services.stock_data import StockDataService
@@ -40,6 +42,12 @@ class ComparisonService:
     ):
         self.portfolio_service = portfolio_service
         self.stock_data_service = stock_data_service
+
+    def get_default_benchmark(self, asset_class: AssetClass) -> str:
+        """Return a benchmark symbol appropriate for portfolio asset class."""
+        if asset_class == AssetClass.CRYPTO:
+            return "BTC-USD"
+        return "SPY"
 
     def _build_portfolio_value_series(
         self,
@@ -117,7 +125,7 @@ class ComparisonService:
         portfolio_names: list[str],
         start_date: datetime | None = None,
         include_benchmark: bool = True,
-        benchmark_symbol: str = "SPY",
+        benchmark_symbol: str | None = None,
     ) -> pd.DataFrame:
         """Get normalized (rebased to 100) return series for multiple portfolios.
 
@@ -153,6 +161,11 @@ class ComparisonService:
             start_date = max(earliest_dates)
         else:
             start_date = pd.to_datetime(start_date).normalize()
+
+        if benchmark_symbol is None and portfolio_names:
+            first_config, _ = self.portfolio_service.load_portfolio(portfolio_names[0])
+            benchmark_symbol = self.get_default_benchmark(first_config.asset_class)
+        benchmark_symbol = benchmark_symbol or "SPY"
 
         # Get benchmark data if requested
         if include_benchmark:
@@ -265,7 +278,7 @@ class ComparisonService:
     def calculate_metrics(
         self,
         portfolio_name: str,
-        benchmark_symbol: str = "SPY",
+        benchmark_symbol: str | None = None,
     ) -> PortfolioMetrics:
         """Calculate comprehensive performance metrics for a portfolio.
 
@@ -277,6 +290,7 @@ class ComparisonService:
             PortfolioMetrics dataclass with all calculated metrics
         """
         config, state = self.portfolio_service.load_portfolio(portfolio_name)
+        benchmark_symbol = benchmark_symbol or self.get_default_benchmark(config.asset_class)
 
         if not state.trades:
             return PortfolioMetrics(
@@ -375,7 +389,7 @@ class ComparisonService:
     def get_comparison_table(
         self,
         portfolio_names: list[str],
-        benchmark_symbol: str = "SPY",
+        benchmark_symbol: str | None = None,
     ) -> pd.DataFrame:
         """Get a comparison table of metrics for multiple portfolios.
 
@@ -387,6 +401,10 @@ class ComparisonService:
             DataFrame with portfolios as columns and metrics as rows
         """
         metrics_data = {}
+        if benchmark_symbol is None and portfolio_names:
+            first_config, _ = self.portfolio_service.load_portfolio(portfolio_names[0])
+            benchmark_symbol = self.get_default_benchmark(first_config.asset_class)
+        benchmark_symbol = benchmark_symbol or "SPY"
 
         for name in portfolio_names:
             try:

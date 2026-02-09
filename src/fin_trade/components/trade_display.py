@@ -5,9 +5,21 @@ from dataclasses import replace
 
 import streamlit as st
 
-from fin_trade.models import AgentRecommendation, TradeRecommendation, Holding
+from fin_trade.models import AssetClass, AgentRecommendation, Holding, TradeRecommendation
 from fin_trade.services.security import SecurityService
 from fin_trade.components.skeleton import render_skeleton_table
+
+
+def _get_unit_label(asset_class: AssetClass) -> str:
+    """Get display unit for a trade quantity."""
+    return "units" if asset_class == AssetClass.CRYPTO else "shares"
+
+
+def _format_quantity(quantity: float, asset_class: AssetClass) -> str:
+    """Format trade quantity for display."""
+    if asset_class == AssetClass.CRYPTO:
+        return f"{quantity:.8f}".rstrip("0").rstrip(".")
+    return str(int(quantity))
 
 
 def render_trade_recommendations(
@@ -15,6 +27,7 @@ def render_trade_recommendations(
     security_service: SecurityService,
     available_cash: float,
     holdings: list[Holding],
+    asset_class: AssetClass = AssetClass.STOCKS,
     on_accept: Callable | None = None,
     on_retry: Callable | None = None,
 ) -> list[TradeRecommendation] | None:
@@ -55,6 +68,7 @@ def render_trade_recommendations(
         st.session_state.quantity_adjustments = {}
 
     # Build holdings lookup
+    unit_label = _get_unit_label(asset_class)
     holdings_by_ticker = {h.ticker: h.quantity for h in holdings}
 
     # First pass: collect all trade info with prices
@@ -133,7 +147,10 @@ def render_trade_recommendations(
             held_qty = simulated_holdings.get(corrected_ticker, 0)
             if held_qty < trade.quantity:
                 can_execute = False
-                cannot_execute_reason = f"Insufficient holdings (need {trade.quantity}, have {held_qty})"
+                cannot_execute_reason = (
+                    f"Insufficient holdings (need {trade.quantity} {unit_label}, "
+                    f"have {held_qty} {unit_label})"
+                )
             else:
                 # Valid SELL - add to available cash
                 cash_from_sells += cost
@@ -209,35 +226,53 @@ def render_trade_recommendations(
 
             with col2:
                 if price and price > 0:
-                    st.caption(f"${price:.2f} per share")
-                    # Editable quantity input
+                    unit_singular = unit_label[:-1] if unit_label.endswith("s") else unit_label
+                    st.caption(f"${price:.2f} per {unit_singular}")
                     qty_key = f"qty_{i}"
-                    adjusted_qty = st.number_input(
-                        "Shares",
-                        min_value=0,
-                        value=st.session_state.quantity_adjustments.get(i, trade.quantity),
-                        step=1,
-                        key=qty_key,
-                        label_visibility="collapsed",
-                    )
+                    if asset_class == AssetClass.CRYPTO:
+                        adjusted_qty = st.number_input(
+                            "Units",
+                            min_value=0.0,
+                            value=float(st.session_state.quantity_adjustments.get(i, trade.quantity)),
+                            step=0.0001,
+                            format="%.8f",
+                            key=qty_key,
+                            label_visibility="collapsed",
+                        )
+                    else:
+                        adjusted_qty = st.number_input(
+                            "Shares",
+                            min_value=0,
+                            value=int(st.session_state.quantity_adjustments.get(i, trade.quantity)),
+                            step=1,
+                            key=qty_key,
+                            label_visibility="collapsed",
+                        )
                     st.session_state.quantity_adjustments[i] = adjusted_qty
                     adjusted_cost = price * adjusted_qty
                     if adjusted_qty != trade.quantity:
-                        st.caption(f"~~{trade.quantity}~~ → **{adjusted_qty}** shares = **${adjusted_cost:,.2f}**")
+                        st.caption(
+                            f"~~{_format_quantity(trade.quantity, asset_class)}~~ -> "
+                            f"**{_format_quantity(adjusted_qty, asset_class)}** {unit_label} = "
+                            f"**${adjusted_cost:,.2f}**"
+                        )
                     else:
-                        st.caption(f"{adjusted_qty} shares = **${adjusted_cost:,.2f}**")
+                        st.caption(
+                            f"{_format_quantity(adjusted_qty, asset_class)} {unit_label} = "
+                            f"**${adjusted_cost:,.2f}**"
+                        )
                     # Show stop-loss and take-profit for BUY orders
                     if trade.action == "BUY" and (trade.stop_loss_price or trade.take_profit_price):
                         sl_tp_parts = []
                         if trade.stop_loss_price:
                             sl_pct = ((trade.stop_loss_price - price) / price) * 100
-                            sl_tp_parts.append(f"🛑 SL: ${trade.stop_loss_price:.2f} ({sl_pct:+.1f}%)")
+                            sl_tp_parts.append(f"Stop-loss: ${trade.stop_loss_price:.2f} ({sl_pct:+.1f}%)")
                         if trade.take_profit_price:
                             tp_pct = ((trade.take_profit_price - price) / price) * 100
-                            sl_tp_parts.append(f"🎯 TP: ${trade.take_profit_price:.2f} ({tp_pct:+.1f}%)")
+                            sl_tp_parts.append(f"Take-profit: ${trade.take_profit_price:.2f} ({tp_pct:+.1f}%)")
                         st.caption(" | ".join(sl_tp_parts))
                 else:
-                    st.write(f"{trade.quantity} shares")
+                    st.write(f"{_format_quantity(trade.quantity, asset_class)} {unit_label}")
                     if price_error:
                         st.caption("Price unavailable")
 
@@ -351,7 +386,11 @@ def render_trade_recommendations(
     return None
 
 
-def render_trade_history(trades: list, security_service: SecurityService) -> None:
+def render_trade_history(
+    trades: list,
+    security_service: SecurityService,
+    asset_class: AssetClass = AssetClass.STOCKS,
+) -> None:
     """Render the trade history table."""
     import pandas as pd
 
@@ -375,7 +414,7 @@ def render_trade_history(trades: list, security_service: SecurityService) -> Non
             "Action": trade.action,
             "Ticker": trade.ticker,
             "Name": trade.name,
-            "Shares": trade.quantity,
+            "Quantity": _format_quantity(trade.quantity, asset_class),
             "Price": trade.price,
             "Total": total,
             "Stop Loss": getattr(trade, 'stop_loss_price', None),
@@ -396,7 +435,10 @@ def render_trade_history(trades: list, security_service: SecurityService) -> Non
                 "Action": st.column_config.TextColumn("Action", width="small"),
                 "Ticker": st.column_config.TextColumn("Ticker", width="small"),
                 "Name": st.column_config.TextColumn("Name", width="medium"),
-                "Shares": st.column_config.NumberColumn("Shares", format="%d"),
+                "Quantity": st.column_config.TextColumn(
+                    _get_unit_label(asset_class).capitalize(),
+                    width="small",
+                ),
                 "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
                 "Total": st.column_config.NumberColumn("Total", format="$%.2f"),
                 "Stop Loss": st.column_config.NumberColumn("Stop Loss", format="$%.2f"),
@@ -406,3 +448,4 @@ def render_trade_history(trades: list, security_service: SecurityService) -> Non
             hide_index=True,
             use_container_width=True,
         )
+

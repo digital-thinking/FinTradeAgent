@@ -247,8 +247,8 @@ class TestParseJsonResponse:
 
         assert result.trades[0].stop_loss_price is None
 
-    def test_converts_quantity_to_int(self):
-        """Test quantity is converted to int."""
+    def test_converts_quantity_to_float(self):
+        """Test quantity is converted to float."""
         response = json.dumps({
             "trades": [
                 {"ticker": "AAPL", "name": "Apple", "action": "BUY", "quantity": "15", "reasoning": "Test"}
@@ -258,8 +258,8 @@ class TestParseJsonResponse:
 
         result = _parse_json_response(response)
 
-        assert result.trades[0].quantity == 15
-        assert isinstance(result.trades[0].quantity, int)
+        assert result.trades[0].quantity == 15.0
+        assert isinstance(result.trades[0].quantity, float)
 
     def test_converts_prices_to_float(self):
         """Test stop_loss and take_profit are converted to float."""

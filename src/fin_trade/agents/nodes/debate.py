@@ -8,6 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from fin_trade.agents.state import DebateAgentState
+from fin_trade.models import AssetClass
 from fin_trade.prompts import (
     BULL_PROMPT,
     BEAR_PROMPT,
@@ -116,7 +117,9 @@ def _invoke_anthropic(prompt: str, model: str) -> LLMResponse:
 
 def _format_holdings(state: DebateAgentState) -> str:
     """Format holdings with rich price context (history, RSI, volume, MAs, short interest)."""
+    config = state["portfolio_config"]
     portfolio_state = state["portfolio_state"]
+    unit_label = "units" if config.asset_class == AssetClass.CRYPTO else "shares"
 
     if not portfolio_state.holdings:
         return "None (empty portfolio)"
@@ -126,7 +129,9 @@ def _format_holdings(state: DebateAgentState) -> str:
         security_service = SecurityService()
         stock_data_service = StockDataService()
         return stock_data_service.format_holdings_for_prompt(
-            portfolio_state.holdings, security_service=security_service
+            portfolio_state.holdings,
+            security_service=security_service,
+            asset_class=config.asset_class,
         )
     except Exception:
         # Fallback to basic format if price context fails
@@ -135,8 +140,13 @@ def _format_holdings(state: DebateAgentState) -> str:
         for h in portfolio_state.holdings:
             current_price = price_data.get(h.ticker, h.avg_price)
             gain = ((current_price - h.avg_price) / h.avg_price) * 100 if h.avg_price > 0 else 0
+            quantity = (
+                f"{h.quantity:.8f}".rstrip("0").rstrip(".")
+                if config.asset_class == AssetClass.CRYPTO
+                else f"{int(h.quantity)}"
+            )
             lines.append(
-                f"  - {h.ticker} ({h.name}): {h.quantity} shares @ avg ${h.avg_price:.2f}, "
+                f"  - {h.ticker} ({h.name}): {quantity} {unit_label} @ avg ${h.avg_price:.2f}, "
                 f"current ${current_price:.2f} ({gain:+.1f}%)"
             )
         return "\n".join(lines)
@@ -144,18 +154,30 @@ def _format_holdings(state: DebateAgentState) -> str:
 
 def _get_market_data_context(state: DebateAgentState) -> str:
     """Get market data context for holdings."""
+    config = state["portfolio_config"]
     portfolio_state = state["portfolio_state"]
     holding_tickers = [h.ticker for h in portfolio_state.holdings]
 
     try:
         market_data_service = MarketDataService()
-        if holding_tickers:
-            return market_data_service.get_full_context_for_holdings(holding_tickers)
-        else:
-            macro = market_data_service.get_macro_data()
-            return macro.to_context_string()
+        return market_data_service.get_holdings_context(
+            holding_tickers,
+            config.asset_class,
+        )
     except Exception:
         return "Market data temporarily unavailable."
+
+
+def _get_asset_class_rules(asset_class: AssetClass) -> str:
+    """Return additional rules to enforce asset-class-specific behavior."""
+    if asset_class == AssetClass.CRYPTO:
+        return (
+            "ASSET CLASS RULES:\n"
+            "- This is a CRYPTO portfolio. Recommend only crypto tickers with -USD suffix.\n"
+            "- Never recommend stocks or ETFs.\n"
+            "- Use fractional quantities where appropriate."
+        )
+    return "ASSET CLASS RULES:\n- This is a STOCK portfolio. Do not recommend crypto tickers."
 
 
 def _get_reflection_context(state: DebateAgentState) -> str:
@@ -176,7 +198,7 @@ def bull_pitch_node(state) -> dict:
     start_time = time.time()
 
     prompt = BULL_PROMPT.format(
-        strategy=config.strategy_prompt,
+        strategy=f"{config.strategy_prompt}\n\n{_get_asset_class_rules(config.asset_class)}",
         research=state.get("market_research", "No research available"),
         market_data_context=_get_market_data_context(state),
         reflection_context=_get_reflection_context(state),
@@ -204,7 +226,7 @@ def bear_pitch_node(state) -> dict:
     start_time = time.time()
 
     prompt = BEAR_PROMPT.format(
-        strategy=config.strategy_prompt,
+        strategy=f"{config.strategy_prompt}\n\n{_get_asset_class_rules(config.asset_class)}",
         research=state.get("market_research", "No research available"),
         market_data_context=_get_market_data_context(state),
         reflection_context=_get_reflection_context(state),
@@ -232,7 +254,7 @@ def neutral_pitch_node(state) -> dict:
     start_time = time.time()
 
     prompt = NEUTRAL_PROMPT.format(
-        strategy=config.strategy_prompt,
+        strategy=f"{config.strategy_prompt}\n\n{_get_asset_class_rules(config.asset_class)}",
         research=state.get("market_research", "No research available"),
         market_data_context=_get_market_data_context(state),
         reflection_context=_get_reflection_context(state),
@@ -346,7 +368,7 @@ PORTFOLIO MANAGER GUIDANCE (incorporate this into your decision):
 """
 
     prompt = MODERATOR_PROMPT.format(
-        strategy=config.strategy_prompt,
+        strategy=f"{config.strategy_prompt}\n\n{_get_asset_class_rules(config.asset_class)}",
         user_context_section=user_context_section,
         reflection_context=_get_reflection_context(state),
         bull_pitch=state.get("bull_pitch", "No pitch"),

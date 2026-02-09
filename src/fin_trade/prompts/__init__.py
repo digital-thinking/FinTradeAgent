@@ -13,6 +13,7 @@ from fin_trade.prompts.debate_agent import (
     DEBATE_PROMPT,
     MODERATOR_PROMPT,
 )
+from fin_trade.prompts.crypto_agent import CRYPTO_SYSTEM_PROMPT
 
 __all__ = [
     # Simple agent prompts
@@ -26,4 +27,5 @@ __all__ = [
     "NEUTRAL_PROMPT",
     "DEBATE_PROMPT",
     "MODERATOR_PROMPT",
+    "CRYPTO_SYSTEM_PROMPT",
 ]

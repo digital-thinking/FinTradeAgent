@@ -10,7 +10,7 @@ from fin_trade.services.market_data import MarketDataService
 def test_agent_includes_market_data_in_prompt():
     """Verify that _build_prompt includes market data context."""
     mock_market_data = MagicMock(spec=MarketDataService)
-    mock_market_data.get_full_context_for_holdings.return_value = (
+    mock_market_data.get_holdings_context.return_value = (
         "MARKET OVERVIEW:\n  S&P 500: 4,800.00 +1.25%"
     )
 
@@ -55,4 +55,4 @@ def test_agent_includes_market_data_in_prompt():
     assert "USING MARKET INTELLIGENCE DATA" in prompt
 
     # Verify the service was called with correct tickers
-    mock_market_data.get_full_context_for_holdings.assert_called_once_with(["AAPL"])
+    mock_market_data.get_holdings_context.assert_called_once_with(["AAPL"], config.asset_class)

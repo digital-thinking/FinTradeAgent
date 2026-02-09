@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from fin_trade.models import Holding, PortfolioConfig, PortfolioState
+from fin_trade.models import AssetClass, Holding, PortfolioConfig, PortfolioState
 from fin_trade.services.portfolio import PortfolioService
 
 
@@ -1222,3 +1222,96 @@ class TestDeletePortfolio:
         assert not state_path.exists()
         archive_dir = temp_data_dir["state"] / "archive"
         assert not archive_dir.exists() or not list(archive_dir.glob("*.json"))
+
+
+class TestAssetClassConfig:
+    """Tests for asset class config loading."""
+
+    def test_load_config_defaults_to_stocks(
+        self, temp_data_dir, mock_security_service, sample_yaml_config
+    ):
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        config = service._load_config("test_portfolio")
+        assert config.asset_class == AssetClass.STOCKS
+
+    def test_load_config_reads_crypto_asset_class(
+        self, temp_data_dir, mock_security_service
+    ):
+        config_content = """name: Crypto Portfolio
+strategy_prompt: Trade major cryptocurrencies
+initial_amount: 5000.0
+num_initial_trades: 2
+trades_per_run: 2
+run_frequency: daily
+llm_provider: openai
+llm_model: gpt-5.2
+asset_class: crypto
+"""
+        (temp_data_dir["portfolios"] / "crypto.yaml").write_text(config_content)
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        config = service._load_config("crypto")
+        assert config.asset_class == AssetClass.CRYPTO
+
+
+class TestExecuteTradeAssetClass:
+    """Tests for asset-class-aware execution rules."""
+
+    def test_rejects_fractional_quantity_for_stocks(
+        self, temp_data_dir, mock_security_service, empty_portfolio_state
+    ):
+        mock_security_service.force_update_price.return_value = 100.0
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        with pytest.raises(ValueError, match="whole numbers"):
+            service.execute_trade(
+                empty_portfolio_state,
+                ticker="AAPL",
+                action="BUY",
+                quantity=1.5,
+                reasoning="Invalid fractional stock trade",
+                asset_class=AssetClass.STOCKS,
+            )
+
+    def test_allows_fractional_quantity_for_crypto(
+        self, temp_data_dir, mock_security_service, empty_portfolio_state
+    ):
+        mock_security_service.force_update_price.return_value = 40000.0
+        mock_security_service.lookup_ticker.return_value = MagicMock(
+            ticker="BTC-USD",
+            name="Bitcoin USD",
+        )
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        new_state = service.execute_trade(
+            empty_portfolio_state,
+            ticker="BTC-USD",
+            action="BUY",
+            quantity=0.1,
+            reasoning="Open BTC position",
+            asset_class=AssetClass.CRYPTO,
+        )
+
+        assert len(new_state.holdings) == 1
+        assert new_state.holdings[0].ticker == "BTC-USD"
+        assert new_state.holdings[0].quantity == 0.1

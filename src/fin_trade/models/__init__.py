@@ -5,6 +5,7 @@ from fin_trade.models.agent import (
     TradeRecommendation,
 )
 from fin_trade.models.portfolio import (
+    AssetClass,
     DebateConfig,
     Holding,
     PortfolioConfig,
@@ -14,6 +15,7 @@ from fin_trade.models.portfolio import (
 
 __all__ = [
     "AgentRecommendation",
+    "AssetClass",
     "DebateConfig",
     "Holding",
     "PortfolioConfig",
