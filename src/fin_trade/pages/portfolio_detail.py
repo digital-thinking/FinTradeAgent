@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 
 from fin_trade.models import AssetClass, PortfolioConfig, PortfolioState, TradeRecommendation
 from fin_trade.services import PortfolioService, AgentService, SecurityService
+from fin_trade.services.execution_log import ExecutionLogService
 from fin_trade.agents.service import (
     DebateAgentService,
     LangGraphAgentService,
@@ -68,7 +69,9 @@ def render_portfolio_detail_page(
 
     st.divider()
 
-    tab1, tab2, tab3, tab4 = st.tabs(["Holdings", "Performance", "Execute Agent", "Trade History"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["Holdings", "Performance", "Execute Agent", "Trade Log", "Execution History"]
+    )
 
     with tab1:
         _render_holdings(config, state, security_service)
@@ -84,6 +87,10 @@ def render_portfolio_detail_page(
     with tab4:
         render_trade_history(state.trades, security_service, config.asset_class)
 
+    with tab5:
+        _render_execution_history(
+            portfolio_name,
+        )
 
 def _render_summary(
     config: PortfolioConfig,
@@ -397,6 +404,10 @@ def _render_performance_chart(
         except Exception:
             pass  # Silently skip benchmark if unavailable
 
+    # Load notes for chart annotations
+    log_service = ExecutionLogService()
+    notes = log_service.get_notes(config.name)
+
     # Build the interactive chart
     fig = _build_performance_figure(
         filtered_timestamps,
@@ -407,6 +418,7 @@ def _render_performance_chart(
         initial_investment,
         asset_class=config.asset_class,
         benchmark_data=benchmark_data,
+        notes=_map_notes_to_points(notes, filtered_timestamps, filtered_values),
     )
 
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
@@ -636,6 +648,7 @@ def _build_performance_figure(
     initial_amount: float,
     asset_class: AssetClass = AssetClass.STOCKS,
     benchmark_data: dict | None = None,
+    notes: list[dict] | None = None,
 ) -> go.Figure:
     """Build the interactive stacked area Plotly figure."""
     fig = go.Figure()
@@ -757,6 +770,34 @@ def _build_performance_figure(
             )
         )
 
+    # Note markers
+    if notes:
+        note_hover = []
+        for note in notes:
+            tags = ", ".join(note.get("tags", [])) if note.get("tags") else "No tags"
+            preview = note.get("note_text", "")
+            if len(preview) > 140:
+                preview = preview[:140] + "..."
+            note_hover.append(
+                f"<b>Note</b><br>{preview}<br><i>{tags}</i>"
+            )
+        fig.add_trace(
+            go.Scatter(
+                x=[note["timestamp"] for note in notes],
+                y=[note["value"] for note in notes],
+                mode="markers",
+                name="Notes",
+                marker=dict(
+                    symbol="circle",
+                    size=10,
+                    color="#9C27B0",
+                    line=dict(color="#4A148C", width=1),
+                ),
+                hovertemplate="%{customdata}<extra></extra>",
+                customdata=note_hover,
+            )
+        )
+
     # Initial investment line
     fig.add_hline(
         y=initial_amount,
@@ -812,6 +853,247 @@ def _build_performance_figure(
     )
 
     return fig
+
+
+def _map_notes_to_points(
+    notes: list[dict],
+    timestamps: list,
+    values: list[float],
+) -> list[dict]:
+    """Map notes to chart points based on closest prior timestamp."""
+    if not notes or not timestamps:
+        return []
+
+    note_points = []
+    ts_list = list(timestamps)
+
+    for note in notes:
+        note_date = note.get("note_date")
+        if not note_date:
+            continue
+
+        idx = None
+        for i in range(len(ts_list) - 1, -1, -1):
+            if ts_list[i].date() <= note_date:
+                idx = i
+                break
+
+        if idx is None:
+            continue
+
+        note_points.append({
+            "timestamp": ts_list[idx],
+            "value": values[idx],
+            "note_text": note.get("note_text", ""),
+            "tags": note.get("tags", []),
+            "id": note.get("id"),
+        })
+
+    return note_points
+
+
+def _render_execution_history(
+    portfolio_name: str,
+) -> None:
+    """Render execution history with full context and notes."""
+    import json
+    import pandas as pd
+
+    st.subheader("Execution History")
+
+    log_service = ExecutionLogService()
+    logs = log_service.get_logs(portfolio_name=portfolio_name, limit=50)
+
+    if not logs:
+        st.info("No execution logs yet. Run the agent to generate logs.")
+        return
+
+    for log in logs:
+        recommendations = []
+        if log.recommendations_json:
+            recommendations = json.loads(log.recommendations_json)
+
+        executed = set()
+        if log.executed_trades_json:
+            executed = set(json.loads(log.executed_trades_json))
+
+        rejected = set()
+        if log.rejected_trades_json:
+            rejected = set(json.loads(log.rejected_trades_json))
+
+        applied_count = len(executed)
+        rejected_count = len(rejected)
+        pending_count = len(recommendations) - applied_count - rejected_count
+
+        outcomes = log_service.get_recommendation_outcomes(log.id)
+        outcome_score = None
+        if outcomes:
+            outcome_values = [o["hypothetical_pl"] for o in outcomes if o["hypothetical_pl"] is not None]
+            if outcome_values:
+                outcome_score = sum(outcome_values)
+
+        outcome_label = "Outcome: N/A"
+        if outcome_score is not None:
+            outcome_label = f"Outcome: {'+' if outcome_score >= 0 else ''}{outcome_score:,.2f}"
+
+        expander_title = (
+            f"{log.timestamp.strftime('%Y-%m-%d %H:%M')} — {log.model} — "
+            f"{len(recommendations)} recs | {applied_count} applied / {rejected_count} rejected / "
+            f"{pending_count} pending — {outcome_label}"
+        )
+
+        with st.expander(expander_title, expanded=False):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Duration", f"{log.duration_ms}ms")
+            with col2:
+                st.metric("Total Tokens", f"{log.total_tokens:,}")
+            with col3:
+                st.metric("Agent Mode", log.agent_mode)
+
+            if log.error_message:
+                st.error(log.error_message)
+
+            # Recommendations with outcomes
+            st.markdown("### Recommendations & Outcomes")
+            if not outcomes:
+                st.caption("No recommendations available.")
+            else:
+                rows = []
+                for outcome in outcomes:
+                    rows.append({
+                        "Status": outcome["status"].capitalize(),
+                        "Ticker": outcome["ticker"],
+                        "Action": outcome["action"],
+                        "Qty": outcome["recommended_quantity"],
+                        "Rec Price": outcome["recommended_price"],
+                        "Current/Exit": outcome["exit_price"] or outcome["current_price"],
+                        "Hypo P/L": outcome["hypothetical_pl"],
+                        "Actual P/L": outcome["actual_pl"],
+                    })
+
+                df = pd.DataFrame(rows)
+                st.dataframe(
+                    df,
+                    column_config={
+                        "Rec Price": st.column_config.NumberColumn("Rec Price", format="$%.2f"),
+                        "Current/Exit": st.column_config.NumberColumn("Current/Exit", format="$%.2f"),
+                        "Hypo P/L": st.column_config.NumberColumn("Hypo P/L", format="$%.2f"),
+                        "Actual P/L": st.column_config.NumberColumn("Actual P/L", format="$%.2f"),
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+            # Full context from markdown logs
+            context = log_service.get_execution_with_context(log.id).get("log_context", {})
+
+            if context.get("analysis"):
+                st.markdown("### Full Agent Reasoning")
+                st.markdown(context["analysis"])
+            elif context.get("overall_reasoning"):
+                st.markdown("### Full Agent Reasoning")
+                st.markdown(context["overall_reasoning"])
+
+            if context.get("research"):
+                with st.expander("Research", expanded=False):
+                    st.markdown(context["research"])
+
+            if context.get("debate") or context.get("bull_case") or context.get("bear_case"):
+                with st.expander("Debate Transcript", expanded=False):
+                    if context.get("bull_case"):
+                        st.markdown("**Bull Case**")
+                        st.markdown(context["bull_case"])
+                    if context.get("bear_case"):
+                        st.markdown("**Bear Case**")
+                        st.markdown(context["bear_case"])
+                    if context.get("neutral_analysis"):
+                        st.markdown("**Neutral Analysis**")
+                        st.markdown(context["neutral_analysis"])
+                    if context.get("debate"):
+                        st.markdown("**Debate Rounds**")
+                        st.markdown(context["debate"])
+                    if context.get("moderator_verdict"):
+                        st.markdown("**Moderator Verdict**")
+                        st.markdown(context["moderator_verdict"])
+
+            if context.get("prompt"):
+                with st.expander("Full Prompt", expanded=False):
+                    st.markdown(context["prompt"])
+
+            # Add Note UI
+            st.markdown("### Add Note")
+            note_key = f"note_{log.id}"
+            note_text = st.text_area(
+                "Note",
+                key=f"{note_key}_text",
+                placeholder="Add your observation about this execution...",
+                height=120,
+            )
+            common_tags = ["Earnings", "Fed Decision", "Market Correction", "Strategy Tweak"]
+            selected_common = st.multiselect(
+                "Quick Tags",
+                options=common_tags,
+                key=f"{note_key}_common",
+            )
+            tags_input = st.text_input(
+                "Tags (comma-separated)",
+                key=f"{note_key}_tags",
+            )
+            if st.button("Add Note", key=f"{note_key}_add"):
+                tags = []
+                if tags_input:
+                    tags.extend([t.strip() for t in tags_input.split(",") if t.strip()])
+                tags.extend(selected_common)
+                tags = list(dict.fromkeys(tags))
+                try:
+                    log_service.add_note(
+                        portfolio_name=portfolio_name,
+                        note_text=note_text,
+                        execution_id=log.id,
+                        tags=tags,
+                    )
+                    st.success("Note added.")
+                except Exception as e:
+                    st.error(f"Failed to add note: {e}")
+
+    st.divider()
+    _render_notes_panel(portfolio_name, log_service)
+
+
+def _render_notes_panel(
+    portfolio_name: str,
+    log_service: ExecutionLogService,
+) -> None:
+    """Render notes panel with filtering and search."""
+    st.subheader("Notes")
+
+    notes = log_service.get_notes(portfolio_name)
+    if not notes:
+        st.info("No notes yet. Add notes from the execution history.")
+        return
+
+    all_tags = sorted({tag for note in notes for tag in note.get("tags", [])})
+    tag_filter = st.selectbox(
+        "Filter by tag",
+        options=["All"] + all_tags,
+        index=0,
+    )
+    search_query = st.text_input("Search notes")
+
+    filtered = []
+    for note in notes:
+        if tag_filter != "All" and tag_filter not in note.get("tags", []):
+            continue
+        if search_query and search_query.lower() not in note["note_text"].lower():
+            continue
+        filtered.append(note)
+
+    for note in filtered:
+        tags_label = ", ".join(note.get("tags", [])) if note.get("tags") else "No tags"
+        header = f"{note['note_date'].strftime('%Y-%m-%d')} — {tags_label}"
+        with st.expander(header, expanded=False):
+            st.markdown(note["note_text"])
 
 
 def _render_agent_execution(
