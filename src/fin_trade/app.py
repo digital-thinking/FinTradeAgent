@@ -1,7 +1,13 @@
 import streamlit as st
 from pathlib import Path
 
-from fin_trade.services import PortfolioService, AgentService, SecurityService
+from fin_trade.services import (
+    PortfolioService,
+    AgentService,
+    SecurityService,
+    ExecutionLogService,
+    SchedulerService,
+)
 from fin_trade.pages.overview import render_overview_page
 from fin_trade.pages.portfolio_detail import render_portfolio_detail_page
 from fin_trade.pages.system_health import render_system_health_page
@@ -34,9 +40,16 @@ def main():
         security_service = SecurityService()
         portfolio_service = PortfolioService(security_service=security_service)
         agent_service = AgentService(security_service=security_service)
-        return security_service, portfolio_service, agent_service
+        scheduler_service = SchedulerService(
+            portfolio_service=portfolio_service,
+            agent_service=agent_service,
+            execution_log_service=ExecutionLogService(),
+            security_service=security_service,
+        )
+        scheduler_service.start()
+        return security_service, portfolio_service, agent_service, scheduler_service
 
-    security_service, portfolio_service, agent_service = get_services()
+    security_service, portfolio_service, agent_service, scheduler_service = get_services()
 
     # Initialize session state
     if "current_page" not in st.session_state:
@@ -118,7 +131,7 @@ def main():
             st.rerun()
 
     elif st.session_state.current_page == "dashboard":
-        render_dashboard_page(portfolio_service)
+        render_dashboard_page(portfolio_service, scheduler_service)
 
     elif st.session_state.current_page == "detail":
         if st.session_state.selected_portfolio:
@@ -141,6 +154,7 @@ def main():
                 portfolio_service,
                 agent_service,
                 security_service,
+                scheduler_service,
                 on_back=on_back,
                 on_navigate_to_portfolio=on_navigate_to_portfolio,
             )

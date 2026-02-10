@@ -79,6 +79,8 @@ class PortfolioService:
             asset_class=AssetClass(data.get("asset_class", AssetClass.STOCKS.value)),
             agent_mode=data.get("agent_mode", "langgraph"),
             debate_config=debate_config,
+            scheduler_enabled=bool(data.get("scheduler_enabled", False)),
+            auto_apply_trades=bool(data.get("auto_apply_trades", False)),
         )
 
     @staticmethod
@@ -93,6 +95,10 @@ class PortfolioService:
         state_path = self.state_dir / f"{name}.json"
 
         if not state_path.exists():
+            return PortfolioState(cash=initial_amount)
+
+        # Handle empty or corrupt state files gracefully
+        if state_path.stat().st_size == 0:
             return PortfolioState(cash=initial_amount)
 
         with open(state_path, "r", encoding="utf-8") as f:
@@ -154,6 +160,36 @@ class PortfolioService:
         config = self._load_config(name)
         state = self._load_state(name, config.initial_amount)
         return config, state
+
+    def save_config(self, config: PortfolioConfig, filename: str | None = None) -> None:
+        """Save portfolio configuration to YAML."""
+        target_name = filename or config.name
+        config_path = self.portfolios_dir / f"{target_name}.yaml"
+
+        data = {
+            "name": config.name,
+            "strategy_prompt": config.strategy_prompt,
+            "initial_amount": float(config.initial_amount),
+            "num_initial_trades": int(config.num_initial_trades),
+            "trades_per_run": int(config.trades_per_run),
+            "run_frequency": config.run_frequency,
+            "llm_provider": config.llm_provider,
+            "llm_model": config.llm_model,
+            "ollama_base_url": config.ollama_base_url,
+            "asset_class": config.asset_class.value,
+            "agent_mode": config.agent_mode,
+            "scheduler_enabled": bool(config.scheduler_enabled),
+            "auto_apply_trades": bool(config.auto_apply_trades),
+        }
+
+        if config.debate_config:
+            data["debate_config"] = {
+                "rounds": config.debate_config.rounds,
+                "include_neutral": config.debate_config.include_neutral,
+            }
+
+        with open(config_path, "w", encoding="utf-8") as f:
+            yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
 
     def save_state(self, name: str, state: PortfolioState) -> None:
         """Save portfolio state to JSON."""

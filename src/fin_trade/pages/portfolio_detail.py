@@ -7,7 +7,12 @@ import streamlit as st
 import plotly.graph_objects as go
 
 from fin_trade.models import AssetClass, PortfolioConfig, PortfolioState, TradeRecommendation
-from fin_trade.services import PortfolioService, AgentService, SecurityService
+from fin_trade.services import (
+    PortfolioService,
+    AgentService,
+    SecurityService,
+    SchedulerService,
+)
 from fin_trade.agents.service import (
     DebateAgentService,
     LangGraphAgentService,
@@ -38,6 +43,7 @@ def render_portfolio_detail_page(
     portfolio_service: PortfolioService,
     agent_service: AgentService,
     security_service: SecurityService,
+    scheduler_service: SchedulerService,
     on_back: Callable | None = None,
     on_navigate_to_portfolio: Callable[[str], None] | None = None,
 ) -> None:
@@ -64,7 +70,7 @@ def render_portfolio_detail_page(
             portfolio_name, config, state, portfolio_service, on_back, on_navigate_to_portfolio
         )
 
-    _render_summary(config, state, portfolio_service, security_service)
+    _render_summary(config, state, portfolio_service, security_service, scheduler_service, portfolio_name)
 
     st.divider()
 
@@ -90,6 +96,8 @@ def _render_summary(
     state: PortfolioState,
     portfolio_service: PortfolioService,
     security_service: SecurityService,
+    scheduler_service: SchedulerService,
+    portfolio_name: str,
 ) -> None:
     """Render the portfolio summary metrics."""
     total_value = portfolio_service.calculate_value(state)
@@ -131,6 +139,69 @@ def _render_summary(
         st.write(f"**Trades per Run:** {config.trades_per_run}")
         st.write(f"**LLM:** {config.llm_provider} / {config.llm_model}")
         st.write(f"**Agent Mode:** {getattr(config, 'agent_mode', 'simple')}")
+
+    with st.expander("Scheduling"):
+        scheduled = {item.name: item for item in scheduler_service.get_scheduled_portfolios()}
+        schedule_info = scheduled.get(portfolio_name)
+
+        scheduler_enabled = st.toggle(
+            "Enable scheduled execution",
+            value=config.scheduler_enabled,
+            key=f"scheduler_enabled_{portfolio_name}",
+            help="Automatically run this portfolio on its configured cadence.",
+        )
+        if scheduler_enabled != config.scheduler_enabled:
+            try:
+                if scheduler_enabled:
+                    scheduler_service.enable_portfolio(portfolio_name)
+                else:
+                    scheduler_service.disable_portfolio(portfolio_name)
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Failed to update schedule: {exc}")
+
+        auto_apply = st.toggle(
+            "Auto-apply trades",
+            value=config.auto_apply_trades,
+            key=f"auto_apply_{portfolio_name}",
+            help="Automatically apply trade recommendations after each run.",
+        )
+        if auto_apply != config.auto_apply_trades:
+            try:
+                config.auto_apply_trades = auto_apply
+                portfolio_service.save_config(config, filename=portfolio_name)
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Failed to update auto-apply setting: {exc}")
+
+        last_run = schedule_info.last_run if schedule_info else state.last_execution
+        next_run = schedule_info.next_run if schedule_info else None
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.caption(
+                f"Last Run: {last_run.strftime('%Y-%m-%d %H:%M') if last_run else 'Never'}"
+            )
+        with col2:
+            if scheduler_enabled and next_run:
+                st.caption(f"Next Run: {next_run.strftime('%Y-%m-%d %H:%M')}")
+            elif scheduler_enabled:
+                st.caption("Next Run: Pending")
+            else:
+                st.caption("Next Run: Disabled")
+
+        if st.button("Run Now", type="primary", key=f"run_now_{portfolio_name}"):
+            with st.spinner("Running scheduled execution..."):
+                try:
+                    success = scheduler_service.run_portfolio_now(portfolio_name)
+                except Exception as exc:
+                    success = False
+                    st.error(f"Execution failed: {exc}")
+            if success:
+                st.success("Execution completed.")
+            else:
+                st.error("Execution did not complete successfully.")
+            st.rerun()
 
 
 def _render_portfolio_actions(

@@ -6,6 +6,12 @@ Detailed implementation plans for ROADMAP.md features.
 
 ## Phase 1: Experiment Infrastructure
 
+### 1.1 Scheduled Execution
+
+**Status:** In Progress
+
+**Goal:** Automatically run portfolio agents on their configured cadence.
+
 ### 1.2 Portfolio Cloning & Reset
 
 **Status:** Completed
