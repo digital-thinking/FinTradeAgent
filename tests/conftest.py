@@ -243,3 +243,122 @@ def mock_stock_data_service():
 
     return mock
 
+
+# FastAPI specific fixtures
+import sys
+from pathlib import Path
+from unittest.mock import MagicMock, AsyncMock
+from fastapi.testclient import TestClient
+
+# Add src and backend to path for API tests
+sys.path.append(str(Path(__file__).parent.parent / "src"))
+sys.path.append(str(Path(__file__).parent.parent / "backend"))
+
+
+@pytest.fixture
+def client():
+    """Create FastAPI test client."""
+    try:
+        from backend.main import app
+        return TestClient(app)
+    except ImportError:
+        # If backend modules not available, skip API tests
+        pytest.skip("Backend modules not available for API testing")
+
+
+@pytest.fixture
+def sample_portfolio_config_api():
+    """Sample portfolio configuration for API testing."""
+    return {
+        "name": "test_portfolio",
+        "initial_capital": 10000.0,
+        "llm_model": "gpt-4",
+        "asset_class": "stocks", 
+        "agent_mode": "langgraph",
+        "run_frequency": "daily",
+        "scheduler_enabled": False,
+        "auto_apply_trades": False,
+        "ollama_base_url": "http://localhost:11434"
+    }
+
+
+@pytest.fixture
+def sample_portfolio_response_api(sample_portfolio_config_api):
+    """Sample portfolio response for API testing."""
+    return {
+        "config": sample_portfolio_config_api,
+        "state": {
+            "cash": 2500.0,
+            "holdings": [
+                {
+                    "symbol": "AAPL",
+                    "quantity": 10,
+                    "avg_cost": 150.0,
+                    "current_price": 155.0
+                }
+            ],
+            "total_value": 12500.0,
+            "last_updated": datetime.now().isoformat()
+        }
+    }
+
+
+@pytest.fixture
+def sample_agent_request_api():
+    """Sample agent execution request for API testing."""
+    return {
+        "portfolio_name": "test_portfolio",
+        "user_context": "Focus on growth stocks"
+    }
+
+
+@pytest.fixture
+def sample_agent_response_api():
+    """Sample agent execution response for API testing."""
+    try:
+        from backend.models.agent import AgentExecuteResponse, TradeRecommendation
+        return AgentExecuteResponse(
+            success=True,
+            recommendations=[
+                TradeRecommendation(
+                    action="buy",
+                    symbol="MSFT", 
+                    quantity=5,
+                    price=300.0,
+                    reasoning="Strong cloud growth prospects"
+                )
+            ],
+            execution_time_ms=2500,
+            total_tokens=150
+        )
+    except ImportError:
+        return None
+
+
+@pytest.fixture
+def mock_portfolio_service():
+    """Mock portfolio API service."""
+    mock = MagicMock()
+    mock.list_portfolios = MagicMock()
+    mock.get_portfolio = MagicMock()
+    mock.create_portfolio = MagicMock()
+    mock.update_portfolio = MagicMock()
+    mock.delete_portfolio = MagicMock()
+    return mock
+
+
+@pytest.fixture
+def mock_agent_service():
+    """Mock agent API service."""
+    mock = MagicMock()
+    mock.execute_agent = AsyncMock()
+    return mock
+
+
+@pytest.fixture
+def mock_execution_log_service():
+    """Mock execution log service."""
+    mock = MagicMock()
+    mock.get_recent_logs = MagicMock()
+    return mock
+
