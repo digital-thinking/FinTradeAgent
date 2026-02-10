@@ -64,6 +64,8 @@ class PortfolioConfig:
     asset_class: AssetClass = AssetClass.STOCKS
     agent_mode: Literal["simple", "langgraph", "debate"] = "langgraph"
     debate_config: DebateConfig | None = None
+    scheduler_enabled: bool = False
+    auto_apply_trades: bool = False
 
 
 @dataclass

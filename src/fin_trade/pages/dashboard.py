@@ -3,14 +3,22 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from fin_trade.cache import get_portfolio_metrics
-from fin_trade.services import PortfolioService, AttributionService, SecurityService
+from fin_trade.services import (
+    PortfolioService,
+    AttributionService,
+    SecurityService,
+    SchedulerService,
+)
 from fin_trade.services.attribution import SectorAttribution, HoldingAttribution
 
 
-def render_dashboard_page(portfolio_service: PortfolioService) -> None:
+def render_dashboard_page(
+    portfolio_service: PortfolioService,
+    scheduler_service: SchedulerService,
+) -> None:
     """Render the summary dashboard page."""
     st.title("Summary Dashboard")
 
@@ -107,51 +115,57 @@ def render_dashboard_page(portfolio_service: PortfolioService) -> None:
 
     st.divider()
 
+    # Scheduler Status
+    st.subheader("Scheduler Status")
+    status = scheduler_service.get_status()
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Scheduler", "Running" if status["running"] else "Stopped")
+    with col2:
+        st.metric("Enabled Schedules", status["enabled"])
+    with col3:
+        st.metric("Active Jobs", status["jobs"])
+
+    st.divider()
+
     # Upcoming Runs Schedule
     st.subheader("Upcoming Scheduled Runs")
-    
-    schedule_data = []
-    for p in portfolio_metrics:
-        last_run = p["Last Run"]
-        freq = p["Frequency"]
-        
-        if not last_run:
-            next_run = datetime.now() # Run immediately if never run
-            status = "Pending (New)"
-        else:
-            if freq == "daily":
-                next_run = last_run + timedelta(days=1)
-            elif freq == "weekly":
-                next_run = last_run + timedelta(weeks=1)
-            elif freq == "monthly":
-                next_run = last_run + timedelta(days=30)
+
+    scheduled = scheduler_service.get_scheduled_portfolios()
+    if not scheduled:
+        st.info("No portfolios are enabled for scheduled execution.")
+    else:
+        schedule_data = []
+        now = datetime.now()
+
+        for item in scheduled:
+            if item.next_run is None:
+                status_label = "Pending"
+            elif item.next_run <= now:
+                status_label = "Due"
             else:
-                next_run = last_run + timedelta(days=1) # Default
-            
-            if datetime.now() > next_run:
-                status = "Overdue"
-            else:
-                status = "Scheduled"
-                
-        schedule_data.append({
-            "Strategy": p["Name"],
-            "Last Run": last_run,
-            "Next Run": next_run,
-            "Status": status
-        })
-        
-    df_schedule = pd.DataFrame(schedule_data).sort_values("Next Run")
-    
-    st.dataframe(
-        df_schedule,
-        column_config={
-            "Last Run": st.column_config.DatetimeColumn("Last Run", format="YYYY-MM-DD HH:mm"),
-            "Next Run": st.column_config.DatetimeColumn("Next Run", format="YYYY-MM-DD HH:mm"),
-            "Status": st.column_config.TextColumn("Status"),
-        },
-        hide_index=True,
-        use_container_width=True
-    )
+                status_label = "Scheduled"
+
+            schedule_data.append({
+                "Strategy": item.display_name,
+                "Frequency": item.frequency,
+                "Last Run": item.last_run,
+                "Next Run": item.next_run,
+                "Status": status_label,
+            })
+
+        df_schedule = pd.DataFrame(schedule_data).sort_values("Next Run")
+
+        st.dataframe(
+            df_schedule,
+            column_config={
+                "Last Run": st.column_config.DatetimeColumn("Last Run", format="YYYY-MM-DD HH:mm"),
+                "Next Run": st.column_config.DatetimeColumn("Next Run", format="YYYY-MM-DD HH:mm"),
+                "Status": st.column_config.TextColumn("Status"),
+            },
+            hide_index=True,
+            use_container_width=True
+        )
 
     # Performance Attribution Section
     st.divider()
