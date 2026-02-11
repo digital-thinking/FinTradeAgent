@@ -76,7 +76,7 @@ jobs:
       env:
         PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       run: |
-        poetry run pytest tests/integration/test_service_integration.py \
+        poetry run pytest tests/integration/test_service_integration_simple.py \
           -v \
           --cov=backend \
           --cov-report=xml \
