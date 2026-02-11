@@ -29,7 +29,7 @@ class TestPortfolioWorkflowIntegration:
             portfolio_config_request = PortfolioConfigRequest(
                 name="workflow_test_portfolio",
                 strategy_prompt="Focus on growth technology stocks",
-                initial_amount=25000.0,
+                initial_capital=25000.0,
                 num_initial_trades=3,
                 trades_per_run=2,
                 run_frequency="weekly",
