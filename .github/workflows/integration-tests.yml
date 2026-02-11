@@ -101,7 +101,7 @@ jobs:
           --tb=short
 
     - name: Upload test results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: test-results-${{ matrix.test-group }}-py${{ matrix.python-version }}
@@ -190,7 +190,7 @@ jobs:
         echo "See coverage.xml for detailed coverage information." >> integration-test-report.md
 
     - name: Upload full test results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: integration-test-results-full
@@ -259,7 +259,7 @@ jobs:
         fi
 
     - name: Upload performance results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: performance-test-results
@@ -295,7 +295,7 @@ jobs:
         safety check --json --output safety-results.json || true
 
     - name: Upload security results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: security-scan-results
@@ -310,7 +310,7 @@ jobs:
 
     steps:
     - name: Download all artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
 
     - name: Generate test summary
       run: |
@@ -354,7 +354,7 @@ jobs:
         echo "Ready for Task 5.4 - E2E testing with Playwright." >> test-summary.md
 
     - name: Upload test summary
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: integration-test-summary
         path: test-summary.md
