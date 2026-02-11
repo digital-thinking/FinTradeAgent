@@ -240,7 +240,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install poetry
         poetry install --with dev
-        pip install pytest pytest-asyncio httpx websockets pytest-benchmark
+        poetry add --group dev pytest-benchmark
 
     - name: Run performance integration tests
       run: |
