@@ -1,5 +1,5 @@
 // @ts-check
-const { test, expect, devices } = require('@playwright/test');
+import { test, expect, devices } from '@playwright/test';
 
 test.describe('Cross-Browser Compatibility', () => {
   const testCases = [

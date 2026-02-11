@@ -1,5 +1,5 @@
 // @ts-check
-const { test, expect } = require('@playwright/test');
+import { test, expect } from '@playwright/test';
 
 const viewports = {
   mobile: { width: 375, height: 667 }, // iPhone SE
