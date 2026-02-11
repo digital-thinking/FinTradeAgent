@@ -25,12 +25,13 @@ Add Unit tests, if they are missing
 
 ## Project Overview
 
-This is **Agentic Trade Assistant** - a Streamlit application for managing AI-powered stock portfolios with LLM trading recommendations based on the "Semantic Alpha" framework.
+This is **Agentic Trade Assistant** - a modern web application for managing AI-powered stock portfolios with LLM trading recommendations based on the "Semantic Alpha" framework.
 
 ## Tech Stack
 
 - **Python 3.12+** with Poetry for dependency management
-- **Streamlit** for the web UI
+- **FastAPI** for the backend API
+- **Vue.js 3** for the frontend UI
 - **OpenAI/Anthropic** APIs for LLM-powered trade recommendations
 - **yfinance** for stock data fetching
 - **pandas/plotly** for data processing and charts
@@ -38,15 +39,23 @@ This is **Agentic Trade Assistant** - a Streamlit application for managing AI-po
 ## Project Structure
 
 ```
-src/fin_trade/
-├── app.py                    # Main Streamlit entry point
+backend/fin_trade/
 ├── models/                   # Dataclasses (Holding, Trade, PortfolioConfig, etc.)
-├── services/
-│   ├── stock_data.py         # Yahoo Finance integration
-│   ├── portfolio.py          # Portfolio CRUD and calculations
-│   └── agent.py              # LLM invocation and prompt building
-├── pages/                    # Streamlit pages (overview, detail)
-└── components/               # Reusable UI components
+└── services/
+    ├── stock_data.py         # Yahoo Finance integration
+    ├── portfolio.py          # Portfolio CRUD and calculations
+    └── agent.py              # LLM invocation and prompt building
+
+backend/                      # FastAPI application
+├── main.py                   # FastAPI entry point
+├── routers/                  # API route handlers
+├── services/                 # Backend API services
+└── models/                   # Pydantic data models
+
+frontend/                     # Vue.js application
+├── src/
+├── components/               # Vue components
+└── views/                    # Vue pages
 
 data/
 ├── portfolios/               # Portfolio YAML configs (strategy prompts)
@@ -61,10 +70,13 @@ data/
 # Install dependencies
 poetry install
 
-# Run the app
-poetry run streamlit run src/fin_trade/app.py
+# Run the backend
+cd backend && python main.py
+# Backend runs on http://localhost:8000
 
-# The app runs on http://localhost:8501 (or 8502 if 8501 is busy)
+# Run the frontend (separate terminal)
+cd frontend && npm run dev  
+# Frontend runs on http://localhost:5173
 ```
 
 ## Configuration
@@ -100,7 +112,7 @@ llm_model: gpt-4o
 Check `data/logs/` for timestamped log files containing full prompts and responses.
 
 ### Modifying the agent prompt
-Edit `src/fin_trade/services/agent.py` - the `_build_prompt()` method constructs the system prompt.
+Edit `backend/fin_trade/services/agent.py` - the `_build_prompt()` method constructs the system prompt.
 
 ## Windows Notes
 

@@ -1,0 +1,82 @@
+# Development Dockerfile for FinTradeAgent
+FROM node:18-alpine AS frontend-dev
+
+# Set working directory
+WORKDIR /app/frontend
+
+# Install dependencies for hot reload
+RUN npm install -g @vite/plugin-react
+
+# Copy package files
+COPY frontend/package*.json ./
+
+# Install all dependencies (including dev)
+RUN npm ci
+
+# Copy frontend source
+COPY frontend/ ./
+
+# Expose frontend port
+EXPOSE 3000
+
+# Start development server with hot reload
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
+# Backend development image
+FROM python:3.11-slim AS backend-dev
+
+# Set environment variables for development
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV APP_ENV=development
+ENV PYTHONPATH=/app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    make \
+    libpq-dev \
+    curl \
+    wget \
+    git \
+    vim \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements
+COPY requirements.txt ./
+COPY backend/requirements.txt ./backend-requirements.txt
+
+# Install Python dependencies with dev packages
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r backend-requirements.txt
+RUN pip install --no-cache-dir \
+    pytest \
+    pytest-asyncio \
+    pytest-cov \
+    debugpy \
+    ipdb \
+    watchdog
+
+# Create non-root user for development
+RUN groupadd -r devuser && useradd -r -g devuser -d /home/devuser -s /bin/bash -c "Dev User" devuser
+RUN mkdir -p /home/devuser && chown -R devuser:devuser /home/devuser
+
+# Copy source code
+COPY --chown=devuser:devuser . .
+
+# Switch to dev user
+USER devuser
+
+# Expose backend port and debug port
+EXPOSE 8000 5678
+
+# Health check for development
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Start development server with auto-reload
+CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "backend", "--reload-dir", "src"]

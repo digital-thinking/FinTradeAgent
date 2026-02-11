@@ -1,0 +1,1 @@
+"""Performance and optimization middleware for FastAPI."""

@@ -1,7 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "Bash(poetry run streamlit:*)",
       "Bash(poetry install:*)",
       "Bash(poetry lock:*)",
       "Bash(poetry run python:*)",

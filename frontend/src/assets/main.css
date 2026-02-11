@@ -1,0 +1,176 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Root theme variables - Default (Light theme) */
+:root {
+  color-scheme: light;
+  /* Disable tap highlight on mobile */
+  -webkit-tap-highlight-color: transparent;
+  
+  /* Light theme colors */
+  --color-background: 255 255 255;
+  --color-background-secondary: 248 250 252;
+  --color-surface: 241 245 249;
+  --color-surface-hover: 226 232 240;
+  --color-border: 226 232 240;
+  --color-border-light: 203 213 225;
+  --color-text-primary: 30 41 59;
+  --color-text-secondary: 51 65 85;
+  --color-text-tertiary: 100 116 139;
+  --color-accent: 14 165 233;
+  --color-accent-hover: 2 132 199;
+  --color-success: 16 185 129;
+  --color-warning: 245 158 11;
+  --color-danger: 239 68 68;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+  --shadow-glow: 0 0 40px rgba(14, 165, 233, 0.15);
+}
+
+/* Dark theme colors */
+:root.dark {
+  color-scheme: dark;
+  
+  --color-background: 15 23 42;
+  --color-background-secondary: 30 41 59;
+  --color-surface: 51 65 85;
+  --color-surface-hover: 71 85 105;
+  --color-border: 71 85 105;
+  --color-border-light: 100 116 139;
+  --color-text-primary: 248 250 252;
+  --color-text-secondary: 226 232 240;
+  --color-text-tertiary: 148 163 184;
+  --color-accent: 14 165 233;
+  --color-accent-hover: 2 132 199;
+  --color-success: 16 185 129;
+  --color-warning: 245 158 11;
+  --color-danger: 239 68 68;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.2);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.3);
+  --shadow-glow: 0 0 40px rgba(14, 165, 233, 0.3);
+}
+
+body {
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  /* Improve text rendering on mobile */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Prevent horizontal scrolling on mobile */
+  overflow-x: hidden;
+}
+
+/* Dynamic background based on theme */
+.app-shell {
+  /* Ensure mobile viewport handling */
+  min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height for mobile browsers */
+}
+
+/* Light theme background */
+.app-shell {
+  background: radial-gradient(circle at 15% 20%, rgba(14, 165, 233, 0.08), transparent 45%),
+    radial-gradient(circle at 80% 10%, rgba(16, 185, 129, 0.06), transparent 40%),
+    linear-gradient(140deg, #ffffff 0%, #f8fafc 60%, #f1f5f9 100%);
+}
+
+/* Dark theme background */
+:root.dark .app-shell {
+  background: radial-gradient(circle at 15% 20%, rgba(14, 165, 233, 0.2), transparent 45%),
+    radial-gradient(circle at 80% 10%, rgba(16, 185, 129, 0.15), transparent 40%),
+    linear-gradient(140deg, #0b1220 0%, #0f172a 60%, #111827 100%);
+}
+
+/* Glass morphism - adapts to theme */
+.glass {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px); /* Safari support */
+  border: 1px solid rgb(var(--color-border) / 0.2);
+  background: rgb(var(--color-background) / 0.7);
+}
+
+:root.dark .glass {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.nav-link {
+  @apply flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-text-secondary transition-theme touch-manipulation;
+  /* Ensure good touch targets on mobile (44px minimum) */
+  min-height: 44px;
+  transition-duration: 200ms;
+}
+
+.nav-link:hover {
+  @apply text-text-primary;
+  background: rgb(var(--color-surface-hover) / 0.6);
+}
+
+.nav-link.router-link-active {
+  @apply text-text-primary;
+  background: rgb(var(--color-surface) / 1);
+  box-shadow: var(--shadow-glow);
+}
+
+.section-title {
+  @apply text-xs uppercase tracking-[0.2em];
+  color: rgb(var(--color-text-tertiary) / 1);
+}
+
+/* Mobile-specific optimizations */
+@media (max-width: 639px) {
+  /* Ensure form inputs are properly sized on mobile */
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="password"],
+  textarea,
+  select {
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+  
+  /* Improve scrolling on mobile */
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  
+  .overflow-x-auto::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Improve focus indicators for keyboard navigation */
+@media (prefers-reduced-motion: no-preference) {
+  .transition {
+    transition-duration: 200ms;
+  }
+}
+
+/* Form input styles - theme-aware */
+.form-input {
+  @apply w-full rounded-2xl px-4 py-3 text-sm transition-theme;
+  @apply focus:ring-1 focus:ring-primary-500 focus:border-primary-500;
+  background: rgb(var(--color-background-secondary));
+  border: 1px solid rgb(var(--color-border));
+  color: rgb(var(--color-text-primary));
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: rgb(var(--color-accent));
+}
+
+.form-input::placeholder {
+  color: rgb(var(--color-text-tertiary));
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .glass {
+    background: rgba(0, 0, 0, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+}

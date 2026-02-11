@@ -8,15 +8,15 @@ class TestMainAPI:
     
     def test_app_health_check(self, client):
         """Test main application health check endpoint."""
-        response = client.get("/health")
+        response = client.get("/api/system/health")
         
         assert response.status_code == 200
         data = response.json()
         
         assert "status" in data
-        assert "service" in data
-        assert data["status"] == "ok"
-        assert data["service"] == "FinTradeAgent API"
+        assert "services" in data
+        assert data["status"] == "healthy"
+        assert data["services"]["api"] == "running"
 
     def test_app_info_available(self, client):
         """Test that FastAPI app info is accessible."""
@@ -31,7 +31,7 @@ class TestMainAPI:
         
         assert "info" in data
         assert data["info"]["title"] == "FinTradeAgent API"
-        assert data["info"]["description"] == "REST API for Agentic Trade Assistant"
+        assert data["info"]["description"] == "REST API for Agentic Trade Assistant with Performance Optimizations"
         assert data["info"]["version"] == "1.0.0"
 
     def test_cors_headers_present(self, client):
@@ -50,7 +50,7 @@ class TestMainAPI:
 
     def test_cors_origin_allowed(self, client):
         """Test that Vue.js frontend origin is allowed."""
-        response = client.get("/health", headers={
+        response = client.get("/api/system/health", headers={
             "Origin": "http://localhost:3000"
         })
         
@@ -81,7 +81,7 @@ class TestMainAPI:
 
     def test_json_content_type_default(self, client):
         """Test that API endpoints return JSON by default."""
-        response = client.get("/health")
+        response = client.get("/api/system/health")
         assert response.status_code == 200
         assert "application/json" in response.headers["content-type"]
 
@@ -94,7 +94,7 @@ class TestMainAPI:
         
         # Check basic info
         assert schema["info"]["title"] == "FinTradeAgent API"
-        assert schema["info"]["description"] == "REST API for Agentic Trade Assistant"
+        assert schema["info"]["description"] == "REST API for Agentic Trade Assistant with Performance Optimizations"
         assert schema["info"]["version"] == "1.0.0"
         
         # Check that all routers are included in paths
@@ -149,9 +149,9 @@ class TestMainAPI:
         assert isinstance(data["detail"], str)
 
     def test_health_endpoint_consistency(self, client):
-        """Test that health endpoint returns consistent responses."""
-        response1 = client.get("/health")
-        response2 = client.get("/health")
+        """Test that health endpoint returns consistent structure."""
+        response1 = client.get("/api/system/health")
+        response2 = client.get("/api/system/health")
         
         assert response1.status_code == 200
         assert response2.status_code == 200
@@ -159,8 +159,10 @@ class TestMainAPI:
         data1 = response1.json()
         data2 = response2.json()
         
-        # Should be identical
-        assert data1 == data2
+        # Should have same structure (but values may change)
+        assert data1.keys() == data2.keys()
+        assert data1["status"] == data2["status"]
+        assert data1["services"].keys() == data2["services"].keys()
 
     def test_multiple_request_handling(self, client):
         """Test that the app can handle multiple concurrent requests."""
@@ -168,22 +170,22 @@ class TestMainAPI:
         
         # Make multiple requests
         for i in range(10):
-            response = client.get("/health")
+            response = client.get("/api/system/health")
             responses.append(response)
         
         # All should succeed
         for response in responses:
             assert response.status_code == 200
             data = response.json()
-            assert data["status"] == "ok"
+            assert data["status"] == "healthy"
 
     def test_request_methods_validation(self, client):
         """Test that endpoints validate HTTP methods correctly."""
         # Health endpoint should only accept GET
-        response = client.get("/health")
+        response = client.get("/api/system/health")
         assert response.status_code == 200
         
-        response = client.post("/health")
+        response = client.post("/api/system/health")
         assert response.status_code == 405  # Method not allowed
         
         response = client.put("/health")

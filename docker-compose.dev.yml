@@ -1,0 +1,168 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database for Development
+  db-dev:
+    image: postgres:15-alpine
+    container_name: fintradeagent-db-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fintradeagent_dev
+      POSTGRES_USER: fintradeagent_dev
+      POSTGRES_PASSWORD: dev_password_123
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    ports:
+      - "5433:5432"  # Different port to avoid conflict
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./data/sample_data.sql:/docker-entrypoint-initdb.d/01-sample-data.sql:ro
+      - ./scripts/dev-db-init.sql:/docker-entrypoint-initdb.d/02-dev-init.sql:ro
+    networks:
+      - fintradeagent-dev-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fintradeagent_dev -d fintradeagent_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache for Development
+  redis-dev:
+    image: redis:7-alpine
+    container_name: fintradeagent-redis-dev
+    restart: unless-stopped
+    command: redis-server --requirepass dev_redis_123 --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6380:6379"  # Different port to avoid conflict
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - fintradeagent-dev-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --pass dev_redis_123 ping | grep PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Backend Development Server
+  backend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: backend-dev
+    container_name: fintradeagent-backend-dev
+    restart: unless-stopped
+    environment:
+      - APP_ENV=development
+      - DATABASE_URL=postgresql://fintradeagent_dev:dev_password_123@db-dev:5432/fintradeagent_dev
+      - REDIS_URL=redis://:dev_redis_123@redis-dev:6379/0
+      - SECRET_KEY=dev-secret-key-do-not-use-in-production
+      - JWT_SECRET_KEY=dev-jwt-secret-do-not-use-in-production
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ALPHA_VANTAGE_API_KEY=${ALPHA_VANTAGE_API_KEY:-}
+      - HOST=0.0.0.0
+      - PORT=8000
+      - LOG_LEVEL=debug
+      - RELOAD=true
+      - DEBUG=true
+    ports:
+      - "8001:8000"  # Backend API
+      - "5678:5678"  # Debug port
+    volumes:
+      - .:/app
+      - /app/node_modules  # Exclude node_modules
+      - /app/frontend/node_modules  # Exclude frontend node_modules
+      - dev_logs:/var/log/fintradeagent
+    networks:
+      - fintradeagent-dev-network
+    depends_on:
+      db-dev:
+        condition: service_healthy
+      redis-dev:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Frontend Development Server
+  frontend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: frontend-dev
+    container_name: fintradeagent-frontend-dev
+    restart: unless-stopped
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8001/api
+      - VITE_WS_BASE_URL=ws://localhost:8001/ws
+      - NODE_ENV=development
+    ports:
+      - "3000:3000"  # Frontend dev server
+    volumes:
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules  # Exclude node_modules from host mount
+    networks:
+      - fintradeagent-dev-network
+    depends_on:
+      - backend-dev
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
+  # Development Database Admin (optional)
+  adminer:
+    image: adminer:4.8.1
+    container_name: fintradeagent-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: db-dev
+      ADMINER_DESIGN: "pepa-linha-dark"
+    networks:
+      - fintradeagent-dev-network
+    depends_on:
+      - db-dev
+
+  # Redis Admin (optional)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: fintradeagent-redis-commander
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS=local:redis-dev:6379:2:dev_redis_123
+      - HTTP_USER=admin
+      - HTTP_PASSWORD=dev123
+    networks:
+      - fintradeagent-dev-network
+    depends_on:
+      - redis-dev
+
+  # Mailhog (for email testing in development)
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: fintradeagent-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    networks:
+      - fintradeagent-dev-network
+
+volumes:
+  postgres_dev_data:
+    driver: local
+  redis_dev_data:
+    driver: local
+  dev_logs:
+    driver: local
+
+networks:
+  fintradeagent-dev-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

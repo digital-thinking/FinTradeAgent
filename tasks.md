@@ -14,7 +14,7 @@ Detailed implementation plans for ROADMAP.md features.
 
 #### Implementation Plan
 
-**1. Add clone/reset functions to PortfolioService** (`src/fin_trade/services/portfolio.py`)
+**1. Add clone/reset functions to PortfolioService** (`backend/fin_trade/services/portfolio.py`)
 
 ```python
 def clone_portfolio(self, source_name: str, new_name: str, include_state: bool = False) -> PortfolioConfig:
@@ -33,7 +33,7 @@ def reset_portfolio(self, name: str, archive: bool = True) -> None:
     """
 ```
 
-**2. Add UI controls** (`src/fin_trade/pages/portfolio_detail.py`)
+**2. Add UI controls** (`backend/fin_trade/pages/portfolio_detail.py`)
 
 - Add "Clone" button in portfolio header area
   - Opens modal/expander with:
@@ -71,8 +71,8 @@ data/
 
 | File | Changes |
 |------|---------|
-| `src/fin_trade/services/portfolio.py` | Add `clone_portfolio()`, `reset_portfolio()` |
-| `src/fin_trade/pages/portfolio_detail.py` | Add Clone/Reset UI controls |
+| `backend/fin_trade/services/portfolio.py` | Add `clone_portfolio()`, `reset_portfolio()` |
+| `backend/fin_trade/pages/portfolio_detail.py` | Add Clone/Reset UI controls |
 | `tests/test_portfolio_service.py` | Add clone/reset tests |
 
 #### Edge Cases
@@ -92,7 +92,7 @@ data/
 
 #### Implementation Plan
 
-**1. Add benchmark data fetching** (`src/fin_trade/services/stock_data.py`)
+**1. Add benchmark data fetching** (`backend/fin_trade/services/stock_data.py`)
 
 ```python
 def get_benchmark_performance(self, symbol: str = "SPY", start_date: date, end_date: date) -> pd.DataFrame:
@@ -103,7 +103,7 @@ def get_benchmark_performance(self, symbol: str = "SPY", start_date: date, end_d
     """
 ```
 
-**2. Add portfolio comparison service** (`src/fin_trade/services/comparison.py` - new file)
+**2. Add portfolio comparison service** (`backend/fin_trade/services/comparison.py` - new file)
 
 ```python
 class ComparisonService:
@@ -124,13 +124,13 @@ class ComparisonService:
         """
 ```
 
-**3. Update performance chart** (`src/fin_trade/pages/portfolio_detail.py`)
+**3. Update performance chart** (`backend/fin_trade/pages/portfolio_detail.py`)
 
 - Add toggle: "Show S&P 500 benchmark"
 - When enabled, overlay SPY normalized return on the chart
 - Add secondary y-axis or normalize both to percentage returns
 
-**4. Add comparison page** (`src/fin_trade/pages/comparison.py` - new file)
+**4. Add comparison page** (`backend/fin_trade/pages/comparison.py` - new file)
 
 - Multi-select: choose 2+ portfolios to compare
 - Normalized performance chart (all rebased to 100 at start)
@@ -142,7 +142,7 @@ class ComparisonService:
   | Max Drawdown | -8% | -15% | -10% |
   | Win Rate | 65% | 45% | N/A |
 
-**5. Update navigation** (`src/fin_trade/app.py`)
+**5. Update navigation** (`backend/fin_trade/app.py`)
 
 - Add "Compare" page to sidebar navigation
 
@@ -150,11 +150,11 @@ class ComparisonService:
 
 | File | Changes |
 |------|---------|
-| `src/fin_trade/services/stock_data.py` | Add `get_benchmark_performance()` |
-| `src/fin_trade/services/comparison.py` | New file: ComparisonService |
-| `src/fin_trade/pages/portfolio_detail.py` | Add benchmark overlay toggle |
-| `src/fin_trade/pages/comparison.py` | New file: comparison page |
-| `src/fin_trade/app.py` | Add comparison page to navigation |
+| `backend/fin_trade/services/stock_data.py` | Add `get_benchmark_performance()` |
+| `backend/fin_trade/services/comparison.py` | New file: ComparisonService |
+| `backend/fin_trade/pages/portfolio_detail.py` | Add benchmark overlay toggle |
+| `backend/fin_trade/pages/comparison.py` | New file: comparison page |
+| `backend/fin_trade/app.py` | Add comparison page to navigation |
 | `tests/test_comparison_service.py` | New file: comparison tests |
 
 #### Edge Cases
@@ -174,7 +174,7 @@ class ComparisonService:
 
 #### Implementation Plan
 
-**1. Enhance ExecutionLogService** (`src/fin_trade/services/execution_log.py`)
+**1. Enhance ExecutionLogService** (`backend/fin_trade/services/execution_log.py`)
 
 ```python
 def get_execution_with_context(self, execution_id: int) -> dict:
@@ -197,7 +197,7 @@ def get_recommendation_outcomes(self, execution_id: int) -> list[dict]:
     """
 ```
 
-**2. Add execution history tab** (`src/fin_trade/pages/portfolio_detail.py`)
+**2. Add execution history tab** (`backend/fin_trade/pages/portfolio_detail.py`)
 
 - New tab: "Execution History" (rename current "Trade History" to "Trade Log")
 - Timeline view of executions:
@@ -221,7 +221,7 @@ def get_recommendation_outcomes(self, execution_id: int) -> list[dict]:
   - Research gathered
   - Tokens used, duration
 
-**4. Parse markdown logs** (`src/fin_trade/services/execution_log.py`)
+**4. Parse markdown logs** (`backend/fin_trade/services/execution_log.py`)
 
 - The markdown log files contain rich context not in SQLite
 - Add function to parse and extract sections from log files:
@@ -233,8 +233,8 @@ def get_recommendation_outcomes(self, execution_id: int) -> list[dict]:
 
 | File | Changes |
 |------|---------|
-| `src/fin_trade/services/execution_log.py` | Add context and outcome functions |
-| `src/fin_trade/pages/portfolio_detail.py` | Add execution history tab and detail view |
+| `backend/fin_trade/services/execution_log.py` | Add context and outcome functions |
+| `backend/fin_trade/pages/portfolio_detail.py` | Add execution history tab and detail view |
 | `tests/test_execution_log.py` | Add tests for new functions |
 
 #### Edge Cases
@@ -254,7 +254,7 @@ def get_recommendation_outcomes(self, execution_id: int) -> list[dict]:
 
 #### Implementation Plan
 
-**1. Add Ollama provider** (`src/fin_trade/services/llm_provider.py`)
+**1. Add Ollama provider** (`backend/fin_trade/services/llm_provider.py`)
 
 ```python
 class OllamaProvider(LLMProvider):
@@ -274,7 +274,7 @@ class OllamaProvider(LLMProvider):
         return False
 ```
 
-**2. Update provider factory** (`src/fin_trade/services/llm_provider.py`)
+**2. Update provider factory** (`backend/fin_trade/services/llm_provider.py`)
 
 ```python
 def create_provider(provider_name: str, model: str, **kwargs) -> LLMProvider:
@@ -284,7 +284,7 @@ def create_provider(provider_name: str, model: str, **kwargs) -> LLMProvider:
     # ... existing providers
 ```
 
-**3. Update portfolio config model** (`src/fin_trade/models/portfolio.py`)
+**3. Update portfolio config model** (`backend/fin_trade/models/portfolio.py`)
 
 ```python
 @dataclass
@@ -293,7 +293,7 @@ class PortfolioConfig:
     ollama_base_url: str = "http://localhost:11434"  # Only used if llm_provider == "ollama"
 ```
 
-**4. Handle no web search in agents** (`src/fin_trade/agents/nodes/research.py`)
+**4. Handle no web search in agents** (`backend/fin_trade/agents/nodes/research.py`)
 
 - Check if provider supports web search
 - If not, skip web search step and use only:
@@ -302,7 +302,7 @@ class PortfolioConfig:
   - Holdings context
 - Add warning in UI that research capabilities are limited
 
-**5. Add Ollama health check** (`src/fin_trade/services/llm_provider.py`)
+**5. Add Ollama health check** (`backend/fin_trade/services/llm_provider.py`)
 
 ```python
 def check_ollama_status(base_url: str = "http://localhost:11434") -> dict:
@@ -312,7 +312,7 @@ def check_ollama_status(base_url: str = "http://localhost:11434") -> dict:
     """
 ```
 
-**6. UI for Ollama setup** (`src/fin_trade/pages/system_health.py`)
+**6. UI for Ollama setup** (`backend/fin_trade/pages/system_health.py`)
 
 - Show Ollama connection status
 - List available local models
@@ -322,10 +322,10 @@ def check_ollama_status(base_url: str = "http://localhost:11434") -> dict:
 
 | File | Changes |
 |------|---------|
-| `src/fin_trade/services/llm_provider.py` | Add OllamaProvider, health check |
-| `src/fin_trade/models/portfolio.py` | Add ollama_base_url field |
-| `src/fin_trade/agents/nodes/research.py` | Handle no web search |
-| `src/fin_trade/pages/system_health.py` | Add Ollama status display |
+| `backend/fin_trade/services/llm_provider.py` | Add OllamaProvider, health check |
+| `backend/fin_trade/models/portfolio.py` | Add ollama_base_url field |
+| `backend/fin_trade/agents/nodes/research.py` | Handle no web search |
+| `backend/fin_trade/pages/system_health.py` | Add Ollama status display |
 | `tests/test_llm_provider.py` | Add Ollama provider tests (mocked) |
 
 #### Edge Cases
@@ -346,7 +346,7 @@ def check_ollama_status(base_url: str = "http://localhost:11434") -> dict:
 
 #### Implementation Plan
 
-**1. Add notes table to SQLite** (`src/fin_trade/services/execution_log.py`)
+**1. Add notes table to SQLite** (`backend/fin_trade/services/execution_log.py`)
 
 ```sql
 CREATE TABLE IF NOT EXISTS execution_notes (
@@ -361,7 +361,7 @@ CREATE TABLE IF NOT EXISTS execution_notes (
 );
 ```
 
-**2. Add note service methods** (`src/fin_trade/services/execution_log.py`)
+**2. Add note service methods** (`backend/fin_trade/services/execution_log.py`)
 
 ```python
 def add_note(self, portfolio_name: str, note_text: str,
@@ -380,14 +380,14 @@ def delete_note(self, note_id: int):
     """Delete a note."""
 ```
 
-**3. Add note UI in execution history** (`src/fin_trade/pages/portfolio_detail.py`)
+**3. Add note UI in execution history** (`backend/fin_trade/pages/portfolio_detail.py`)
 
 - "Add Note" button next to each execution
 - Expandable text area for note content
 - Tag input (comma-separated or chip-style)
 - Common tags as quick-select: "Earnings", "Fed Decision", "Market Correction", "Strategy Tweak"
 
-**4. Show notes on performance chart** (`src/fin_trade/pages/portfolio_detail.py`)
+**4. Show notes on performance chart** (`backend/fin_trade/pages/portfolio_detail.py`)
 
 - Add markers/annotations on the chart at note dates
 - Hover to see note preview
@@ -403,8 +403,8 @@ def delete_note(self, note_id: int):
 
 | File | Changes |
 |------|---------|
-| `src/fin_trade/services/execution_log.py` | Add notes table and CRUD methods |
-| `src/fin_trade/pages/portfolio_detail.py` | Add note UI in execution history and chart |
+| `backend/fin_trade/services/execution_log.py` | Add notes table and CRUD methods |
+| `backend/fin_trade/pages/portfolio_detail.py` | Add note UI in execution history and chart |
 | `tests/test_execution_log.py` | Add note CRUD tests |
 
 #### Edge Cases
@@ -424,7 +424,7 @@ def delete_note(self, note_id: int):
 
 #### Implementation Plan
 
-**1. Add asset class to portfolio config** (`src/fin_trade/models/portfolio.py`)
+**1. Add asset class to portfolio config** (`backend/fin_trade/models/portfolio.py`)
 
 ```python
 from enum import Enum
@@ -439,7 +439,7 @@ class PortfolioConfig:
     asset_class: AssetClass = AssetClass.STOCKS
 ```
 
-**2. Update Holding model for fractional units** (`src/fin_trade/models/portfolio.py`)
+**2. Update Holding model for fractional units** (`backend/fin_trade/models/portfolio.py`)
 
 ```python
 @dataclass
@@ -451,7 +451,7 @@ class Holding:
     # ... existing fields
 ```
 
-**3. Add crypto ticker validation** (`src/fin_trade/services/security.py`)
+**3. Add crypto ticker validation** (`backend/fin_trade/services/security.py`)
 
 ```python
 CRYPTO_SUFFIXES = ["-USD", "-EUR", "-GBP"]
@@ -470,7 +470,7 @@ def validate_ticker_for_asset_class(self, ticker: str, asset_class: AssetClass) 
     return True
 ```
 
-**4. Skip stock-specific market data for crypto** (`src/fin_trade/services/market_data.py`)
+**4. Skip stock-specific market data for crypto** (`backend/fin_trade/services/market_data.py`)
 
 ```python
 def get_holdings_context(self, holdings: list, asset_class: AssetClass) -> dict:
@@ -484,7 +484,7 @@ def get_holdings_context(self, holdings: list, asset_class: AssetClass) -> dict:
     # ... existing stock logic
 ```
 
-**5. Separate prompt template for crypto** (`src/fin_trade/prompts/crypto_agent.py` - new file)
+**5. Separate prompt template for crypto** (`backend/fin_trade/prompts/crypto_agent.py` - new file)
 
 ```python
 CRYPTO_SYSTEM_PROMPT = """
@@ -505,7 +505,7 @@ Available Cash: ${cash:.2f}
 """
 ```
 
-**6. Add appropriate benchmark for crypto** (`src/fin_trade/services/comparison.py`)
+**6. Add appropriate benchmark for crypto** (`backend/fin_trade/services/comparison.py`)
 
 ```python
 def get_default_benchmark(self, asset_class: AssetClass) -> str:
@@ -515,7 +515,7 @@ def get_default_benchmark(self, asset_class: AssetClass) -> str:
     return "SPY"
 ```
 
-**7. Update UI for crypto portfolios** (`src/fin_trade/pages/portfolio_detail.py`)
+**7. Update UI for crypto portfolios** (`backend/fin_trade/pages/portfolio_detail.py`)
 
 ```python
 def get_unit_label(asset_class: AssetClass) -> str:
@@ -556,12 +556,12 @@ agent_mode: langgraph
 
 | File | Changes |
 |------|---------|
-| `src/fin_trade/models/portfolio.py` | Add `AssetClass` enum, change `quantity` to float |
-| `src/fin_trade/services/security.py` | Add `is_crypto_ticker()`, `validate_ticker_for_asset_class()` |
-| `src/fin_trade/services/market_data.py` | Skip stock-specific data for crypto |
-| `src/fin_trade/services/comparison.py` | Add `get_default_benchmark()` |
-| `src/fin_trade/prompts/crypto_agent.py` | New file: crypto-specific prompt template |
-| `src/fin_trade/pages/portfolio_detail.py` | Update UI labels and quantity formatting |
+| `backend/fin_trade/models/portfolio.py` | Add `AssetClass` enum, change `quantity` to float |
+| `backend/fin_trade/services/security.py` | Add `is_crypto_ticker()`, `validate_ticker_for_asset_class()` |
+| `backend/fin_trade/services/market_data.py` | Skip stock-specific data for crypto |
+| `backend/fin_trade/services/comparison.py` | Add `get_default_benchmark()` |
+| `backend/fin_trade/prompts/crypto_agent.py` | New file: crypto-specific prompt template |
+| `backend/fin_trade/pages/portfolio_detail.py` | Update UI labels and quantity formatting |
 | `data/portfolios/crypto_momentum.yaml` | New example crypto strategy |
 | `tests/test_security_service.py` | Add crypto validation tests |
 

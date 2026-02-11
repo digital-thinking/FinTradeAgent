@@ -13,20 +13,23 @@
 *   **Testing**: Add unit tests if they are missing.
 
 ## Project Context
-**Agentic Trade Assistant** is a Streamlit application for managing AI-powered stock portfolios.
+**Agentic Trade Assistant** is a modern web application for managing AI-powered stock portfolios.
 
 ### Tech Stack
 *   **Python 3.12+** (Poetry)
-*   **Streamlit** (UI)
+*   **FastAPI** (Backend API)
+*   **Vue.js 3** (Frontend UI)
 *   **OpenAI/Anthropic** (LLM APIs)
 *   **yfinance** (Data)
 *   **pandas/plotly** (Analysis/Charts)
 
 ### Key Directories
-*   `src/fin_trade/app.py`: Main entry point.
-*   `src/fin_trade/models/`: Data structures.
-*   `src/fin_trade/services/`: Core logic (Portfolio, Agent, Stock Data).
-*   `src/fin_trade/pages/`: UI Views.
+*   `backend/main.py`: FastAPI application entry point.
+*   `backend/routers/`: API route handlers.
+*   `backend/services/`: Backend API services.
+*   `frontend/`: Vue.js application.
+*   `backend/fin_trade/models/`: Data structures.
+*   `backend/fin_trade/services/`: Core business logic (Portfolio, Agent, Stock Data).
 *   `data/`: Configuration and state storage.
 
 ## Configuration & Environment
@@ -37,8 +40,10 @@
 
 ## Common Workflows
 *   **New Strategy**: Add YAML to `data/portfolios/`.
-*   **Agent Logic**: Modify `src/fin_trade/services/agent.py`.
-*   **Run App**: `poetry run streamlit run src/fin_trade/app.py`.
+*   **Agent Logic**: Modify `backend/fin_trade/services/agent.py`.
+*   **Run Backend**: `cd backend && python main.py` or `uvicorn main:app --reload`.
+*   **Run Frontend**: `cd frontend && npm run dev`.
+*   **Production**: Use Docker Compose setup.
 
 ## Task Management
 *   Refer to `tasks.md` for current work packages.

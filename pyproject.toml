@@ -8,7 +8,6 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "streamlit>=1.40.0",
     "yfinance>=0.2.0",
     "anthropic>=0.40.0",
     "openai>=1.50.0",
@@ -23,6 +22,8 @@ dependencies = [
     "fastapi (>=0.128.6,<0.129.0)",
     "uvicorn[standard] (>=0.40.0,<0.41.0)",
     "websockets (>=16.0,<17.0)",
+    "psutil>=5.9.0",
+    "python-multipart>=0.0.6",
 ]
 
 
@@ -32,11 +33,11 @@ build-backend = "poetry.core.masonry.api"
 
 
 [tool.poetry]
-packages = [{include = "fin_trade", from = "src"}]
+packages = [{include = "fin_trade", from = "backend"}]
 
 
 [tool.poetry.scripts]
-fin-trade = "fin_trade.app:main"
+fin-trade = "backend.main:main"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -57,12 +58,8 @@ markers = [
 
 
 [tool.coverage.run]
-source = ["src/fin_trade"]
-omit = [
-    "src/fin_trade/app.py",
-    "src/fin_trade/pages/*",
-    "src/fin_trade/components/*",
-]
+source = ["backend"]
+omit = []
 
 [tool.coverage.report]
 exclude_lines = [

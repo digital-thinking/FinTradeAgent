@@ -1,0 +1,47 @@
+global:
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alertmanager@fintradeagent.com'
+  smtp_auth_username: 'alertmanager@fintradeagent.com'
+  smtp_auth_password: 'your_smtp_password'
+
+route:
+  group_by: ['alertname']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'web.hook'
+
+receivers:
+- name: 'web.hook'
+  webhook_configs:
+  - url: 'http://127.0.0.1:5001/'
+    send_resolved: true
+    http_config:
+      basic_auth:
+        username: 'admin'
+        password: 'password'
+
+- name: 'slack'
+  slack_configs:
+  - api_url: 'YOUR_SLACK_WEBHOOK_URL'
+    channel: '#alerts'
+    title: 'FinTradeAgent Alert'
+    text: 'Summary: {{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+    send_resolved: true
+
+- name: 'email'
+  email_configs:
+  - to: 'admin@fintradeagent.com'
+    subject: 'FinTradeAgent Alert: {{ .GroupLabels.alertname }}'
+    body: |
+      {{ range .Alerts }}
+      Alert: {{ .Annotations.summary }}
+      Description: {{ .Annotations.description }}
+      {{ end }}
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'dev', 'instance']

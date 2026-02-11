@@ -30,7 +30,7 @@ Auto-run strategies on their configured cadence (daily/weekly/monthly) without r
 - Essential for any meaningful long-term strategy comparison
 
 **Cons:**
-- Requires a background process separate from Streamlit (Streamlit reruns on interaction, not suited for background jobs)
+- Requires proper background task management with FastAPI and worker processes
 - Users may forget it's running and accumulate unexpected API costs
 - Error handling for unattended runs needs to be robust (network failures, API rate limits, invalid tickers)
 
@@ -225,4 +225,4 @@ The current RSI/MA/volume indicators give agents sufficient technical context. U
 Strategy design is the user's responsibility. Pre-built "winning strategies" would bias experimentation and set false expectations. The existing example portfolios are sufficient starting points.
 
 ### Mobile App
-Streamlit's responsive layout works acceptably on mobile browsers. A native mobile app would be a massive investment for an application that's fundamentally about reading dense financial data on a screen.
+The Vue.js frontend is fully responsive with mobile-first design and works excellently on mobile browsers. A native mobile app would be a massive investment for an application that's fundamentally about reading dense financial data on a screen.

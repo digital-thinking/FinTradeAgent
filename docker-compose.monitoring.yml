@@ -1,0 +1,135 @@
+# Additional monitoring services to extend docker-compose.production.yml
+# Usage: docker-compose -f docker-compose.production.yml -f docker-compose.monitoring.yml up
+
+version: '3.8'
+
+services:
+  # Node Exporter (system metrics)
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: fintradeagent-node-exporter
+    restart: unless-stopped
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    networks:
+      - fintradeagent-network
+    ports:
+      - "9100:9100"
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    cpus: '0.1'
+
+  # PostgreSQL Exporter
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: fintradeagent-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "postgresql://fintradeagent:${DATABASE_PASSWORD}@db:5432/fintradeagent_prod?sslmode=disable"
+      PG_EXPORTER_INCLUDE_DATABASES: "fintradeagent_prod"
+    networks:
+      - fintradeagent-network
+    ports:
+      - "9187:9187"
+    depends_on:
+      - db
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    cpus: '0.1'
+
+  # Redis Exporter
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: fintradeagent-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+    networks:
+      - fintradeagent-network
+    ports:
+      - "9121:9121"
+    depends_on:
+      - redis
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    cpus: '0.1'
+
+  # cAdvisor (container metrics)
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: fintradeagent-cadvisor
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - fintradeagent-network
+    ports:
+      - "8080:8080"
+    mem_limit: 256m
+    cpus: '0.2'
+
+  # Nginx Prometheus Exporter
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    container_name: fintradeagent-nginx-exporter
+    restart: unless-stopped
+    command:
+      - '-nginx.scrape-uri=http://nginx:8080/nginx_status'
+    networks:
+      - fintradeagent-network
+    ports:
+      - "9113:9113"
+    depends_on:
+      - nginx
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 32m
+    cpus: '0.05'
+
+  # Alertmanager (for handling alerts)
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: fintradeagent-alertmanager
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+      - '--cluster.advertise-address=0.0.0.0:9093'
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    networks:
+      - fintradeagent-network
+    ports:
+      - "9093:9093"
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    cpus: '0.1'
+
+volumes:
+  alertmanager_data:
+    driver: local
+
+networks:
+  fintradeagent-network:
+    external: true
