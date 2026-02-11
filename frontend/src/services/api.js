@@ -137,9 +137,9 @@ export const getSystemHealth = () => api.get('/api/system/health').then(unwrap)
 export const getSchedulerStatus = () => api.get('/api/system/scheduler').then(unwrap)
 
 // WebSocket URL helpers
-export const getPortfolioWebSocketUrl = (portfolioName) => `ws://localhost:8000/ws/${portfolioName}`
-export const getSystemWebSocketUrl = () => 'ws://localhost:8000/ws/system'  
-export const getTradesWebSocketUrl = () => 'ws://localhost:8000/ws/trades'
+export const getPortfolioWebSocketUrl = (portfolioName) => `ws://localhost:8000/api/agents/ws/${portfolioName}`
+export const getSystemWebSocketUrl = () => 'ws://localhost:8000/api/agents/ws/system'
+export const getTradesWebSocketUrl = () => 'ws://localhost:8000/api/agents/ws/trades'
 
 // Notification helpers for WebSocket integration
 export const subscribeToPortfolioUpdates = (portfolioName, callback) => {

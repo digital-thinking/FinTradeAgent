@@ -75,8 +75,8 @@ cd backend && python main.py
 # Backend runs on http://localhost:8000
 
 # Run the frontend (separate terminal)
-cd frontend && npm run dev  
-# Frontend runs on http://localhost:5173
+cd frontend && npm run dev
+# Frontend runs on http://localhost:3000
 ```
 
 ## Configuration

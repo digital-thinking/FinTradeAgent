@@ -128,11 +128,11 @@ class PerformanceMiddleware(BaseHTTPMiddleware):
         if len(self.stats["slow_requests"]) > 100:
             self.stats["slow_requests"] = self.stats["slow_requests"][-100:]
         
-        print(f"🐌 Slow request: {endpoint} took {response_time:.4f}s")
+        print(f"Slow request: {endpoint} took {response_time:.4f}s")
     
     async def _log_error(self, endpoint: str, response_time: float, error: str):
         """Log request errors."""
-        print(f"❌ Error in {endpoint} after {response_time:.4f}s: {error}")
+        print(f"Error in {endpoint} after {response_time:.4f}s: {error}")
     
     def get_stats(self) -> Dict[str, Any]:
         """Get current performance statistics."""
@@ -242,6 +242,6 @@ class AsyncPerformanceMonitor:
     
     async def _send_alert(self, message: str):
         """Send performance alert."""
-        print(f"🚨 Performance Alert: {message}")
+        print(f"Performance Alert: {message}")
         # In a real implementation, this would send notifications
         # to monitoring systems like Slack, email, etc.

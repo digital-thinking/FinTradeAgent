@@ -77,3 +77,22 @@ async def websocket_endpoint(websocket: WebSocket, portfolio_name: str):
     finally:
         if connection_id in active_connections:
             del active_connections[connection_id]
+
+
+@router.delete("/{portfolio_name}/execute/{execution_id}")
+async def cancel_execution(portfolio_name: str, execution_id: str):
+    """Cancel an active agent execution by closing its WebSocket connection."""
+    closed = []
+    for conn_id, ws in list(active_connections.items()):
+        if conn_id.startswith(f"{portfolio_name}_"):
+            try:
+                await ws.close(1000, "Execution cancelled")
+            except Exception:
+                pass
+            del active_connections[conn_id]
+            closed.append(conn_id)
+
+    if not closed:
+        raise HTTPException(status_code=404, detail=f"No active execution found for portfolio: {portfolio_name}")
+
+    return {"status": "cancelled", "portfolio": portfolio_name, "execution_id": execution_id}

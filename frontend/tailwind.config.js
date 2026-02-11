@@ -10,7 +10,6 @@ export default {
       colors: {
         // Existing colors (for backward compatibility)
         ink: '#0f172a',
-        slate: '#1f2937',
         mist: '#e5e7eb',
         accent: '#0ea5e9',
         mint: '#10b981',

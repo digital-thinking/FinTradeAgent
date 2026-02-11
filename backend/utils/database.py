@@ -158,7 +158,7 @@ class DatabaseOptimizer:
                 })
         
         if slow_queries:
-            print("🐌 Slow queries detected:")
+            print("Slow queries detected:")
             for sq in slow_queries:
                 print(f"  {sq['type']}: {sq['avg_time']:.4f}s avg ({sq['slow_count']}/{sq['count']} slow)")
         
@@ -167,7 +167,7 @@ class DatabaseOptimizer:
     def clear_cache(self):
         """Clear query cache."""
         self.query_cache.clear()
-        print("🧹 Database query cache cleared")
+        print("Database query cache cleared")
     
     async def _get_stats_impl(self) -> Dict[str, Any]:
         """Get database performance statistics."""
@@ -228,7 +228,6 @@ class DatabaseOptimizer:
         return 85.0  # Mock value
     
     @classmethod
-    @classmethod
     async def get_stats(cls) -> Dict[str, Any]:
         """Class method to get stats from global instance."""
         global db_optimizer
@@ -248,7 +247,7 @@ class DatabaseOptimizer:
     async def close_pool(cls):
         """Close database connection pool."""
         # In real implementation, properly close all connections
-        print("🔌 Database connection pool closed")
+        print("Database connection pool closed")
 
 
 class QueryBuilder:

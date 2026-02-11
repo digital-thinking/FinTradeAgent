@@ -52,14 +52,14 @@ class MemoryOptimizer:
         self.monitoring_thread.daemon = True
         self.monitoring_thread.start()
         
-        print("🧠 Memory monitoring started")
+        print("Memory monitoring started")
     
     def stop_monitoring(self):
         """Stop memory monitoring thread."""
         self.monitoring_enabled = False
         if self.monitoring_thread:
             self.monitoring_thread.join(timeout=1)
-        print("🧠 Memory monitoring stopped")
+        print("Memory monitoring stopped")
     
     def _monitor_memory(self):
         """Background memory monitoring loop."""
@@ -122,21 +122,21 @@ class MemoryOptimizer:
         """Check for memory usage alerts."""
         # High system memory usage
         if stats.memory_percent > 85:
-            print(f"⚠️ High system memory usage: {stats.memory_percent:.1f}%")
+            print(f"WARNING: High system memory usage: {stats.memory_percent:.1f}%")
             self.trigger_cleanup()
         
         # High process memory growth
         memory_growth = stats.process_memory - self.baseline_memory
         if memory_growth > 500 * 1024 * 1024:  # 500MB growth
-            print(f"⚠️ Process memory grew by {memory_growth / (1024*1024):.1f}MB")
+            print(f"WARNING: Process memory grew by {memory_growth / (1024*1024):.1f}MB")
         
         # Too many large objects
         if stats.large_objects > 100:
-            print(f"⚠️ High number of large objects: {stats.large_objects}")
+            print(f"WARNING: High number of large objects: {stats.large_objects}")
     
     def trigger_cleanup(self, force: bool = False):
         """Trigger memory cleanup operations."""
-        print("🧹 Starting memory cleanup...")
+        print("Starting memory cleanup...")
         
         initial_memory = self.process.memory_info().rss
         
@@ -158,7 +158,7 @@ class MemoryOptimizer:
         final_memory = self.process.memory_info().rss
         memory_freed = initial_memory - final_memory
         
-        print(f"🧹 Memory cleanup complete: freed {memory_freed / (1024*1024):.2f}MB")
+        print(f"Memory cleanup complete: freed {memory_freed / (1024*1024):.2f}MB")
         print(f"   - GC collected: {sum(collected_objects)} objects")
         
         return memory_freed
@@ -178,7 +178,7 @@ class MemoryOptimizer:
                 cleared_pools += 1
         
         if cleared_pools > 0:
-            print(f"🧹 Cleared {cleared_pools} memory pools")
+            print(f"Cleared {cleared_pools} memory pools")
     
     def _compact_memory(self):
         """Attempt to compact memory allocations."""
@@ -195,7 +195,7 @@ class MemoryOptimizer:
             if hasattr(obj, '__sizeof__') and obj.__sizeof__() > 1024*1024:  # > 1MB
                 ref = weakref.ref(obj)
                 self.large_objects.add(ref)
-                print(f"📊 Registered large object: {name} ({obj.__sizeof__() / (1024*1024):.2f}MB)")
+                print(f"Registered large object: {name} ({obj.__sizeof__() / (1024*1024):.2f}MB)")
         except (TypeError, AttributeError):
             # Skip objects that can't be sized
             pass
@@ -334,7 +334,7 @@ class MemoryOptimizer:
         for generation in range(3):
             gc.collect(generation)
         
-        print("🧹 Final memory cleanup completed")
+        print("Final memory cleanup completed")
 
 
 # Global memory optimizer instance
@@ -366,6 +366,6 @@ class MemoryMonitor:
         memory_delta = end_memory - self.start_memory
         
         if memory_delta > self.alert_threshold:
-            print(f"⚠️ High memory usage in {self.name}: {memory_delta / (1024*1024):.2f}MB")
+            print(f"WARNING: High memory usage in {self.name}: {memory_delta / (1024*1024):.2f}MB")
         
         return False

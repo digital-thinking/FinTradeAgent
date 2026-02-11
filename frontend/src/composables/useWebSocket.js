@@ -219,7 +219,7 @@ export function useWebSocket(url, options = {}) {
 
 // Portfolio-specific WebSocket composable
 export function usePortfolioWebSocket(portfolioName, options = {}) {
-  const wsUrl = `ws://localhost:8000/ws/${portfolioName}`
+  const wsUrl = `ws://localhost:8000/api/agents/ws/${portfolioName}`
   return useWebSocket(wsUrl, {
     reconnect: true,
     heartbeat: true,
@@ -229,7 +229,7 @@ export function usePortfolioWebSocket(portfolioName, options = {}) {
 
 // System WebSocket composable
 export function useSystemWebSocket(options = {}) {
-  const wsUrl = 'ws://localhost:8000/ws/system'
+  const wsUrl = 'ws://localhost:8000/api/agents/ws/system'
   return useWebSocket(wsUrl, {
     reconnect: true,
     heartbeat: true,
@@ -239,7 +239,7 @@ export function useSystemWebSocket(options = {}) {
 
 // Trades WebSocket composable
 export function useTradesWebSocket(options = {}) {
-  const wsUrl = 'ws://localhost:8000/ws/trades'
+  const wsUrl = 'ws://localhost:8000/api/agents/ws/trades'
   return useWebSocket(wsUrl, {
     reconnect: true,
     heartbeat: true,

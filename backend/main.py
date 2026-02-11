@@ -6,10 +6,11 @@ from contextlib import asynccontextmanager
 from typing import Dict, Any
 
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response as StarletteResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from backend.routers import portfolios, agents, trades, analytics, system
 from backend.middleware.performance import PerformanceMiddleware
@@ -31,7 +32,7 @@ performance_metrics = {
 async def lifespan(app: FastAPI):
     """Application lifespan with startup and shutdown optimizations."""
     # Startup
-    print("🚀 Starting FinTradeAgent API with performance optimizations...")
+    print("Starting FinTradeAgent API with performance optimizations...")
     
     # Initialize database connection pool
     await DatabaseOptimizer.initialize_pool()
@@ -42,12 +43,12 @@ async def lifespan(app: FastAPI):
     # Warm up critical services
     await warm_up_services()
     
-    print("✅ FinTradeAgent API started successfully")
+    print("FinTradeAgent API started successfully")
     
     yield
     
     # Shutdown
-    print("🛑 Shutting down FinTradeAgent API...")
+    print("Shutting down FinTradeAgent API...")
     
     # Close database connections
     await DatabaseOptimizer.close_pool()
@@ -55,7 +56,7 @@ async def lifespan(app: FastAPI):
     # Clean up memory
     MemoryOptimizer.cleanup()
     
-    print("✅ FinTradeAgent API shutdown complete")
+    print("FinTradeAgent API shutdown complete")
 
 app = FastAPI(
     title="FinTradeAgent API",
@@ -66,20 +67,10 @@ app = FastAPI(
     redoc_url="/redoc" if __name__ != "__main__" else None
 )
 
-# Performance middleware (order matters)
+# Middleware (order matters - last added runs first)
 app.add_middleware(GZipMiddleware, minimum_size=1000)  # Compress responses > 1KB
 app.add_middleware(PerformanceMiddleware)  # Custom performance monitoring
 app.add_middleware(CacheMiddleware)  # Response caching
-
-# CORS configuration for Vue.js frontend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
-    max_age=3600,  # Cache preflight requests for 1 hour
-)
 
 # Custom middleware for request/response optimization
 class OptimizationMiddleware(BaseHTTPMiddleware):
@@ -114,7 +105,7 @@ class OptimizationMiddleware(BaseHTTPMiddleware):
             process_time = time.time() - start_time
             
             # Log error with performance context
-            print(f"❌ Request {request_id} failed in {process_time:.4f}s: {str(e)}")
+            print(f"Request {request_id} failed in {process_time:.4f}s: {str(e)}")
             
             # Return structured error response
             return JSONResponse(
@@ -131,6 +122,58 @@ class OptimizationMiddleware(BaseHTTPMiddleware):
             )
 
 app.add_middleware(OptimizationMiddleware)
+
+
+# Pure ASGI CORS middleware — handles preflight at the lowest level,
+# bypassing any BaseHTTPMiddleware interference.
+CORS_ALLOW_ORIGINS = {
+    "http://localhost:3000", "http://127.0.0.1:3000",
+    "http://localhost:5173", "http://127.0.0.1:5173",
+}
+
+class CORSMiddleware:
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers", []))
+        origin = headers.get(b"origin", b"").decode()
+
+        # Handle preflight OPTIONS requests
+        if scope["method"] == "OPTIONS":
+            preflight_headers = {
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Max-Age": "3600",
+            }
+            if origin and (origin in CORS_ALLOW_ORIGINS or not CORS_ALLOW_ORIGINS):
+                preflight_headers["Access-Control-Allow-Origin"] = origin
+                preflight_headers["Access-Control-Allow-Credentials"] = "true"
+            else:
+                preflight_headers["Access-Control-Allow-Origin"] = "*"
+            response = StarletteResponse(status_code=200, headers=preflight_headers)
+            await response(scope, receive, send)
+            return
+
+        # For regular requests, add CORS headers to the response
+        async def send_with_cors(message):
+            if message["type"] == "http.response.start":
+                response_headers = list(message.get("headers", []))
+                if origin and origin in CORS_ALLOW_ORIGINS:
+                    response_headers.append((b"access-control-allow-origin", origin.encode()))
+                    response_headers.append((b"access-control-allow-credentials", b"true"))
+                else:
+                    response_headers.append((b"access-control-allow-origin", b"*"))
+                message = {**message, "headers": response_headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_cors)
+
+app.add_middleware(CORSMiddleware)
 
 # Include routers with optimized configuration
 app.include_router(portfolios.router, tags=["Portfolios"])
@@ -183,24 +226,29 @@ async def warm_up_services():
             # Example: initialize_ml_models(),
             asyncio.sleep(0.1)  # Placeholder
         )
-        print("🔥 Services warmed up successfully")
+        print("Services warmed up successfully")
     except Exception as e:
-        print(f"⚠️ Service warm-up failed: {e}")
+        print(f"Service warm-up failed: {e}")
 
 if __name__ == "__main__":
     import uvicorn
-    
-    # Production-optimized uvicorn configuration
-    uvicorn.run(
-        "backend.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=False,  # Disable reload in production
-        workers=1,  # Single worker for development
-        loop="uvloop",  # High-performance event loop
-        http="httptools",  # High-performance HTTP parser
-        log_level="info",
-        access_log=True,
-        server_header=False,  # Hide server information
-        date_header=True
-    )
+    import sys
+
+    uvicorn_kwargs = {
+        "app": "backend.main:app",
+        "host": "0.0.0.0",
+        "port": 8000,
+        "reload": True,
+        "workers": 1,
+        "log_level": "info",
+        "access_log": True,
+        "server_header": False,
+        "date_header": True,
+    }
+
+    # uvloop/httptools are not available on Windows
+    if sys.platform != "win32":
+        uvicorn_kwargs["loop"] = "uvloop"
+        uvicorn_kwargs["http"] = "httptools"
+
+    uvicorn.run(**uvicorn_kwargs)

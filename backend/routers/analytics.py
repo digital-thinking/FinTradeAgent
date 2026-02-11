@@ -18,7 +18,7 @@ async def get_execution_logs(limit: int = 50):
     """Get execution history logs."""
     try:
         service = ExecutionLogService()
-        logs = service.get_recent_logs(limit=limit)
+        logs = service.get_logs(limit=limit)
         
         return {
             "logs": [
@@ -47,7 +47,7 @@ async def get_dashboard_data():
         service = ExecutionLogService()
         
         # Get recent stats
-        recent_logs = service.get_recent_logs(limit=10)
+        recent_logs = service.get_logs(limit=10)
         
         return {
             "total_executions": len(recent_logs),

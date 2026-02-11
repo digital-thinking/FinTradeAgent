@@ -31,7 +31,7 @@ class PortfolioStateResponse(BaseModel):
     cash: float
     holdings: List[HoldingResponse]
     total_value: float
-    last_updated: datetime
+    last_updated: Optional[datetime] = None
 
 
 class PortfolioResponse(BaseModel):
@@ -46,7 +46,7 @@ class PortfolioSummary(BaseModel):
     total_value: float
     cash: float
     holdings_count: int
-    last_updated: datetime
+    last_updated: Optional[datetime] = None
     scheduler_enabled: bool
 
 

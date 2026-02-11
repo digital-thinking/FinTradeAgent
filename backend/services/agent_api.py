@@ -89,9 +89,9 @@ class AgentAPIService:
                 for trade in recommendation.trades:
                     trades.append(TradeRecommendation(
                         action=trade.action,
-                        symbol=trade.symbol, 
+                        symbol=trade.ticker,
                         quantity=trade.quantity,
-                        price=trade.price,
+                        price=None,
                         reasoning=trade.reasoning or ""
                     ))
             
