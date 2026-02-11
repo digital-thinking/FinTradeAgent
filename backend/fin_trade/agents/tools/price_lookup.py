@@ -2,7 +2,7 @@
 
 import re
 
-from fin_trade.services.security import SecurityService
+from backend.fin_trade.services.security import SecurityService
 
 
 def extract_tickers_from_text(text: str) -> list[str]:

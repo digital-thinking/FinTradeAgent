@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from fin_trade.models import AssetClass
+from backend.fin_trade.models import AssetClass
 
 if TYPE_CHECKING:
-    from fin_trade.services.portfolio import PortfolioService
-    from fin_trade.services.stock_data import StockDataService
+    from backend.fin_trade.services.portfolio import PortfolioService
+    from backend.fin_trade.services.stock_data import StockDataService
 
 
 @dataclass

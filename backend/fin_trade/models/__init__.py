@@ -1,10 +1,10 @@
 """Data models for the Fin Trade application."""
 
-from fin_trade.models.agent import (
+from backend.fin_trade.models.agent import (
     AgentRecommendation,
     TradeRecommendation,
 )
-from fin_trade.models.portfolio import (
+from backend.fin_trade.models.portfolio import (
     AssetClass,
     DebateConfig,
     Holding,

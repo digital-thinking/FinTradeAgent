@@ -4,7 +4,7 @@ from typing import Annotated, TypedDict
 
 from langgraph.graph.message import add_messages
 
-from fin_trade.models import AgentRecommendation, PortfolioConfig, PortfolioState
+from backend.fin_trade.models import AgentRecommendation, PortfolioConfig, PortfolioState
 
 
 class SimpleAgentState(TypedDict):

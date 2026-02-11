@@ -9,7 +9,7 @@ from typing import Literal
 
 import yaml
 
-from fin_trade.models import (
+from backend.fin_trade.models import (
     AssetClass,
     DebateConfig,
     Holding,
@@ -17,7 +17,10 @@ from fin_trade.models import (
     PortfolioState,
     Trade,
 )
-from fin_trade.services.security import SecurityService
+from backend.fin_trade.services.security import SecurityService
+
+# Global data directory for portfolio service (used in tests)
+DATA_DIR = Path("data")
 
 
 class PortfolioService:

@@ -6,19 +6,19 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from fin_trade.models import (
+from backend.fin_trade.models import (
     AgentRecommendation,
     AssetClass,
     PortfolioConfig,
     PortfolioState,
     TradeRecommendation,
 )
-from fin_trade.services.security import SecurityService
-from fin_trade.services.llm_provider import LLMProviderFactory
-from fin_trade.services.market_data import MarketDataService
-from fin_trade.services.reflection import ReflectionService
-from fin_trade.services.stock_data import StockDataService
-from fin_trade.prompts import CRYPTO_SYSTEM_PROMPT, SIMPLE_AGENT_PROMPT
+from backend.fin_trade.services.security import SecurityService
+from backend.fin_trade.services.llm_provider import LLMProviderFactory
+from backend.fin_trade.services.market_data import MarketDataService
+from backend.fin_trade.services.reflection import ReflectionService
+from backend.fin_trade.services.stock_data import StockDataService
+from backend.fin_trade.prompts import CRYPTO_SYSTEM_PROMPT, SIMPLE_AGENT_PROMPT
 
 # Load .env file from project root
 # agent.py -> services -> fin_trade -> src -> project_root

@@ -16,7 +16,7 @@ class TestAPIIntegration:
         portfolio_name = sample_portfolio_integration["name"]
         
         # Mock portfolio service path handling
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             # 1. CREATE - Test portfolio creation
             response = integration_client.post("/api/portfolios/", json=sample_portfolio_integration)
             assert response.status_code == 200
@@ -65,7 +65,7 @@ class TestAPIIntegration:
         """Test complete agent execution workflow through API layers."""
         portfolio_name = sample_portfolio_integration["name"]
         
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             # Setup: Create portfolio first
             response = integration_client.post("/api/portfolios/", json=sample_portfolio_integration)
             assert response.status_code == 200
@@ -119,7 +119,7 @@ class TestAPIIntegration:
         """Test complete trade management workflow through API layers."""
         portfolio_name = sample_portfolio_integration["name"]
         
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             # Setup: Create portfolio 
             response = integration_client.post("/api/portfolios/", json=sample_portfolio_integration)
             assert response.status_code == 200
@@ -280,7 +280,7 @@ class TestAPIIntegration:
                 errors.append(str(e))
         
         # Create multiple portfolios concurrently
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             portfolios = []
             for i in range(3):
                 portfolio = sample_portfolio_integration.copy()
@@ -312,7 +312,7 @@ class TestWebSocketIntegration:
         """Test WebSocket connection, execution, and disconnection."""
         portfolio_name = sample_portfolio_integration["name"]
         
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             # Setup: Create portfolio first
             response = integration_client.post("/api/portfolios/", json=sample_portfolio_integration)
             assert response.status_code == 200
@@ -408,7 +408,7 @@ class TestWebSocketIntegration:
         """Test WebSocket error handling and recovery."""
         portfolio_name = sample_portfolio_integration["name"]
         
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             # Setup: Create portfolio first
             response = integration_client.post("/api/portfolios/", json=sample_portfolio_integration)
             assert response.status_code == 200
@@ -434,7 +434,7 @@ class TestWebSocketIntegration:
         """Test multiple concurrent WebSocket connections."""
         portfolio_name = sample_portfolio_integration["name"]
         
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             # Setup: Create portfolio first
             response = integration_client.post("/api/portfolios/", json=sample_portfolio_integration)
             assert response.status_code == 200

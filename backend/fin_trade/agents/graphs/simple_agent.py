@@ -2,13 +2,13 @@
 
 from langgraph.graph import END, StateGraph
 
-from fin_trade.agents.nodes import (
+from backend.fin_trade.agents.nodes import (
     analysis_node,
     generate_trades_node,
     research_node,
     validate_node,
 )
-from fin_trade.agents.state import SimpleAgentState
+from backend.fin_trade.agents.state import SimpleAgentState
 
 MAX_RETRIES = 3
 

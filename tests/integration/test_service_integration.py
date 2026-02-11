@@ -15,7 +15,7 @@ class TestPortfolioWorkflowIntegration:
     def test_portfolio_creation_to_execution_workflow(self, temp_portfolio_dir, mock_external_services):
         """Test complete workflow: create portfolio → execute → trade → update."""
         # Mock the data directory
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             # Import services after patching DATA_DIR
             from backend.fin_trade.services.portfolio import PortfolioService
             from backend.fin_trade.services.agent import AgentService
@@ -115,7 +115,7 @@ class TestPortfolioWorkflowIntegration:
 
     def test_portfolio_performance_tracking_workflow(self, temp_portfolio_dir, mock_external_services):
         """Test portfolio performance tracking across multiple executions."""
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             from backend.fin_trade.services.portfolio import PortfolioService
             from backend.fin_trade.services.attribution import AttributionService
             from backend.fin_trade.models import PortfolioConfig, Trade
@@ -172,7 +172,7 @@ class TestAgentExecutionPipeline:
 
     def test_agent_execution_with_market_data_integration(self, temp_portfolio_dir, mock_external_services):
         """Test agent execution pipeline with market data integration."""
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             from backend.fin_trade.services.agent import AgentService
             from backend.fin_trade.services.portfolio import PortfolioService
             from backend.fin_trade.services.stock_data import StockDataService
@@ -251,7 +251,7 @@ class TestAgentExecutionPipeline:
 
     def test_agent_execution_with_langgraph_mode(self, temp_portfolio_dir, mock_external_services):
         """Test agent execution pipeline in LangGraph mode."""
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             from backend.fin_trade.services.agent import AgentService
             from backend.fin_trade.services.portfolio import PortfolioService
             from backend.fin_trade.models import PortfolioConfig
@@ -316,7 +316,7 @@ class TestTradeApplicationProcess:
 
     def test_trade_recommendation_to_execution_workflow(self, temp_portfolio_dir, mock_external_services):
         """Test workflow from trade recommendation to execution completion."""
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             from backend.fin_trade.services.portfolio import PortfolioService
             from backend.fin_trade.services.agent import AgentService
             from backend.fin_trade.models import PortfolioConfig, TradeRecommendation
@@ -395,7 +395,7 @@ class TestTradeApplicationProcess:
 
     def test_trade_validation_and_risk_management(self, temp_portfolio_dir, mock_external_services):
         """Test trade validation and risk management integration."""
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             from backend.fin_trade.services.portfolio import PortfolioService  
             from backend.fin_trade.models import PortfolioConfig
             
@@ -508,7 +508,7 @@ class TestSystemHealthMonitoring:
                 "timestamp": datetime.now().isoformat()
             })
         
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             from backend.fin_trade.services.portfolio import PortfolioService
             from backend.fin_trade.models import PortfolioConfig
             

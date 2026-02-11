@@ -9,10 +9,10 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 import yfinance as yf
-from fin_trade.models import AssetClass
+from backend.fin_trade.models import AssetClass
 
 if TYPE_CHECKING:
-    from fin_trade.services.security import SecurityService
+    from backend.fin_trade.services.security import SecurityService
 
 
 @dataclass

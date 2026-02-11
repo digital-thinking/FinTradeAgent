@@ -9,10 +9,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yfinance as yf
-from fin_trade.models import AssetClass
+from backend.fin_trade.models import AssetClass
 
 if TYPE_CHECKING:
-    from fin_trade.services.stock_data import StockDataService
+    from backend.fin_trade.services.stock_data import StockDataService
 
 CRYPTO_SUFFIXES = ("-USD", "-EUR", "-GBP")
 
@@ -44,7 +44,7 @@ class SecurityService:
 
         # Lazy import to avoid circular dependency
         if stock_data_service is None:
-            from fin_trade.services.stock_data import StockDataService
+            from backend.fin_trade.services.stock_data import StockDataService
             stock_data_service = StockDataService(data_dir=data_dir)
         self._stock_data_service = stock_data_service
 

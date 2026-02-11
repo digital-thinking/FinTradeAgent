@@ -15,7 +15,7 @@ class TestAPIServiceLayerIntegration:
         """Test complete frontend API service integration for portfolio operations."""
         portfolio_name = sample_portfolio_integration["name"]
         
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             
             # Simulate frontend API service calls matching Vue.js implementation
             api_base_url = "/api"
@@ -100,7 +100,7 @@ class TestAPIServiceLayerIntegration:
         """Test frontend API service integration for agent execution."""
         portfolio_name = sample_portfolio_integration["name"]
         
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             # Setup: Create portfolio first
             response = integration_client.post("/api/portfolios/", json=sample_portfolio_integration)
             assert response.status_code == 200
@@ -434,7 +434,7 @@ class TestWebSocketConnectionManagement:
         """Test complete WebSocket connection lifecycle from frontend perspective."""
         portfolio_name = sample_portfolio_integration["name"]
         
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             # Setup: Create portfolio first
             response = integration_client.post("/api/portfolios/", json=sample_portfolio_integration)
             assert response.status_code == 200
@@ -534,7 +534,7 @@ class TestWebSocketConnectionManagement:
         """Test WebSocket error handling and recovery from frontend perspective."""
         portfolio_name = sample_portfolio_integration["name"]
         
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             # Setup: Create portfolio first
             response = integration_client.post("/api/portfolios/", json=sample_portfolio_integration)
             assert response.status_code == 200
@@ -576,7 +576,7 @@ class TestWebSocketConnectionManagement:
         """Test management of multiple concurrent WebSocket connections."""
         portfolio_name = sample_portfolio_integration["name"]
         
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             # Setup: Create portfolio first
             response = integration_client.post("/api/portfolios/", json=sample_portfolio_integration)
             assert response.status_code == 200
@@ -643,7 +643,7 @@ class TestRealTimeUpdates:
         """Test real-time portfolio state updates across multiple frontend clients."""
         portfolio_name = sample_portfolio_integration["name"]
         
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             # Setup: Create portfolio first
             response = integration_client.post("/api/portfolios/", json=sample_portfolio_integration)
             assert response.status_code == 200
@@ -682,7 +682,7 @@ class TestRealTimeUpdates:
         """Test real-time execution progress updates across WebSocket connections."""
         portfolio_name = sample_portfolio_integration["name"]
         
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             # Setup: Create portfolio first
             response = integration_client.post("/api/portfolios/", json=sample_portfolio_integration)
             assert response.status_code == 200
@@ -825,7 +825,7 @@ class TestThemePersistenceAndStateManagement:
         """Test state management patterns that frontend would implement."""
         portfolio_name = sample_portfolio_integration["name"]
         
-        with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
+        with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             # Setup: Create portfolio
             response = integration_client.post("/api/portfolios/", json=sample_portfolio_integration)
             assert response.status_code == 200

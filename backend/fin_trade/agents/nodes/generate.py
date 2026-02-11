@@ -8,15 +8,15 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from fin_trade.agents.state import SimpleAgentState
-from fin_trade.agents.tools.price_lookup import (
+from backend.fin_trade.agents.state import SimpleAgentState
+from backend.fin_trade.agents.tools.price_lookup import (
     extract_tickers_from_text,
     fetch_buy_candidate_data,
     format_buy_candidates_for_prompt,
 )
-from fin_trade.models import AgentRecommendation, AssetClass, TradeRecommendation
-from fin_trade.prompts import GENERATE_TRADES_PROMPT
-from fin_trade.services.security import SecurityService
+from backend.fin_trade.models import AgentRecommendation, AssetClass, TradeRecommendation
+from backend.fin_trade.prompts import GENERATE_TRADES_PROMPT
+from backend.fin_trade.services.security import SecurityService
 
 # Load environment variables
 _project_root = Path(__file__).parent.parent.parent.parent.parent

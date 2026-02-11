@@ -7,11 +7,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from fin_trade.agents.state import SimpleAgentState
-from fin_trade.agents.tools.price_lookup import get_stock_prices
-from fin_trade.models import AssetClass
-from fin_trade.services.security import SecurityService
-from fin_trade.prompts import RESEARCH_PROMPT
+from backend.fin_trade.agents.state import SimpleAgentState
+from backend.fin_trade.agents.tools.price_lookup import get_stock_prices
+from backend.fin_trade.models import AssetClass
+from backend.fin_trade.services.security import SecurityService
+from backend.fin_trade.prompts import RESEARCH_PROMPT
 
 # Load environment variables
 _project_root = Path(__file__).parent.parent.parent.parent.parent

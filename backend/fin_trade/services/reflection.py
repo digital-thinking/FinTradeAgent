@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from fin_trade.models import PortfolioState, Trade
+    from backend.fin_trade.models import PortfolioState, Trade
 
 
 @dataclass

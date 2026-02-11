@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from fin_trade.models import PortfolioConfig, PortfolioState
-    from fin_trade.services.security import SecurityService
+    from backend.fin_trade.models import PortfolioConfig, PortfolioState
+    from backend.fin_trade.services.security import SecurityService
 
 
 @dataclass

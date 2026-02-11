@@ -7,13 +7,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from fin_trade.agents.state import SimpleAgentState
-from fin_trade.models import AssetClass
-from fin_trade.prompts import ANALYSIS_PROMPT
-from fin_trade.services.market_data import MarketDataService
-from fin_trade.services.reflection import ReflectionService
-from fin_trade.services.security import SecurityService
-from fin_trade.services.stock_data import StockDataService
+from backend.fin_trade.agents.state import SimpleAgentState
+from backend.fin_trade.models import AssetClass
+from backend.fin_trade.prompts import ANALYSIS_PROMPT
+from backend.fin_trade.services.market_data import MarketDataService
+from backend.fin_trade.services.reflection import ReflectionService
+from backend.fin_trade.services.security import SecurityService
+from backend.fin_trade.services.stock_data import StockDataService
 
 # Load environment variables
 _project_root = Path(__file__).parent.parent.parent.parent.parent

@@ -5,11 +5,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from fin_trade.agents.graphs.debate_agent import build_debate_agent_graph
-from fin_trade.agents.graphs.simple_agent import build_simple_agent_graph
-from fin_trade.models import AgentRecommendation, PortfolioConfig, PortfolioState
-from fin_trade.services.security import SecurityService
-from fin_trade.services.execution_log import ExecutionLogService
+from backend.fin_trade.agents.graphs.debate_agent import build_debate_agent_graph
+from backend.fin_trade.agents.graphs.simple_agent import build_simple_agent_graph
+from backend.fin_trade.models import AgentRecommendation, PortfolioConfig, PortfolioState
+from backend.fin_trade.services.security import SecurityService
+from backend.fin_trade.services.execution_log import ExecutionLogService
 
 _project_root = Path(__file__).parent.parent.parent.parent
 _logs_dir = _project_root / "data" / "logs"

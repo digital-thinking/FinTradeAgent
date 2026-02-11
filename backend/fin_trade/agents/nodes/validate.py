@@ -2,9 +2,9 @@
 
 import time
 
-from fin_trade.agents.tools.price_lookup import get_stock_price
-from fin_trade.models import AssetClass
-from fin_trade.services.security import SecurityService
+from backend.fin_trade.agents.tools.price_lookup import get_stock_price
+from backend.fin_trade.models import AssetClass
+from backend.fin_trade.services.security import SecurityService
 
 
 def validate_node(state) -> dict:
