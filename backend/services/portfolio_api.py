@@ -4,11 +4,9 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-# Add src to path to import existing services
-sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
-
-from fin_trade.services import PortfolioService, SecurityService
-from fin_trade.models import PortfolioConfig, PortfolioState
+from backend.fin_trade.services.portfolio import PortfolioService
+from backend.fin_trade.services.security import SecurityService
+from backend.fin_trade.models import PortfolioConfig, PortfolioState
 from backend.models.portfolio import (
     PortfolioConfigRequest,
     PortfolioResponse, 

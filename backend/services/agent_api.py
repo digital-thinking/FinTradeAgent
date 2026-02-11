@@ -6,11 +6,10 @@ from typing import Optional, Tuple, Dict, Any
 import asyncio
 import time
 
-# Add src to path to import existing services
-sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
-
-from fin_trade.services import PortfolioService, AgentService, SecurityService
-from fin_trade.agents.service import DebateAgentService, LangGraphAgentService
+from backend.fin_trade.services.portfolio import PortfolioService
+from backend.fin_trade.services.agent import AgentService
+from backend.fin_trade.services.security import SecurityService
+from backend.fin_trade.agents.service import DebateAgentService, LangGraphAgentService
 from backend.models.agent import (
     AgentExecuteRequest,
     AgentExecuteResponse,

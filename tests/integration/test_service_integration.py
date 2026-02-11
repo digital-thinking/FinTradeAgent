@@ -16,16 +16,17 @@ class TestPortfolioWorkflowIntegration:
         """Test complete workflow: create portfolio → execute → trade → update."""
         # Mock the data directory
         with patch("backend.fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            # Import services after patching DATA_DIR
-            from backend.fin_trade.services.portfolio import PortfolioService
-            from backend.fin_trade.services.agent import AgentService
-            from backend.fin_trade.models import PortfolioConfig, AssetClass
+            # Import API services after patching DATA_DIR
+            from backend.services.portfolio_api import PortfolioAPIService
+            from backend.services.agent_api import AgentAPIService
+            from backend.models.portfolio import PortfolioConfigRequest
+            from backend.fin_trade.models import AssetClass
             
-            portfolio_service = PortfolioService()
-            agent_service = AgentService()
+            portfolio_service = PortfolioAPIService()
+            agent_service = AgentAPIService()
             
             # 1. CREATE PORTFOLIO
-            portfolio_config = PortfolioConfig(
+            portfolio_config_request = PortfolioConfigRequest(
                 name="workflow_test_portfolio",
                 strategy_prompt="Focus on growth technology stocks",
                 initial_amount=25000.0,
@@ -38,13 +39,13 @@ class TestPortfolioWorkflowIntegration:
             )
             
             # Create portfolio
-            success = portfolio_service.create_portfolio(portfolio_config)
+            success = portfolio_service.create_portfolio(portfolio_config_request)
             assert success, "Portfolio creation failed"
             
             # Verify portfolio exists
             portfolio = portfolio_service.get_portfolio("workflow_test_portfolio")
             assert portfolio is not None
-            assert portfolio.config.name == "workflow_test_portfolio"
+            assert portfolio.name == "workflow_test_portfolio"
             assert portfolio.state.cash == 25000.0
             
             # 2. EXECUTE AGENT
@@ -121,7 +122,10 @@ class TestPortfolioWorkflowIntegration:
             from backend.fin_trade.models import PortfolioConfig, Trade
             
             portfolio_service = PortfolioService()
-            attribution_service = AttributionService()
+            from backend.fin_trade.services.security import SecurityService
+            from backend.fin_trade.services.attribution import AttributionService
+            security_service = SecurityService()
+            attribution_service = AttributionService(security_service)
             
             # Create test portfolio
             config = PortfolioConfig(
@@ -135,7 +139,7 @@ class TestPortfolioWorkflowIntegration:
                 llm_model="gpt-4",
                 agent_mode="simple"
             )
-            portfolio_service.create_portfolio(config)
+            success = portfolio_service.create_portfolio(PortfolioConfigRequest(**config.__dict__))
             
             # Execute multiple trades over time
             trades = [
@@ -195,7 +199,7 @@ class TestAgentExecutionPipeline:
                 llm_model="gpt-4",
                 agent_mode="langgraph"
             )
-            portfolio_service.create_portfolio(config)
+            success = portfolio_service.create_portfolio(PortfolioConfigRequest(**config.__dict__))
             
             # Mock market data
             with patch.object(stock_data_service, 'get_price_context') as mock_price_context:
@@ -271,7 +275,7 @@ class TestAgentExecutionPipeline:
                 llm_model="claude-3-haiku",
                 agent_mode="langgraph"
             )
-            portfolio_service.create_portfolio(config)
+            success = portfolio_service.create_portfolio(PortfolioConfigRequest(**config.__dict__))
             
             # Mock LangGraph execution nodes
             with patch("fin_trade.services.agent.AgentService._execute_langgraph_workflow") as mock_workflow:
@@ -336,7 +340,7 @@ class TestTradeApplicationProcess:
                 llm_model="gpt-4",
                 agent_mode="simple"
             )
-            portfolio_service.create_portfolio(config)
+            success = portfolio_service.create_portfolio(PortfolioConfigRequest(**config.__dict__))
             
             # 1. Generate trade recommendations
             with patch("fin_trade.services.llm_provider.LLMProvider") as mock_llm:
@@ -413,7 +417,7 @@ class TestTradeApplicationProcess:
                 llm_model="gpt-4",
                 agent_mode="simple"
             )
-            portfolio_service.create_portfolio(config)
+            success = portfolio_service.create_portfolio(PortfolioConfigRequest(**config.__dict__))
             
             # Test trade that exceeds available capital
             with patch("fin_trade.services.security.SecurityService.get_price", return_value=6000.0):
@@ -529,7 +533,7 @@ class TestSystemHealthMonitoring:
                 agent_mode="simple"
             )
             
-            success = portfolio_service.create_portfolio(config)
+            success = success = portfolio_service.create_portfolio(PortfolioConfigRequest(**config.__dict__))
             end_time = time.time()
             
             track_performance("portfolio_operations", start_time, end_time)
