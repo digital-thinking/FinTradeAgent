@@ -48,22 +48,23 @@ jobs:
 
     - name: Verify installation
       env:
-        PYTHONPATH: ${{ github.workspace }}
+        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       run: |
         # Test with poetry run (recommended)
-        poetry run python -c "import fin_trade; print('✅ fin_trade package imported successfully')"
+        poetry run python -c "import backend.fin_trade; print('✅ backend.fin_trade package imported successfully')"
         poetry run python -c "import fastapi; print('✅ FastAPI imported successfully')"
         poetry run python -c "import pytest; print('✅ Pytest imported successfully')"
         
-        # Alternative test with PYTHONPATH (fallback)
-        python -c "import fin_trade; print('✅ fin_trade package imported successfully with PYTHONPATH')"
+        # Alternative test with PYTHONPATH (fallback)  
+        python -c "import backend.fin_trade; print('✅ backend.fin_trade package imported successfully with PYTHONPATH')"
 
     - name: Run integration tests - API
       if: matrix.test-group == 'api'
+      env:
+        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       run: |
         poetry run pytest tests/integration/test_api_integration.py \
           -v \
-          --cov=backend \
           --cov=backend \
           --cov-report=xml \
           --cov-report=term-missing \
@@ -71,11 +72,12 @@ jobs:
           --tb=short
 
     - name: Run integration tests - Service
-      if: matrix.test-group == 'service'  
+      if: matrix.test-group == 'service'
+      env:
+        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       run: |
         poetry run pytest tests/integration/test_service_integration.py \
           -v \
-          --cov=backend \
           --cov=backend \
           --cov-report=xml \
           --cov-report=term-missing \
@@ -84,10 +86,11 @@ jobs:
 
     - name: Run integration tests - Database
       if: matrix.test-group == 'database'
+      env:
+        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       run: |
         poetry run pytest tests/integration/test_database_integration.py \
           -v \
-          --cov=backend \
           --cov=backend \
           --cov-report=xml \
           --cov-report=term-missing \
@@ -96,10 +99,11 @@ jobs:
 
     - name: Run integration tests - Frontend-Backend
       if: matrix.test-group == 'frontend-backend'
+      env:
+        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       run: |
         poetry run pytest tests/integration/test_frontend_backend_integration.py \
           -v \
-          --cov=backend \
           --cov=backend \
           --cov-report=xml \
           --cov-report=term-missing \
@@ -146,10 +150,11 @@ jobs:
         pip install pytest pytest-asyncio httpx websockets pytest-cov
 
     - name: Run complete integration test suite
+      env:
+        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
       run: |
         poetry run pytest tests/integration/ \
           -v \
-          --cov=backend \
           --cov=backend \
           --cov-report=xml \
           --cov-report=html \

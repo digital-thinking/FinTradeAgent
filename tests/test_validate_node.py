@@ -3,8 +3,8 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from fin_trade.agents.nodes.validate import validate_node
-from fin_trade.models import (
+from backend.fin_trade.agents.nodes.validate import validate_node
+from backend.fin_trade.models import (
     Holding,
     PortfolioState,
     TradeRecommendation,

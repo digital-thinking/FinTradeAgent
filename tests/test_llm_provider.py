@@ -10,7 +10,7 @@ class TestLLMProviderFactory:
 
     def test_raises_for_unknown_provider(self):
         """Test raises ValueError for unknown provider."""
-        from fin_trade.services.llm_provider import LLMProviderFactory
+        from backend.fin_trade.services.llm_provider import LLMProviderFactory
 
         with pytest.raises(ValueError, match="Unknown LLM provider"):
             LLMProviderFactory.get_provider("unknown")
@@ -21,7 +21,7 @@ class TestLLMProviderFactory:
         # Mock anthropic module before importing
         mock_anthropic = MagicMock()
         with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
-            from fin_trade.services.llm_provider import LLMProviderFactory, AnthropicProvider
+            from backend.fin_trade.services.llm_provider import LLMProviderFactory, AnthropicProvider
 
             provider = LLMProviderFactory.get_provider("anthropic")
             assert isinstance(provider, AnthropicProvider)
@@ -31,7 +31,7 @@ class TestLLMProviderFactory:
         """Test returns OpenAIProvider for 'openai'."""
         mock_openai = MagicMock()
         with patch.dict(sys.modules, {"openai": mock_openai}):
-            from fin_trade.services.llm_provider import LLMProviderFactory, OpenAIProvider
+            from backend.fin_trade.services.llm_provider import LLMProviderFactory, OpenAIProvider
 
             provider = LLMProviderFactory.get_provider("openai")
             assert isinstance(provider, OpenAIProvider)
@@ -40,7 +40,7 @@ class TestLLMProviderFactory:
         """Test returns OllamaProvider for 'ollama'."""
         mock_openai = MagicMock()
         with patch.dict(sys.modules, {"openai": mock_openai}):
-            from fin_trade.services.llm_provider import LLMProviderFactory, OllamaProvider
+            from backend.fin_trade.services.llm_provider import LLMProviderFactory, OllamaProvider
 
             provider = LLMProviderFactory.get_provider(
                 "ollama",
@@ -59,7 +59,7 @@ class TestAnthropicProvider:
         mock_anthropic = MagicMock()
         with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
             with patch("fin_trade.services.llm_provider.load_dotenv"):
-                from fin_trade.services.llm_provider import AnthropicProvider
+                from backend.fin_trade.services.llm_provider import AnthropicProvider
 
                 with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY not set"):
                     AnthropicProvider()
@@ -69,7 +69,7 @@ class TestAnthropicProvider:
         """Test initializes client with API key from environment."""
         mock_anthropic = MagicMock()
         with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
-            from fin_trade.services.llm_provider import AnthropicProvider
+            from backend.fin_trade.services.llm_provider import AnthropicProvider
 
             provider = AnthropicProvider()
             mock_anthropic.Anthropic.assert_called_once_with(api_key="test-api-key")
@@ -91,7 +91,7 @@ class TestAnthropicProvider:
         mock_anthropic.Anthropic.return_value = mock_client
 
         with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
-            from fin_trade.services.llm_provider import AnthropicProvider
+            from backend.fin_trade.services.llm_provider import AnthropicProvider
 
             provider = AnthropicProvider()
             result = provider.generate("Test prompt", "claude-3-sonnet")
@@ -120,7 +120,7 @@ class TestAnthropicProvider:
         mock_anthropic.Anthropic.return_value = mock_client
 
         with patch.dict(sys.modules, {"anthropic": mock_anthropic}):
-            from fin_trade.services.llm_provider import AnthropicProvider
+            from backend.fin_trade.services.llm_provider import AnthropicProvider
 
             provider = AnthropicProvider()
             result = provider.generate("Test", "claude-3")
@@ -137,7 +137,7 @@ class TestOpenAIProvider:
         mock_openai = MagicMock()
         with patch.dict(sys.modules, {"openai": mock_openai}):
             with patch("fin_trade.services.llm_provider.load_dotenv"):
-                from fin_trade.services.llm_provider import OpenAIProvider
+                from backend.fin_trade.services.llm_provider import OpenAIProvider
 
                 with pytest.raises(RuntimeError, match="OPENAI_API_KEY not set"):
                     OpenAIProvider()
@@ -147,7 +147,7 @@ class TestOpenAIProvider:
         """Test initializes client with API key from environment."""
         mock_openai = MagicMock()
         with patch.dict(sys.modules, {"openai": mock_openai}):
-            from fin_trade.services.llm_provider import OpenAIProvider
+            from backend.fin_trade.services.llm_provider import OpenAIProvider
 
             provider = OpenAIProvider()
             mock_openai.OpenAI.assert_called_once_with(api_key="test-api-key")
@@ -169,7 +169,7 @@ class TestOpenAIProvider:
         mock_openai.OpenAI.return_value = mock_client
 
         with patch.dict(sys.modules, {"openai": mock_openai}):
-            from fin_trade.services.llm_provider import OpenAIProvider
+            from backend.fin_trade.services.llm_provider import OpenAIProvider
 
             provider = OpenAIProvider()
             result = provider.generate("Test prompt", "gpt-4o")
@@ -194,7 +194,7 @@ class TestOpenAIProvider:
         mock_openai.OpenAI.return_value = mock_client
 
         with patch.dict(sys.modules, {"openai": mock_openai}):
-            from fin_trade.services.llm_provider import OpenAIProvider
+            from backend.fin_trade.services.llm_provider import OpenAIProvider
 
             provider = OpenAIProvider()
             provider.generate("Test", "gpt-4o")
@@ -219,7 +219,7 @@ class TestOpenAIProvider:
         mock_openai.OpenAI.return_value = mock_client
 
         with patch.dict(sys.modules, {"openai": mock_openai}):
-            from fin_trade.services.llm_provider import OpenAIProvider
+            from backend.fin_trade.services.llm_provider import OpenAIProvider
 
             provider = OpenAIProvider()
             provider.generate("Test", "gpt-5")
@@ -245,7 +245,7 @@ class TestOpenAIProvider:
         mock_openai.OpenAI.return_value = mock_client
 
         with patch.dict(sys.modules, {"openai": mock_openai}):
-            from fin_trade.services.llm_provider import OpenAIProvider
+            from backend.fin_trade.services.llm_provider import OpenAIProvider
 
             provider = OpenAIProvider()
             provider.generate("Test", "gpt-3.5-turbo")
@@ -271,7 +271,7 @@ class TestOpenAIProvider:
         mock_openai.OpenAI.return_value = mock_client
 
         with patch.dict(sys.modules, {"openai": mock_openai}):
-            from fin_trade.services.llm_provider import OpenAIProvider
+            from backend.fin_trade.services.llm_provider import OpenAIProvider
 
             provider = OpenAIProvider()
             provider.generate("Test", "gpt-4o")
@@ -287,7 +287,7 @@ class TestOllamaProvider:
         """Test Ollama provider configures OpenAI client with local base URL."""
         mock_openai = MagicMock()
         with patch.dict(sys.modules, {"openai": mock_openai}):
-            from fin_trade.services.llm_provider import OllamaProvider
+            from backend.fin_trade.services.llm_provider import OllamaProvider
 
             provider = OllamaProvider(model="llama3.2", base_url="http://127.0.0.1:11434")
 
@@ -312,7 +312,7 @@ class TestOllamaProvider:
         mock_openai.OpenAI.return_value = mock_client
 
         with patch.dict(sys.modules, {"openai": mock_openai}):
-            from fin_trade.services.llm_provider import OllamaProvider
+            from backend.fin_trade.services.llm_provider import OllamaProvider
 
             provider = OllamaProvider(model="llama3.2")
             result = provider.generate("test prompt", "llama3.2")
@@ -325,7 +325,7 @@ class TestOllamaProvider:
         """Test generate fails fast if no model is provided."""
         mock_openai = MagicMock()
         with patch.dict(sys.modules, {"openai": mock_openai}):
-            from fin_trade.services.llm_provider import OllamaProvider
+            from backend.fin_trade.services.llm_provider import OllamaProvider
 
             provider = OllamaProvider(model=None)
             with pytest.raises(ValueError, match="Ollama model is required"):
@@ -339,7 +339,7 @@ class TestOllamaProvider:
         mock_openai.OpenAI.return_value = mock_client
 
         with patch.dict(sys.modules, {"openai": mock_openai}):
-            from fin_trade.services.llm_provider import OllamaProvider
+            from backend.fin_trade.services.llm_provider import OllamaProvider
 
             provider = OllamaProvider(model="llama3.2", base_url="http://localhost:11434")
             with pytest.raises(RuntimeError, match="Failed to connect to Ollama"):
@@ -352,7 +352,7 @@ class TestCheckOllamaStatus:
     @patch("fin_trade.services.llm_provider.requests.get")
     def test_returns_ok_with_models(self, mock_get):
         """Test health check parses model list on success."""
-        from fin_trade.services.llm_provider import check_ollama_status
+        from backend.fin_trade.services.llm_provider import check_ollama_status
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -370,7 +370,7 @@ class TestCheckOllamaStatus:
     @patch("fin_trade.services.llm_provider.requests.get")
     def test_returns_error_when_unavailable(self, mock_get):
         """Test health check returns error status on request failure."""
-        from fin_trade.services.llm_provider import check_ollama_status
+        from backend.fin_trade.services.llm_provider import check_ollama_status
         import requests
 
         mock_get.side_effect = requests.RequestException("connection refused")

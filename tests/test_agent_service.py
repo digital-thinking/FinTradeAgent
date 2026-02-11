@@ -6,13 +6,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fin_trade.models import (
+from backend.fin_trade.models import (
     Holding,
     PortfolioConfig,
     PortfolioState,
     TradeRecommendation,
 )
-from fin_trade.services.agent import AgentService
+from backend.fin_trade.services.agent import AgentService
 
 
 @pytest.fixture

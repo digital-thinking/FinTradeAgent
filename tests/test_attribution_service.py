@@ -3,8 +3,8 @@
 import pytest
 from unittest.mock import MagicMock
 
-from fin_trade.models import Holding, PortfolioConfig, PortfolioState
-from fin_trade.services.attribution import (
+from backend.fin_trade.models import Holding, PortfolioConfig, PortfolioState
+from backend.fin_trade.services.attribution import (
     AttributionService,
     AttributionResult,
     HoldingAttribution,

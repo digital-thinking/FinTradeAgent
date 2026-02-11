@@ -64,14 +64,30 @@ jobs:
           # Wait for backend to be ready
           timeout 30 bash -c 'until curl -f http://localhost:8000/health; do sleep 1; done'
         env:
-          PYTHONPATH: ${{ github.workspace }}
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
           
       - name: Start frontend server
         working-directory: ./frontend
         run: |
-          npm run dev &
-          # Wait for frontend to be ready
-          timeout 30 bash -c 'until curl -f http://localhost:3000; do sleep 1; done'
+          # Start frontend server with host binding for CI
+          npm run dev -- --host 0.0.0.0 --port 3000 &
+          FRONTEND_PID=$!
+          # Wait for frontend to be ready with better error handling
+          echo "Waiting for frontend server to start..."
+          for i in {1..30}; do
+            if curl -f http://localhost:3000 > /dev/null 2>&1; then
+              echo "Frontend server is ready!"
+              break
+            fi
+            if ! kill -0 $FRONTEND_PID > /dev/null 2>&1; then
+              echo "Frontend server process died, checking logs..."
+              exit 1
+            fi
+            echo "Attempt $i/30: Frontend not ready yet, waiting..."
+            sleep 2
+          done
+          # Final check
+          curl -f http://localhost:3000 || (echo "Frontend server failed to start" && exit 1)
           
       - name: Run E2E tests
         working-directory: ./frontend
@@ -129,13 +145,27 @@ jobs:
           poetry run python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
           timeout 30 bash -c 'until curl -f http://localhost:8000/health; do sleep 1; done'
         env:
-          PYTHONPATH: ${{ github.workspace }}
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
           
       - name: Start frontend server
         working-directory: ./frontend
         run: |
-          npm run dev &
-          timeout 30 bash -c 'until curl -f http://localhost:3000; do sleep 1; done'
+          npm run dev -- --host 0.0.0.0 --port 3000 &
+          FRONTEND_PID=$!
+          echo "Waiting for frontend server to start..."
+          for i in {1..30}; do
+            if curl -f http://localhost:3000 > /dev/null 2>&1; then
+              echo "Frontend server is ready!"
+              break
+            fi
+            if ! kill -0 $FRONTEND_PID > /dev/null 2>&1; then
+              echo "Frontend server process died, checking logs..."
+              exit 1
+            fi
+            echo "Attempt $i/30: Frontend not ready yet, waiting..."
+            sleep 2
+          done
+          curl -f http://localhost:3000 || (echo "Frontend server failed to start" && exit 1)
           
       - name: Run Mobile E2E tests
         working-directory: ./frontend
@@ -189,13 +219,29 @@ jobs:
         run: |
           # Start backend
           poetry run python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
-          cd frontend
+          echo "Starting backend server..."
+          timeout 30 bash -c 'until curl -f http://localhost:8000/health; do sleep 1; done'
+          echo "Backend server ready!"
+          
           # Start frontend
-          npm run dev &
-          # Wait for both to be ready
-          timeout 30 bash -c 'until curl -f http://localhost:8000/health && curl -f http://localhost:3000; do sleep 1; done'
+          cd frontend
+          npm run dev -- --host 0.0.0.0 --port 3000 &
+          FRONTEND_PID=$!
+          echo "Starting frontend server..."
+          for i in {1..30}; do
+            if curl -f http://localhost:3000 > /dev/null 2>&1; then
+              echo "Frontend server ready!"
+              break
+            fi
+            if ! kill -0 $FRONTEND_PID > /dev/null 2>&1; then
+              echo "Frontend server process died"
+              exit 1
+            fi
+            sleep 2
+          done
+          curl -f http://localhost:3000 || exit 1
         env:
-          PYTHONPATH: ${{ github.workspace }}
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
           
       - name: Run performance tests
         working-directory: ./frontend

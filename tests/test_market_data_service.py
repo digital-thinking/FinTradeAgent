@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from fin_trade.models import AssetClass
-from fin_trade.services.market_data import (
+from backend.fin_trade.models import AssetClass
+from backend.fin_trade.services.market_data import (
     EarningsInfo,
     InsiderTrade,
     MacroData,

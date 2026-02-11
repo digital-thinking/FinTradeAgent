@@ -3,11 +3,11 @@
 import json
 import pytest
 
-from fin_trade.agents.nodes.generate import (
+from backend.fin_trade.agents.nodes.generate import (
     _build_generate_prompt,
     _parse_json_response,
 )
-from fin_trade.models import (
+from backend.fin_trade.models import (
     Holding,
     PortfolioConfig,
     PortfolioState,

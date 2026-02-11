@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from fin_trade.models import AssetClass, Holding, PortfolioConfig, PortfolioState, Trade
-from fin_trade.services.comparison import ComparisonService, PortfolioMetrics
+from backend.fin_trade.models import AssetClass, Holding, PortfolioConfig, PortfolioState, Trade
+from backend.fin_trade.services.comparison import ComparisonService, PortfolioMetrics
 
 
 @pytest.fixture

@@ -18,8 +18,8 @@ class TestDataPersistenceIntegration:
     def test_portfolio_state_persistence_workflow(self, temp_portfolio_dir, mock_external_services):
         """Test complete portfolio state persistence across operations."""
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.portfolio import PortfolioService
-            from fin_trade.models import PortfolioConfig
+            from backend.fin_trade.services.portfolio import PortfolioService
+            from backend.fin_trade.models import PortfolioConfig
             
             portfolio_service = PortfolioService()
             portfolio_name = "persistence_test_portfolio"
@@ -99,8 +99,8 @@ class TestDataPersistenceIntegration:
     def test_execution_log_persistence(self, temp_portfolio_dir, mock_external_services):
         """Test execution log persistence and retrieval."""
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.execution_log import ExecutionLogService
-            from fin_trade.models import ExecutionResult
+            from backend.fin_trade.services.execution_log import ExecutionLogService
+            from backend.fin_trade.models import ExecutionResult
             
             log_service = ExecutionLogService()
             
@@ -163,8 +163,8 @@ class TestDataPersistenceIntegration:
     def test_market_data_caching_persistence(self, temp_portfolio_dir, mock_external_services):
         """Test market data caching and persistence."""
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.stock_data import StockDataService
-            from fin_trade.cache import CacheManager
+            from backend.fin_trade.services.stock_data import StockDataService
+            from backend.fin_trade.cache import CacheManager
             
             stock_service = StockDataService()
             cache_manager = CacheManager()
@@ -206,8 +206,8 @@ class TestDatabaseTransactions:
     def test_portfolio_transaction_rollback(self, temp_portfolio_dir, mock_external_services):
         """Test transaction rollback on portfolio operation failure."""
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.portfolio import PortfolioService
-            from fin_trade.models import PortfolioConfig
+            from backend.fin_trade.services.portfolio import PortfolioService
+            from backend.fin_trade.models import PortfolioConfig
             
             portfolio_service = PortfolioService()
             portfolio_name = "transaction_test_portfolio"
@@ -249,8 +249,8 @@ class TestDatabaseTransactions:
     def test_concurrent_portfolio_operations(self, temp_portfolio_dir, mock_external_services):
         """Test concurrent portfolio operations with transaction isolation."""
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.portfolio import PortfolioService
-            from fin_trade.models import PortfolioConfig
+            from backend.fin_trade.services.portfolio import PortfolioService
+            from backend.fin_trade.models import PortfolioConfig
             
             # Create multiple portfolio services (simulating concurrent requests)
             portfolio_services = [PortfolioService() for _ in range(3)]
@@ -316,8 +316,8 @@ class TestConcurrentOperations:
     def test_concurrent_portfolio_creation(self, temp_portfolio_dir, mock_external_services):
         """Test concurrent portfolio creation with unique names."""
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.portfolio import PortfolioService
-            from fin_trade.models import PortfolioConfig
+            from backend.fin_trade.services.portfolio import PortfolioService
+            from backend.fin_trade.models import PortfolioConfig
             
             results = []
             errors = []
@@ -369,9 +369,9 @@ class TestConcurrentOperations:
     def test_concurrent_agent_executions(self, temp_portfolio_dir, mock_external_services):
         """Test concurrent agent executions on different portfolios."""
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.portfolio import PortfolioService
-            from fin_trade.services.agent import AgentService
-            from fin_trade.models import PortfolioConfig
+            from backend.fin_trade.services.portfolio import PortfolioService
+            from backend.fin_trade.services.agent import AgentService
+            from backend.fin_trade.models import PortfolioConfig
             
             # Create test portfolios
             portfolio_service = PortfolioService()
@@ -449,7 +449,7 @@ class TestExternalDependencyMocking:
     def test_yfinance_api_mocking(self, temp_portfolio_dir):
         """Test comprehensive yfinance API mocking for integration tests."""
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.stock_data import StockDataService
+            from backend.fin_trade.services.stock_data import StockDataService
             
             # Mock yfinance with comprehensive data
             with patch("yfinance.Ticker") as mock_ticker:
@@ -502,7 +502,7 @@ class TestExternalDependencyMocking:
     def test_llm_provider_mocking(self, temp_portfolio_dir):
         """Test comprehensive LLM provider mocking for integration tests."""
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.llm_provider import LLMProvider
+            from backend.fin_trade.services.llm_provider import LLMProvider
             
             # Mock OpenAI
             with patch("openai.OpenAI") as mock_openai:
@@ -549,7 +549,7 @@ class TestExternalDependencyMocking:
     def test_anthropic_provider_mocking(self, temp_portfolio_dir):
         """Test Anthropic API mocking for integration tests."""
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.llm_provider import LLMProvider
+            from backend.fin_trade.services.llm_provider import LLMProvider
             
             # Mock Anthropic
             with patch("anthropic.Anthropic") as mock_anthropic:
@@ -602,9 +602,9 @@ class TestExternalDependencyMocking:
     def test_multiple_external_dependencies_integration(self, temp_portfolio_dir):
         """Test integration scenario with multiple external dependencies mocked."""
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.agent import AgentService
-            from fin_trade.services.portfolio import PortfolioService
-            from fin_trade.models import PortfolioConfig
+            from backend.fin_trade.services.agent import AgentService
+            from backend.fin_trade.services.portfolio import PortfolioService
+            from backend.fin_trade.models import PortfolioConfig
             
             # Mock all external dependencies simultaneously
             with patch("yfinance.Ticker") as mock_yfinance:

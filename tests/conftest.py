@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from fin_trade.models import (
+from backend.fin_trade.models import (
     AssetClass,
     Holding,
     Trade,
@@ -14,8 +14,8 @@ from fin_trade.models import (
     TradeRecommendation,
     AgentRecommendation,
 )
-from fin_trade.services.security import Security
-from fin_trade.services.stock_data import PriceContext
+from backend.fin_trade.services.security import Security
+from backend.fin_trade.services.stock_data import PriceContext
 
 
 @pytest.fixture

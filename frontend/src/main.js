@@ -3,7 +3,7 @@ import { createPinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
 
 import App from './App.vue'
-import routes from './router'
+import routes from './router/index.js'
 import './assets/main.css'
 
 // Performance optimizations

@@ -5,8 +5,8 @@ import pytest
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
-from fin_trade.models import AssetClass
-from fin_trade.services.security import SecurityService, Security
+from backend.fin_trade.models import AssetClass
+from backend.fin_trade.services.security import SecurityService, Security
 
 
 class TestSecurityServiceInit:

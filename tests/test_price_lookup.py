@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from fin_trade.agents.tools.price_lookup import (
+from backend.fin_trade.agents.tools.price_lookup import (
     extract_tickers_from_text,
     fetch_buy_candidate_data,
     format_buy_candidates_for_prompt,

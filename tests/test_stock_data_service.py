@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
-from fin_trade.services.stock_data import StockDataService, PriceContext
-from fin_trade.models import Holding
+from backend.fin_trade.services.stock_data import StockDataService, PriceContext
+from backend.fin_trade.models import Holding
 
 
 class TestStockDataServiceInit:

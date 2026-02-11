@@ -2,9 +2,9 @@
 
 from unittest.mock import MagicMock
 
-from fin_trade.models import Holding, PortfolioConfig, PortfolioState
-from fin_trade.services.agent import AgentService
-from fin_trade.services.market_data import MarketDataService
+from backend.fin_trade.models import Holding, PortfolioConfig, PortfolioState
+from backend.fin_trade.services.agent import AgentService
+from backend.fin_trade.services.market_data import MarketDataService
 
 
 def test_agent_includes_market_data_in_prompt():

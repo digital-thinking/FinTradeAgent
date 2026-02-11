@@ -17,9 +17,9 @@ class TestPortfolioWorkflowIntegration:
         # Mock the data directory
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
             # Import services after patching DATA_DIR
-            from fin_trade.services.portfolio import PortfolioService
-            from fin_trade.services.agent import AgentService
-            from fin_trade.models import PortfolioConfig, AssetClass
+            from backend.fin_trade.services.portfolio import PortfolioService
+            from backend.fin_trade.services.agent import AgentService
+            from backend.fin_trade.models import PortfolioConfig, AssetClass
             
             portfolio_service = PortfolioService()
             agent_service = AgentService()
@@ -116,9 +116,9 @@ class TestPortfolioWorkflowIntegration:
     def test_portfolio_performance_tracking_workflow(self, temp_portfolio_dir, mock_external_services):
         """Test portfolio performance tracking across multiple executions."""
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.portfolio import PortfolioService
-            from fin_trade.services.attribution import AttributionService
-            from fin_trade.models import PortfolioConfig, Trade
+            from backend.fin_trade.services.portfolio import PortfolioService
+            from backend.fin_trade.services.attribution import AttributionService
+            from backend.fin_trade.models import PortfolioConfig, Trade
             
             portfolio_service = PortfolioService()
             attribution_service = AttributionService()
@@ -173,10 +173,10 @@ class TestAgentExecutionPipeline:
     def test_agent_execution_with_market_data_integration(self, temp_portfolio_dir, mock_external_services):
         """Test agent execution pipeline with market data integration."""
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.agent import AgentService
-            from fin_trade.services.portfolio import PortfolioService
-            from fin_trade.services.stock_data import StockDataService
-            from fin_trade.models import PortfolioConfig
+            from backend.fin_trade.services.agent import AgentService
+            from backend.fin_trade.services.portfolio import PortfolioService
+            from backend.fin_trade.services.stock_data import StockDataService
+            from backend.fin_trade.models import PortfolioConfig
             
             # Setup services
             agent_service = AgentService()
@@ -199,7 +199,7 @@ class TestAgentExecutionPipeline:
             
             # Mock market data
             with patch.object(stock_data_service, 'get_price_context') as mock_price_context:
-                from fin_trade.services.stock_data import PriceContext
+                from backend.fin_trade.services.stock_data import PriceContext
                 
                 mock_price_context.return_value = PriceContext(
                     ticker="AAPL",
@@ -252,9 +252,9 @@ class TestAgentExecutionPipeline:
     def test_agent_execution_with_langgraph_mode(self, temp_portfolio_dir, mock_external_services):
         """Test agent execution pipeline in LangGraph mode."""
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.agent import AgentService
-            from fin_trade.services.portfolio import PortfolioService
-            from fin_trade.models import PortfolioConfig
+            from backend.fin_trade.services.agent import AgentService
+            from backend.fin_trade.services.portfolio import PortfolioService
+            from backend.fin_trade.models import PortfolioConfig
             
             agent_service = AgentService()
             portfolio_service = PortfolioService()
@@ -317,9 +317,9 @@ class TestTradeApplicationProcess:
     def test_trade_recommendation_to_execution_workflow(self, temp_portfolio_dir, mock_external_services):
         """Test workflow from trade recommendation to execution completion."""
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.portfolio import PortfolioService
-            from fin_trade.services.agent import AgentService
-            from fin_trade.models import PortfolioConfig, TradeRecommendation
+            from backend.fin_trade.services.portfolio import PortfolioService
+            from backend.fin_trade.services.agent import AgentService
+            from backend.fin_trade.models import PortfolioConfig, TradeRecommendation
             
             portfolio_service = PortfolioService()
             agent_service = AgentService()
@@ -396,8 +396,8 @@ class TestTradeApplicationProcess:
     def test_trade_validation_and_risk_management(self, temp_portfolio_dir, mock_external_services):
         """Test trade validation and risk management integration."""
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.portfolio import PortfolioService  
-            from fin_trade.models import PortfolioConfig
+            from backend.fin_trade.services.portfolio import PortfolioService  
+            from backend.fin_trade.models import PortfolioConfig
             
             portfolio_service = PortfolioService()
             
@@ -477,7 +477,7 @@ class TestSystemHealthMonitoring:
             ]
             
             # Mock retry logic
-            from fin_trade.services.stock_data import StockDataService
+            from backend.fin_trade.services.stock_data import StockDataService
             stock_service = StockDataService()
             
             # Service should eventually succeed with retries
@@ -509,8 +509,8 @@ class TestSystemHealthMonitoring:
             })
         
         with patch("fin_trade.services.portfolio.DATA_DIR", temp_portfolio_dir["root"]):
-            from fin_trade.services.portfolio import PortfolioService
-            from fin_trade.models import PortfolioConfig
+            from backend.fin_trade.services.portfolio import PortfolioService
+            from backend.fin_trade.models import PortfolioConfig
             
             portfolio_service = PortfolioService()
             

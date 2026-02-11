@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from fin_trade.services.execution_log import ExecutionLogService, ExecutionLogEntry
+from backend.fin_trade.services.execution_log import ExecutionLogService, ExecutionLogEntry
 
 
 @pytest.fixture

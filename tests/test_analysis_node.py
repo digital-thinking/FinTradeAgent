@@ -3,8 +3,8 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from fin_trade.agents.nodes.analysis import _build_analysis_prompt
-from fin_trade.models import (
+from backend.fin_trade.agents.nodes.analysis import _build_analysis_prompt
+from backend.fin_trade.models import (
     Holding,
     PortfolioConfig,
     PortfolioState,

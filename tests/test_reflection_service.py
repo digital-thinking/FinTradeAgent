@@ -4,8 +4,8 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from fin_trade.models import PortfolioState, Trade
-from fin_trade.services.reflection import (
+from backend.fin_trade.models import PortfolioState, Trade
+from backend.fin_trade.services.reflection import (
     BiasAnalysis,
     CompletedTrade,
     ReflectionResult,

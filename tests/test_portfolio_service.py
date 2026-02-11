@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from fin_trade.models import AssetClass, Holding, PortfolioConfig, PortfolioState
-from fin_trade.services.portfolio import PortfolioService
+from backend.fin_trade.models import AssetClass, Holding, PortfolioConfig, PortfolioState
+from backend.fin_trade.services.portfolio import PortfolioService
 
 
 class TestPortfolioServiceInit:

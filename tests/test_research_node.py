@@ -3,12 +3,12 @@
 import pytest
 from unittest.mock import patch
 
-from fin_trade.agents.nodes.research import (
+from backend.fin_trade.agents.nodes.research import (
     _build_local_research_prompt,
     _build_research_prompt,
     research_node,
 )
-from fin_trade.models import (
+from backend.fin_trade.models import (
     Holding,
     PortfolioConfig,
     PortfolioState,
