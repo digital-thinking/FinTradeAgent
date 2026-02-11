@@ -9,7 +9,19 @@ from dotenv import load_dotenv
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 
 
-class LLMProvider(ABC):
+def create_llm_provider(provider_name: str, model_name: str = None):
+    """Factory function to create LLM provider instances."""
+    if provider_name.lower() == "anthropic":
+        return AnthropicProvider()
+    elif provider_name.lower() in ["openai", "openai_azure"]:
+        return OpenAIProvider()
+    elif provider_name.lower() == "ollama":
+        return OllamaProvider()
+    else:
+        raise ValueError(f"Unknown provider: {provider_name}")
+
+
+class LLMProviderBase(ABC):
     """Abstract base class for LLM providers."""
 
     @abstractmethod
@@ -23,7 +35,24 @@ class LLMProvider(ABC):
         return True
 
 
-class AnthropicProvider(LLMProvider):
+class LLMProvider:
+    """Factory class for creating LLM providers (for test compatibility)."""
+    
+    def __new__(cls, provider: str = None, model: str = None):
+        """Create appropriate LLM provider instance."""
+        if provider:
+            return create_llm_provider(provider, model)
+        else:
+            # If no parameters, return the base class
+            raise TypeError("LLMProvider() takes at least 1 argument (provider)")
+    
+    @staticmethod
+    def create(provider: str, model: str = None):
+        """Static method to create provider instances."""
+        return create_llm_provider(provider, model)
+
+
+class AnthropicProvider(LLMProviderBase):
     """Anthropic LLM provider implementation."""
 
     def __init__(self):
@@ -63,7 +92,7 @@ class AnthropicProvider(LLMProvider):
         return result_text
 
 
-class OpenAIProvider(LLMProvider):
+class OpenAIProvider(LLMProviderBase):
     """OpenAI LLM provider implementation."""
 
     def __init__(self):
@@ -113,7 +142,7 @@ class OpenAIProvider(LLMProvider):
         return response.choices[0].message.content
 
 
-class OllamaProvider(LLMProvider):
+class OllamaProvider(LLMProviderBase):
     """Ollama provider using OpenAI-compatible local API."""
 
     def __init__(

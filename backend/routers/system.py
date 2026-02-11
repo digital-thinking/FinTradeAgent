@@ -13,18 +13,38 @@ sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 router = APIRouter(prefix="/api/system", tags=["system"])
 
 
-@router.get("/health")
-async def system_health():
-    """Get detailed system health information."""
+def check_system_health():
+    """Check system health status."""
     return {
         "status": "healthy",
         "services": {
             "api": "running",
-            "scheduler": "running",
+            "scheduler": "running", 
             "database": "connected"
         },
-        "uptime": "unknown"  # TODO: Track actual uptime
+        "uptime": "unknown"
     }
+
+
+def get_user_preferences():
+    """Get user preferences."""
+    return {
+        "theme": "light",
+        "notifications": True,
+        "auto_refresh": 30
+    }
+
+
+def update_user_preferences(preferences: dict):
+    """Update user preferences."""
+    # TODO: Implement preference persistence
+    return preferences
+
+
+@router.get("/health")
+async def system_health():
+    """Get detailed system health information."""
+    return check_system_health()
 
 
 @router.get("/scheduler")
@@ -53,3 +73,15 @@ async def start_scheduler():
 async def stop_scheduler():
     """Stop the portfolio scheduler."""
     return {"message": "Scheduler stop - TODO"}
+
+
+@router.get("/preferences")
+async def get_preferences():
+    """Get user preferences."""
+    return get_user_preferences()
+
+
+@router.post("/preferences")
+async def update_preferences(preferences: dict):
+    """Update user preferences."""
+    return update_user_preferences(preferences)

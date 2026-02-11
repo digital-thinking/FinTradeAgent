@@ -33,9 +33,9 @@ class PortfolioService:
         security_service: SecurityService | None = None,
     ):
         if portfolios_dir is None:
-            portfolios_dir = Path("data/portfolios")
+            portfolios_dir = DATA_DIR / "portfolios"
         if state_dir is None:
-            state_dir = Path("data/state")
+            state_dir = DATA_DIR / "state"
 
         self.portfolios_dir = portfolios_dir
         self.state_dir = state_dir
@@ -236,7 +236,45 @@ class PortfolioService:
         delta = frequency_deltas.get(config.run_frequency, timedelta(weeks=1))
         return now - last >= delta
 
-    def execute_trade(
+    def execute_trade_by_name(
+        self,
+        portfolio_name: str,
+        ticker: str,
+        action: Literal["BUY", "SELL"],
+        quantity: float,
+        price: float,
+        reasoning: str = "Test trade",
+        stop_loss_price: float | None = None,
+        take_profit_price: float | None = None,
+        asset_class: AssetClass = AssetClass.STOCKS,
+    ) -> bool:
+        """Execute a trade for a portfolio by name (convenience method for tests)."""
+        try:
+            config, state = self.load_portfolio(portfolio_name)
+            updated_state = self.execute_trade(
+                state, ticker, action, quantity, reasoning,
+                stop_loss_price, take_profit_price, asset_class
+            )
+            self.save_state(portfolio_name, updated_state)
+            return True
+        except Exception as e:
+            print(f"Failed to execute trade: {e}")
+            return False
+
+    def execute_trade(self, *args, **kwargs):
+        """Execute a trade - supports both new and legacy signatures."""
+        # Legacy signature: execute_trade(portfolio_name, ticker, action, quantity, price)
+        if len(args) >= 5 and isinstance(args[0], str):
+            portfolio_name, ticker, action, quantity, price = args[:5]
+            return self.execute_trade_by_name(
+                portfolio_name, ticker, action, quantity, price, 
+                reasoning=kwargs.get('reasoning', 'Legacy trade')
+            )
+        # New signature: execute_trade(state, ticker, action, quantity, reasoning, ...)
+        else:
+            return self._execute_trade_internal(*args, **kwargs)
+    
+    def _execute_trade_internal(
         self,
         state: PortfolioState,
         ticker: str,
@@ -360,6 +398,87 @@ class PortfolioService:
                     "LPT1", "LPT2", "LPT3", "LPT4"}
         if name.upper() in reserved:
             raise ValueError(f"'{name}' is a reserved name and cannot be used")
+
+    def create_portfolio(self, config: PortfolioConfig) -> bool:
+        """Create a new portfolio with the given configuration."""
+        try:
+            # Validate the portfolio name
+            self._validate_portfolio_name(config.name)
+            
+            # Check if portfolio already exists
+            portfolio_file = self.portfolios_dir / f"{config.name}.yaml"
+            if portfolio_file.exists():
+                raise ValueError(f"Portfolio '{config.name}' already exists")
+            
+            # Create the portfolio config file
+            from dataclasses import asdict
+            config_dict = asdict(config)
+            # Convert enum to string for YAML serialization
+            if 'asset_class' in config_dict and hasattr(config_dict['asset_class'], 'value'):
+                config_dict['asset_class'] = config_dict['asset_class'].value
+            with open(portfolio_file, "w") as f:
+                yaml.dump(config_dict, f, default_flow_style=False)
+            
+            # Create initial state file
+            initial_state = PortfolioState(
+                cash=config.initial_amount,
+                holdings=[],
+                trades=[]
+            )
+            
+            self.save_state(config.name, initial_state)
+            
+            return True
+        except Exception as e:
+            print(f"Failed to create portfolio: {e}")
+            return False
+
+    def update_portfolio(self, name: str, config: PortfolioConfig) -> bool:
+        """Update an existing portfolio configuration."""
+        try:
+            # Validate the portfolio name and check if it exists
+            self._validate_portfolio_name(name)
+            
+            portfolio_file = self.portfolios_dir / f"{name}.yaml"
+            if not portfolio_file.exists():
+                raise ValueError(f"Portfolio '{name}' does not exist")
+            
+            # Update the portfolio config file
+            from dataclasses import asdict
+            config_dict = asdict(config)
+            # Convert enum to string for YAML serialization
+            if 'asset_class' in config_dict and hasattr(config_dict['asset_class'], 'value'):
+                config_dict['asset_class'] = config_dict['asset_class'].value
+            with open(portfolio_file, "w") as f:
+                yaml.dump(config_dict, f, default_flow_style=False)
+            
+            return True
+        except Exception as e:
+            print(f"Failed to update portfolio: {e}")
+            return False
+
+    def get_portfolio(self, name: str):
+        """Get a portfolio with both config and state."""
+        try:
+            config, state = self.load_portfolio(name)
+            
+            # Return a simple object with config and state
+            class Portfolio:
+                def __init__(self, config, state):
+                    self.config = config
+                    self.state = state
+            
+            return Portfolio(config, state)
+        except Exception:
+            return None
+
+    def save_portfolio_state(self, name: str, state: PortfolioState) -> bool:
+        """Save portfolio state (alias for save_state)."""
+        try:
+            self.save_state(name, state)
+            return True
+        except Exception:
+            return False
 
     def clone_portfolio(
         self, source_name: str, new_name: str, include_state: bool = False

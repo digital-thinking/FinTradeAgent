@@ -2,6 +2,7 @@
 
 from backend.fin_trade.models.agent import (
     AgentRecommendation,
+    ExecutionResult,
     TradeRecommendation,
 )
 from backend.fin_trade.models.portfolio import (
@@ -17,6 +18,7 @@ __all__ = [
     "AgentRecommendation",
     "AssetClass",
     "DebateConfig",
+    "ExecutionResult",
     "Holding",
     "PortfolioConfig",
     "PortfolioState",

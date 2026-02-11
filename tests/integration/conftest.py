@@ -73,6 +73,20 @@ def mock_external_services():
     
     # Mock yfinance
     with patch("yfinance.Ticker") as mock_ticker:
+        import pandas as pd
+        from datetime import datetime, timedelta
+        
+        # Create mock price data
+        dates = pd.date_range(start=datetime.now() - timedelta(days=365), 
+                             end=datetime.now(), freq='D')
+        mock_df = pd.DataFrame({
+            'Open': [150.0] * len(dates),
+            'High': [155.0] * len(dates),
+            'Low': [145.0] * len(dates), 
+            'Close': [150.0] * len(dates),
+            'Volume': [1000000] * len(dates)
+        }, index=dates)
+        
         mock_ticker_instance = MagicMock()
         mock_ticker_instance.info = {
             "shortName": "Apple Inc.",
@@ -80,7 +94,7 @@ def mock_external_services():
             "regularMarketPrice": 150.0,
             "currency": "USD"
         }
-        mock_ticker_instance.history.return_value = MagicMock()
+        mock_ticker_instance.history.return_value = mock_df
         mock_ticker.return_value = mock_ticker_instance
         mocks["yfinance"] = mock_ticker
         

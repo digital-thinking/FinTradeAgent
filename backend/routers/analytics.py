@@ -8,17 +8,19 @@ from pathlib import Path
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 
-from fin_trade.services import ExecutionLogService
+from backend.fin_trade.services import ExecutionLogService
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+
+# Create a module-level service instance for test mocking
+execution_log_service = ExecutionLogService()
 
 
 @router.get("/execution-logs")
 async def get_execution_logs(limit: int = 50):
     """Get execution history logs."""
     try:
-        service = ExecutionLogService()
-        logs = service.get_logs(limit=limit)
+        logs = execution_log_service.get_logs(limit=limit)
         
         return {
             "logs": [
@@ -44,10 +46,8 @@ async def get_execution_logs(limit: int = 50):
 async def get_dashboard_data():
     """Get dashboard summary data."""
     try:
-        service = ExecutionLogService()
-        
         # Get recent stats
-        recent_logs = service.get_logs(limit=10)
+        recent_logs = execution_log_service.get_logs(limit=10)
         
         return {
             "total_executions": len(recent_logs),
