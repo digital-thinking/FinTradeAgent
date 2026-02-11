@@ -33,7 +33,10 @@ build-backend = "poetry.core.masonry.api"
 
 
 [tool.poetry]
-packages = [{include = "fin_trade", from = "backend"}]
+packages = [
+  {include = "backend", from = "."},
+  {include = "fin_trade", from = "backend"}
+]
 
 
 [tool.poetry.scripts]

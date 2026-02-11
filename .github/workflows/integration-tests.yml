@@ -48,7 +48,7 @@ jobs:
 
     - name: Verify installation
       env:
-        PYTHONPATH: ${{ github.workspace }}/backend
+        PYTHONPATH: ${{ github.workspace }}
       run: |
         # Test with poetry run (recommended)
         poetry run python -c "import fin_trade; print('✅ fin_trade package imported successfully')"
