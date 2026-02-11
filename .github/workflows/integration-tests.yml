@@ -47,10 +47,16 @@ jobs:
         pip install pytest pytest-asyncio httpx websockets pytest-cov pytest-mock
 
     - name: Verify installation
+      env:
+        PYTHONPATH: ${{ github.workspace }}/backend
       run: |
-        python -c "import fin_trade; print('✅ fin_trade package imported successfully')"
-        python -c "import fastapi; print('✅ FastAPI imported successfully')"
-        python -c "import pytest; print('✅ Pytest imported successfully')"
+        # Test with poetry run (recommended)
+        poetry run python -c "import fin_trade; print('✅ fin_trade package imported successfully')"
+        poetry run python -c "import fastapi; print('✅ FastAPI imported successfully')"
+        poetry run python -c "import pytest; print('✅ Pytest imported successfully')"
+        
+        # Alternative test with PYTHONPATH (fallback)
+        python -c "import fin_trade; print('✅ fin_trade package imported successfully with PYTHONPATH')"
 
     - name: Run integration tests - API
       if: matrix.test-group == 'api'
