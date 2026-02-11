@@ -37,7 +37,7 @@ class TestBasicPortfolioWorkflow:
             # 2. VERIFY PORTFOLIO
             portfolio = portfolio_service.get_portfolio("basic_test_portfolio")
             assert portfolio is not None
-            assert portfolio.name == "basic_test_portfolio"
+            assert portfolio.config.name == "basic_test_portfolio"
             
             # 3. LIST PORTFOLIOS
             portfolios = portfolio_service.list_portfolios()
