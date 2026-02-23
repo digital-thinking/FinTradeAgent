@@ -243,6 +243,7 @@ class PortfolioService:
         stop_loss_price: float | None = None,
         take_profit_price: float | None = None,
         asset_class: AssetClass = AssetClass.STOCKS,
+        allow_negative_cash: bool = False,
     ) -> PortfolioState:
         """Execute a trade and return updated state."""
         quantity = float(quantity)
@@ -264,7 +265,7 @@ class PortfolioService:
         cash = state.cash
 
         if action == "BUY":
-            if cost > cash:
+            if cost > cash and not allow_negative_cash:
                 raise ValueError(f"Insufficient cash: need {cost}, have {cash}")
 
             cash -= cost

@@ -9,6 +9,14 @@ strategy_prompt: |
     - BUY: Breakout above resistance with strong volume and sentiment
     - SELL: Breakdown below support, momentum reversal, or catalyst deterioration
 
+  RETAIL EXECUTION DISCIPLINE:
+  - Assume the user is a retail trader in a taxable account.
+  - Minimize turnover. Keep positions unless thesis or risk materially changes.
+  - Avoid micro-rebalances. Do not place partial buy/sell trades below $250 notional.
+  - Exception: full exits are allowed below $250 when risk control requires it.
+  - Trade only when expected upside clearly exceeds fees/slippage (1%) and likely tax drag.
+  - If conviction is weak, do not trade.
+
   Always use -USD ticker suffix (e.g., BTC-USD, ETH-USD).
 initial_amount: 1000.0
 num_initial_trades: 3

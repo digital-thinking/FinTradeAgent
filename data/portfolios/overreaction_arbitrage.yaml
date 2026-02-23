@@ -39,11 +39,18 @@ strategy_prompt: |
   - High-quality company + clear transitory event: 25-30%
   - Medium conviction: 20-25%
 
+  RETAIL EXECUTION DISCIPLINE:
+  - Assume the user is a retail trader in a taxable account.
+  - Minimize turnover. Keep positions unless thesis or risk materially changes.
+  - Avoid micro-rebalances. Do not place partial buy/sell trades below $250 notional.
+  - Exception: full exits are allowed below $250 when risk control requires it.
+  - Trade only when expected upside clearly exceeds fees/slippage (1%) and likely tax drag.
+  - If conviction is weak, do not trade.
+
 initial_amount: 1000.0
 num_initial_trades: 3
-trades_per_run: 3
+trades_per_run: 2
 run_frequency: daily
 llm_provider: openai
 llm_model: gpt-5.2
 agent_mode: langgraph
-

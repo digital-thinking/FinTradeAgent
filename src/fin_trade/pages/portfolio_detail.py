@@ -141,8 +141,8 @@ def _render_portfolio_actions(
     on_back: Callable | None,
     on_navigate_to_portfolio: Callable[[str], None] | None,
 ) -> None:
-    """Render Clone and Reset action buttons."""
-    col1, col2 = st.columns(2)
+    """Render Clone, Reset, and Delete action buttons."""
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         if st.button("Clone", key="clone_btn", help="Create a copy of this portfolio"):
@@ -152,6 +152,10 @@ def _render_portfolio_actions(
         if st.button("Reset", key="reset_btn", type="secondary", help="Reset to initial state"):
             st.session_state.show_reset_dialog = True
 
+    with col3:
+        if st.button("Delete", key="delete_btn", type="secondary", help="Delete this portfolio"):
+            st.session_state.show_delete_dialog = True
+
     # Clone Dialog
     if st.session_state.get("show_clone_dialog", False):
         _render_clone_dialog(portfolio_name, portfolio_service, on_navigate_to_portfolio)
@@ -159,6 +163,10 @@ def _render_portfolio_actions(
     # Reset Dialog
     if st.session_state.get("show_reset_dialog", False):
         _render_reset_dialog(portfolio_name, config, state, portfolio_service)
+
+    # Delete Dialog
+    if st.session_state.get("show_delete_dialog", False):
+        _render_delete_dialog(portfolio_name, state, portfolio_service, on_back)
 
 
 @st.dialog("Clone Portfolio")
@@ -244,6 +252,55 @@ def _render_reset_dialog(
     with col2:
         if st.button("Cancel", key="cancel_reset"):
             st.session_state.show_reset_dialog = False
+            st.rerun()
+
+
+@st.dialog("Delete Portfolio")
+def _render_delete_dialog(
+    portfolio_name: str,
+    state: PortfolioState,
+    portfolio_service: PortfolioService,
+    on_back: Callable | None,
+) -> None:
+    """Render a destructive delete dialog with explicit confirmation."""
+    st.error("This action permanently deletes the portfolio configuration.")
+    st.markdown("**What will be deleted:**")
+    st.markdown(f"- Portfolio config: `{portfolio_name}.yaml`")
+    st.markdown(f"- Current state file: `{portfolio_name}.json`")
+    st.markdown(f"- **{len(state.trades)}** trades and **{len(state.holdings)}** holdings")
+
+    st.divider()
+    st.markdown(
+        f"Type **{portfolio_name}** to confirm deletion and prevent accidental clicks."
+    )
+    confirmation_name = st.text_input("Confirm portfolio name", value="", key="delete_name_confirm")
+    archive_state = st.checkbox(
+        "Archive state before delete",
+        value=True,
+        help="If enabled, current state is moved to data/state/archive/ before deleting config.",
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Delete Portfolio", type="primary", key="confirm_delete_portfolio"):
+            if confirmation_name.strip() != portfolio_name:
+                st.error("Confirmation text does not match portfolio name.")
+                return
+
+            try:
+                portfolio_service.delete_portfolio(portfolio_name, archive_state=archive_state)
+                st.success(f"Portfolio '{portfolio_name}' deleted.")
+                st.session_state.show_delete_dialog = False
+                if on_back:
+                    on_back()
+                    return
+                st.rerun()
+            except FileNotFoundError as e:
+                st.error(str(e))
+
+    with col2:
+        if st.button("Cancel", key="cancel_delete_portfolio"):
+            st.session_state.show_delete_dialog = False
             st.rerun()
 
 

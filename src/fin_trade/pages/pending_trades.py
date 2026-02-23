@@ -340,6 +340,8 @@ def _render_pending_trades_for_log(
     net_cash_change = total_sell_proceeds - total_buy_cost
     cash_after_trades = available_cash + net_cash_change
     has_sufficient_cash = cash_after_trades >= 0 or is_empty_portfolio
+    needs_cash_override = not has_sufficient_cash and len(selected_indices) > 0
+    allow_negative_cash = False
 
     # Show cash summary
     st.markdown(f"**Available Cash:** ${available_cash:,.2f}")
@@ -355,12 +357,19 @@ def _render_pending_trades_for_log(
 
         if not has_sufficient_cash:
             st.error(f"⚠️ Insufficient cash! Need ${-cash_after_trades:,.2f} more.")
+            allow_negative_cash = st.checkbox(
+                "Apply anyway (allow negative cash balance)",
+                key=f"allow_negative_cash_{log.id}",
+                help="Override cash validation and execute selected BUY trades.",
+            )
         elif is_empty_portfolio and cash_after_trades < 0:
             st.info(f"ℹ️ Initial portfolio setup - cash will be increased by ${-cash_after_trades:,.2f}")
 
     col1, col2 = st.columns([1, 3])
     with col1:
-        button_disabled = len(selected_indices) == 0 or not has_sufficient_cash
+        button_disabled = len(selected_indices) == 0 or (
+            needs_cash_override and not allow_negative_cash
+        )
         if st.button(
             f"✓ Apply {len(selected_indices)} Trade(s)",
             key=f"apply_pending_{log.id}",
@@ -386,6 +395,7 @@ def _render_pending_trades_for_log(
                 log, recommendations, selected_indices, log_service, ticker_corrections,
                 quantity_adjustments=quantity_adjustments,
                 increase_cash_if_needed=is_empty_portfolio,
+                allow_negative_cash=allow_negative_cash,
             )
 
             # Clear ticker corrections and quantity adjustments after applying
@@ -432,6 +442,7 @@ def _apply_pending_trades(
     ticker_corrections: dict[int, str] | None = None,
     quantity_adjustments: dict[int, float] | None = None,
     increase_cash_if_needed: bool = False,
+    allow_negative_cash: bool = False,
 ) -> None:
     """Apply selected pending trades to the portfolio.
 
@@ -443,6 +454,7 @@ def _apply_pending_trades(
         ticker_corrections: Optional dict mapping trade index to corrected ticker
         quantity_adjustments: Optional dict mapping trade index to adjusted quantity
         increase_cash_if_needed: If True, increase cash for initial portfolio setup
+        allow_negative_cash: If True, allow BUY trades to reduce cash below zero
     """
     if ticker_corrections is None:
         ticker_corrections = {}
@@ -527,6 +539,7 @@ def _apply_pending_trades(
                 stop_loss_price=stop_loss_price,
                 take_profit_price=take_profit_price,
                 asset_class=config.asset_class,
+                allow_negative_cash=allow_negative_cash,
             )
             applied_indices.append(i)
         except Exception as e:

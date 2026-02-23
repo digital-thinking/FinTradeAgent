@@ -540,6 +540,33 @@ class TestExecuteTrade:
                 reasoning="Test",
             )
 
+    def test_buy_allows_negative_cash_with_override(
+        self, temp_data_dir, mock_security_service, empty_portfolio_state
+    ):
+        """Test BUY can proceed below zero cash when override is enabled."""
+        mock_security_service.force_update_price.return_value = 5000.0
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        new_state = service.execute_trade(
+            empty_portfolio_state,
+            ticker="EXPENSIVE",
+            action="BUY",
+            quantity=3,  # Costs 15000, starts with 10000
+            reasoning="Manual override",
+            allow_negative_cash=True,
+        )
+
+        assert new_state.cash == -5000.0
+        assert len(new_state.holdings) == 1
+        assert new_state.holdings[0].ticker == "EXPENSIVE"
+        assert len(new_state.trades) == 1
+        assert new_state.trades[0].action == "BUY"
+
     def test_sell_fails_with_insufficient_holdings(
         self, temp_data_dir, mock_security_service, sample_portfolio_state
     ):
