@@ -177,7 +177,8 @@ CONSTRAINTS:
 - Cash Available: ${cash:.2f}
 - {trade_instruction}
 - Can only SELL stocks currently owned
-- Can only BUY with available cash
+- Can only BUY with available cash OR with proceeds from SELL trades in this same recommendation batch
+- CONTINGENT BUY RULE: If the analysis recommends selling a holding to fund a new purchase, include BOTH the SELL and the BUY as separate trades. The SELL is executed first; the BUY is contingent on those proceeds settling. Calculate BUY quantity using (current cash + expected SELL proceeds - 1% sell cost) as available funds.
 
 CURRENT HOLDINGS:
 {holdings_info}
@@ -203,7 +204,7 @@ CRITICAL RULES (MUST FOLLOW):
 - Generate trades based on the analysis - if analysis shows no opportunities, return empty trades array
 - If analysis says SELL, generate SELL trades. If analysis says BUY, generate BUY trades.
 - Use REAL ticker symbols exactly as mentioned in the analysis
-- Calculate quantity: For BUY, use floor(cash_to_allocate / estimated_price)
+- Calculate quantity: For BUY, use floor(cash_to_allocate / estimated_price). For a contingent BUY (funded by a SELL in this batch), use expected SELL proceeds + current cash as cash_to_allocate.
 - Keep reasoning brief (1-2 sentences per trade) - genuine conviction only
 - Return valid JSON only - no explanatory text before or after
 - EVERY trade MUST have quantity > 0 - zero-share trades are INVALID
