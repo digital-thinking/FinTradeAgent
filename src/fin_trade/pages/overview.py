@@ -1,5 +1,7 @@
 """Overview page showing all portfolio tiles."""
 
+from datetime import datetime
+
 import streamlit as st
 
 from fin_trade.cache import get_portfolio_metrics
@@ -90,7 +92,7 @@ llm_model: gpt-4o""",
             render_large_status_badge(overdue_count > 0, overdue_count)
         with col4:
             if security_service:
-                _render_run_all_button(portfolio_data, security_service)
+                _render_run_all_button(portfolio_data, security_service, portfolio_service)
 
     # Replace cards skeleton with actual portfolio tiles
     with cards_placeholder.container():
@@ -116,16 +118,18 @@ llm_model: gpt-4o""",
 def _render_run_all_button(
     portfolio_data: list,
     security_service: SecurityService,
+    portfolio_service: PortfolioService,
 ) -> None:
     """Render the Run All Agents button and handle execution."""
     if st.button("🚀 Run All", type="primary", use_container_width=True):
-        _execute_all_agents(portfolio_data, security_service)
+        _execute_all_agents(portfolio_data, security_service, portfolio_service)
 
 
 @st.dialog("Running All Agents", width="large")
 def _execute_all_agents(
     portfolio_data: list,
     security_service: SecurityService,
+    portfolio_service: PortfolioService,
 ) -> None:
     """Execute agents for all portfolios and store recommendations."""
     total = len(portfolio_data)
@@ -151,6 +155,9 @@ def _execute_all_agents(
             else:
                 agent = LangGraphAgentService(security_service=security_service)
                 recommendations, metrics = agent.execute(config, state)
+
+            state.last_execution = datetime.now()
+            portfolio_service.save_state(filename, state)
 
             results.append({
                 "portfolio": config.name,
