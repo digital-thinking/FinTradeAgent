@@ -60,6 +60,7 @@ class PortfolioConfig:
     run_frequency: Literal["daily", "weekly", "monthly"]
     llm_provider: Literal["anthropic", "openai", "ollama"]
     llm_model: str
+    llm_reasoning: str | None = None
     ollama_base_url: str = "http://localhost:11434"
     asset_class: AssetClass = AssetClass.STOCKS
     agent_mode: Literal["simple", "langgraph", "debate"] = "langgraph"

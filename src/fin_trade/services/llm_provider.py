@@ -13,7 +13,7 @@ class LLMProvider(ABC):
     """Abstract base class for LLM providers."""
 
     @abstractmethod
-    def generate(self, prompt: str, model: str) -> str:
+    def generate(self, prompt: str, model: str, reasoning: str | None = None) -> str:
         """Generate a response from the LLM."""
         pass
 
@@ -39,7 +39,7 @@ class AnthropicProvider(LLMProvider):
 
         self.client = anthropic.Anthropic(api_key=api_key)
 
-    def generate(self, prompt: str, model: str) -> str:
+    def generate(self, prompt: str, model: str, reasoning: str | None = None) -> str:
         """Invoke Anthropic's API with web search enabled."""
         message = self.client.messages.create(
             model=model,
@@ -79,7 +79,7 @@ class OpenAIProvider(LLMProvider):
 
         self.client = openai.OpenAI(api_key=api_key)
 
-    def generate(self, prompt: str, model: str) -> str:
+    def generate(self, prompt: str, model: str, reasoning: str | None = None) -> str:
         """Invoke OpenAI's API with web search enabled for search models."""
         search_models = {
             "gpt-4o": "gpt-4o-search-preview",
@@ -88,6 +88,7 @@ class OpenAIProvider(LLMProvider):
             "gpt-5-mini": "gpt-5-mini-search-api",
             "gpt-5.1": "gpt-5-search-api",
             "gpt-5.2": "gpt-5-search-api",
+            "gpt-5.4": "gpt-5-search-api",
         }
         actual_model = search_models.get(model, model)
 
@@ -108,6 +109,9 @@ class OpenAIProvider(LLMProvider):
 
         if "search" in actual_model:
             request_params["web_search_options"] = {"search_context_size": "medium"}
+
+        if reasoning:
+            request_params["reasoning_effort"] = reasoning
 
         response = self.client.chat.completions.create(**request_params)
         return response.choices[0].message.content
@@ -138,7 +142,7 @@ class OllamaProvider(LLMProvider):
         """Ollama models do not support built-in web search."""
         return False
 
-    def generate(self, prompt: str, model: str | None = None) -> str:
+    def generate(self, prompt: str, model: str | None = None, reasoning: str | None = None) -> str:
         """Invoke Ollama's OpenAI-compatible API."""
         effective_model = model or self.model
         if not effective_model:

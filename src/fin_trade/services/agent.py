@@ -168,7 +168,7 @@ class AgentService:
             model=config.llm_model,
             ollama_base_url=config.ollama_base_url,
         )
-        response = provider.generate(prompt, config.llm_model)
+        response = provider.generate(prompt, config.llm_model, config.llm_reasoning)
 
         # Save log for debugging
         self._save_log(

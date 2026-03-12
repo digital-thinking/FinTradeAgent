@@ -75,6 +75,7 @@ class PortfolioService:
             run_frequency=data["run_frequency"],
             llm_provider=data["llm_provider"],
             llm_model=data["llm_model"],
+            llm_reasoning=data.get("llm_reasoning"),
             ollama_base_url=data.get("ollama_base_url", "http://localhost:11434"),
             asset_class=AssetClass(data.get("asset_class", AssetClass.STOCKS.value)),
             agent_mode=data.get("agent_mode", "langgraph"),

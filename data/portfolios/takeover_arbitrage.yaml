@@ -62,5 +62,6 @@ num_initial_trades: 3
 trades_per_run: 2
 run_frequency: daily
 llm_provider: openai
-llm_model: gpt-5.2
+llm_model: gpt-5.4
+llm_reasoning: high
 agent_mode: langgraph
