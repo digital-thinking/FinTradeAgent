@@ -22,7 +22,7 @@ def main():
         page_title="Agentic Trade Assistant",
         page_icon="📈",
         layout="wide",
-        initial_sidebar_state="collapsed",
+        initial_sidebar_state="collapsed"
     )
 
     # Load custom CSS
@@ -49,7 +49,7 @@ def main():
         st.title("📈 Trade Assistant")
         st.divider()
 
-        if st.button("📈 Summary Dashboard", use_container_width=True,
+        if st.button("📈 Summary Dashboard", width='stretch',
                      type="primary" if st.session_state.current_page == "dashboard" else "secondary"):
             st.session_state.current_page = "dashboard"
             st.session_state.selected_portfolio = None
@@ -57,7 +57,7 @@ def main():
                 del st.session_state.recommendation
             st.rerun()
 
-        if st.button("🏠 Portfolios", use_container_width=True,
+        if st.button("🏠 Portfolios", width='stretch',
                      type="primary" if st.session_state.current_page == "overview" else "secondary"):
             st.session_state.current_page = "overview"
             st.session_state.selected_portfolio = None
@@ -65,7 +65,7 @@ def main():
                 del st.session_state.recommendation
             st.rerun()
 
-        if st.button("📋 Pending Trades", use_container_width=True,
+        if st.button("📋 Pending Trades", width='stretch',
                      type="primary" if st.session_state.current_page == "pending_trades" else "secondary"):
             st.session_state.current_page = "pending_trades"
             st.session_state.selected_portfolio = None
@@ -73,7 +73,7 @@ def main():
                 del st.session_state.recommendation
             st.rerun()
 
-        if st.button("📈 Compare", use_container_width=True,
+        if st.button("📈 Compare", width='stretch',
                      type="primary" if st.session_state.current_page == "comparison" else "secondary"):
             st.session_state.current_page = "comparison"
             st.session_state.selected_portfolio = None
@@ -81,7 +81,7 @@ def main():
                 del st.session_state.recommendation
             st.rerun()
 
-        if st.button("📊 System Health", use_container_width=True,
+        if st.button("📊 System Health", width='stretch',
                      type="primary" if st.session_state.current_page == "system_health" else "secondary"):
             st.session_state.current_page = "system_health"
             st.session_state.selected_portfolio = None
@@ -100,7 +100,7 @@ def main():
             if st.button(
                 f"{portfolio_name}",
                 key=f"sidebar_{portfolio_name}",
-                use_container_width=True,
+                width='stretch',
                 type="primary" if is_selected else "secondary",
             ):
                 st.session_state.selected_portfolio = portfolio_name

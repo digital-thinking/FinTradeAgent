@@ -372,7 +372,7 @@ def _render_holdings(
                 "Take Profit": st.column_config.NumberColumn("Take Profit", format="$%.2f"),
             },
             hide_index=True,
-            use_container_width=True,
+            width='stretch',
         )
 
 
@@ -466,7 +466,7 @@ def _render_performance_chart(
         benchmark_data=benchmark_data,
     )
 
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
+    st.plotly_chart(fig, width='stretch', config={"displayModeBar": True})
 
 
 def _calculate_performance_data(

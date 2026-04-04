@@ -446,6 +446,6 @@ def render_trade_history(
                 "Reasoning": st.column_config.TextColumn("Reasoning", width="large"),
             },
             hide_index=True,
-            use_container_width=True,
+            width='stretch',
         )
 

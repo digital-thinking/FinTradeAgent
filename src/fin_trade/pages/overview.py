@@ -121,7 +121,7 @@ def _render_run_all_button(
     portfolio_service: PortfolioService,
 ) -> None:
     """Render the Run All Agents button and handle execution."""
-    if st.button("🚀 Run All", type="primary", use_container_width=True):
+    if st.button("🚀 Run All", type="primary", width='stretch'):
         _execute_all_agents(portfolio_data, security_service, portfolio_service)
 
 

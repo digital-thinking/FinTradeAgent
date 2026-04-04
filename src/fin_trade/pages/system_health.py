@@ -121,7 +121,7 @@ def _render_execution_history(log_service: ExecutionLogService) -> None:
             "Status": st.column_config.TextColumn("Status", width="small"),
         },
         hide_index=True,
-        use_container_width=True,
+        width='stretch',
     )
 
     # Expandable detail view for each execution
@@ -171,7 +171,7 @@ def _render_execution_history(log_service: ExecutionLogService) -> None:
                         })
 
                     step_df = pd.DataFrame(step_data)
-                    st.dataframe(step_df, hide_index=True, use_container_width=True)
+                    st.dataframe(step_df, hide_index=True, width='stretch')
             except json.JSONDecodeError:
                 st.caption("No step details available")
 
@@ -200,7 +200,7 @@ def _render_analytics(log_service: ExecutionLogService) -> None:
         labels={"date": "Date", "executions": "Executions"},
     )
     fig_executions.update_layout(template="plotly_dark", height=300)
-    st.plotly_chart(fig_executions, use_container_width=True)
+    st.plotly_chart(fig_executions, width='stretch')
 
     col1, col2 = st.columns(2)
 
@@ -214,7 +214,7 @@ def _render_analytics(log_service: ExecutionLogService) -> None:
             labels={"date": "Date", "tokens": "Tokens"},
         )
         fig_tokens.update_layout(template="plotly_dark", height=300)
-        st.plotly_chart(fig_tokens, use_container_width=True)
+        st.plotly_chart(fig_tokens, width='stretch')
 
     with col2:
         # Average duration over time
@@ -227,7 +227,7 @@ def _render_analytics(log_service: ExecutionLogService) -> None:
             markers=True,
         )
         fig_duration.update_layout(template="plotly_dark", height=300)
-        st.plotly_chart(fig_duration, use_container_width=True)
+        st.plotly_chart(fig_duration, width='stretch')
 
     # Agent mode breakdown
     stats = log_service.get_summary_stats(days=30)
@@ -246,7 +246,7 @@ def _render_analytics(log_service: ExecutionLogService) -> None:
                 title="Executions by Agent Mode",
             )
             fig_mode.update_layout(template="plotly_dark", height=300)
-            st.plotly_chart(fig_mode, use_container_width=True)
+            st.plotly_chart(fig_mode, width='stretch')
 
         with col2:
             fig_tokens_mode = px.bar(
@@ -257,7 +257,7 @@ def _render_analytics(log_service: ExecutionLogService) -> None:
                 labels={"mode": "Agent Mode", "tokens": "Total Tokens"},
             )
             fig_tokens_mode.update_layout(template="plotly_dark", height=300)
-            st.plotly_chart(fig_tokens_mode, use_container_width=True)
+            st.plotly_chart(fig_tokens_mode, width='stretch')
 
 
 def _render_by_portfolio(log_service: ExecutionLogService) -> None:
@@ -282,7 +282,7 @@ def _render_by_portfolio(log_service: ExecutionLogService) -> None:
             "avg_duration_ms": st.column_config.NumberColumn("Avg Duration (ms)", format="%.0f"),
         },
         hide_index=True,
-        use_container_width=True,
+        width='stretch',
     )
 
     col1, col2 = st.columns(2)
@@ -297,7 +297,7 @@ def _render_by_portfolio(log_service: ExecutionLogService) -> None:
             labels={"portfolio": "Portfolio", "executions": "Executions"},
         )
         fig_exec.update_layout(template="plotly_dark", height=300)
-        st.plotly_chart(fig_exec, use_container_width=True)
+        st.plotly_chart(fig_exec, width='stretch')
 
     with col2:
         # Tokens by portfolio
@@ -309,7 +309,7 @@ def _render_by_portfolio(log_service: ExecutionLogService) -> None:
             labels={"portfolio": "Portfolio", "tokens": "Total Tokens"},
         )
         fig_tokens.update_layout(template="plotly_dark", height=300)
-        st.plotly_chart(fig_tokens, use_container_width=True)
+        st.plotly_chart(fig_tokens, width='stretch')
 
 
 def _render_recommendations_section(
@@ -368,7 +368,7 @@ def _render_recommendations_section(
             "Status": st.column_config.TextColumn("Status", width="small"),
         },
         hide_index=True,
-        use_container_width=True,
+        width='stretch',
     )
 
     # Check if there are pending trades to apply

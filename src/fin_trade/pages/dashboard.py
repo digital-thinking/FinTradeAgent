@@ -103,7 +103,7 @@ def render_dashboard_page(portfolio_service: PortfolioService) -> None:
             font=dict(family="Segoe UI, Roboto, Helvetica Neue, sans-serif", color="#000000"),
             title_font_color="#000000",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     st.divider()
 
@@ -150,7 +150,7 @@ def render_dashboard_page(portfolio_service: PortfolioService) -> None:
             "Status": st.column_config.TextColumn("Status"),
         },
         hide_index=True,
-        use_container_width=True
+        width='stretch'
     )
 
     # Performance Attribution Section
@@ -272,7 +272,7 @@ def _render_sector_attribution_chart(
         yaxis=dict(autorange="reversed"),
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     # Show sector breakdown table
     with st.expander("Sector Details"):
@@ -300,7 +300,7 @@ def _render_sector_attribution_chart(
                 "Return %": st.column_config.NumberColumn("Return %", format=".1f"),
             },
             hide_index=True,
-            use_container_width=True,
+            width='stretch',
         )
 
 
@@ -367,5 +367,5 @@ def _render_top_performers(holding_data: list[HoldingAttribution]) -> None:
                 "Return %": st.column_config.NumberColumn("Return %", format=".1f"),
             },
             hide_index=True,
-            use_container_width=True,
+            width='stretch',
         )

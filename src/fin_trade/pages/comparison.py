@@ -175,7 +175,7 @@ def _render_performance_comparison(
             hovermode="x unified",
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     except Exception as e:
         st.error(f"Failed to generate comparison chart: {e}")
@@ -205,7 +205,7 @@ def _render_metrics_comparison(
         # Style the table
         st.dataframe(
             display_df,
-            use_container_width=True,
+            width='stretch',
             height=400,
         )
 

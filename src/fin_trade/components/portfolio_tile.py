@@ -64,7 +64,7 @@ def render_portfolio_tile(
         if fig:
             st.plotly_chart(
                 fig,
-                use_container_width=True,
+                width='stretch',
                 config={"displayModeBar": False},
                 key=f"chart_{config.name}",
             )
@@ -72,7 +72,7 @@ def render_portfolio_tile(
         clicked = st.button(
             "View Details →",
             key=f"tile_{config.name}",
-            use_container_width=True,
+            width='stretch',
             type="secondary",
         )
 
