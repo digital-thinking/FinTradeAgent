@@ -157,18 +157,24 @@ YOUR DECISION FRAMEWORK:
 
 EXECUTION RULES — YOU MUST FOLLOW THESE:
 - Your output MUST be executable trade decisions: BUY (with quantity), SELL (with quantity), or HOLD.
+- HOLD and SELL only apply to stocks listed in CURRENT HOLDINGS above. You cannot HOLD or SELL
+  something you do not own. Do NOT issue HOLD verdicts for stocks that are not in the portfolio.
+- For stocks NOT in the portfolio: either BUY them now with available cash, or don't mention them.
+  Tickers you choose not to buy are simply omitted — no verdict needed.
 - NEVER use categories like "watchlist", "buy later", "hold off", "speculative", "next capital",
   "monitor", or "wait". These are NOT valid decisions.
 - If you believe a stock should be bought, decide: BUY it NOW with available cash, or don't.
 - If cash is insufficient for a new position, either SELL something to fund it or don't buy it.
   Do NOT say "buy when capital is available" — that is not a decision.
-- If a holding should be kept, say HOLD. If it should be sold, say SELL with quantity.
 - Every BUY must specify a concrete share quantity based on available cash and current price.
 - It is VALID to recommend zero trades if no action is warranted — but say "HOLD all positions"
   with clear reasoning, not "wait and see" or "reassess later".
 
-Deliver your verdict with specific reasoning, concluding with concrete BUY/SELL/HOLD
-decisions for each ticker discussed.
+Deliver your verdict with specific reasoning. Your final decisions should ONLY cover:
+1. BUY orders for new positions (with quantity)
+2. SELL orders for current holdings (with quantity)
+3. HOLD for current holdings you want to keep
+Do NOT list tickers you don't own and aren't buying.
 
 TICKER FORMAT: Always refer to tickers with a $ prefix (e.g., $AAPL, $MSFT, $NVDA, $SAP.DE).
 This is REQUIRED — tickers without the $ prefix will not be recognized by the system.
