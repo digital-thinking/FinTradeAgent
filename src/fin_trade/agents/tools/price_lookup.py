@@ -6,42 +6,27 @@ from fin_trade.services.security import SecurityService
 
 
 def extract_tickers_from_text(text: str) -> list[str]:
-    """Extract potential stock ticker symbols from text.
+    """Extract stock ticker symbols prefixed with $ from text.
 
-    Looks for uppercase 1-5 letter sequences that appear to be tickers.
-    Filters out common false positives like 'THE', 'AND', etc.
+    Matches tickers written as $AAPL, $BTC-USD, $SAP.DE, etc.
+    The LLM prompts instruct the model to always use $TICKER notation.
 
     Args:
-        text: Text that may contain stock ticker mentions
+        text: Text containing $TICKER references
 
     Returns:
-        List of unique ticker symbols found
+        List of unique ticker symbols found (without the $ prefix)
     """
-    # Common words to exclude
-    exclude_words = {
-        "THE", "AND", "FOR", "NOT", "BUT", "ARE", "WAS", "HAS", "HAD",
-        "CAN", "MAY", "NOW", "NEW", "ALL", "ANY", "ONE", "TWO", "OUR",
-        "OUT", "HOW", "WHO", "WHY", "ITS", "BUY", "SELL", "HOLD", "USD",
-        "ETF", "IPO", "CEO", "CFO", "EPS", "P/E", "RSI", "GDP", "FED",
-        "SEC", "Q1", "Q2", "Q3", "Q4", "YTD", "ATH", "ATL", "AI", "AI.",
-        # Common false positives from strategy/research text
-        "NO", "OR", "IF", "AS", "ON", "IN", "AT", "BY", "BE", "DO",
-        "US", "EU", "UK", "IT", "VS",
-        "BAE", "CIO", "CFO", "NATO", "LNG", "IRA", "ACT", "OTC",
-        "CHIPS", "TRADE", "AVOID", "ROLE", "EDGE",
-    }
-
-    # Match uppercase words of 2-5 characters that look like tickers.
-    # Pattern includes optional exchange suffix (.DE) and crypto quote suffix (-USD).
-    pattern = r"\b([A-Z]{2,5}(?:-[A-Z]{3}|\.[A-Z]{1,2})?)\b"
+    # Match $TICKER patterns: $AAPL, $BTC-USD, $SAP.DE, etc.
+    pattern = r"\$([A-Z]{1,5}(?:-[A-Z]{2,4}|\.[A-Z]{1,2})?)\b"
     matches = re.findall(pattern, text)
 
-    # Filter and deduplicate
-    tickers = []
+    # Deduplicate while preserving order
     seen = set()
+    tickers = []
     for match in matches:
         ticker = match.upper()
-        if ticker not in seen and ticker not in exclude_words:
+        if ticker not in seen:
             seen.add(ticker)
             tickers.append(ticker)
 

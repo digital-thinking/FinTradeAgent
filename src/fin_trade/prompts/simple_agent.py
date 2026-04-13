@@ -108,11 +108,12 @@ Provide a concise summary of your findings organized by:
 - Overall market conditions
 - Sector-specific news (if relevant to strategy)
 - Individual stock news (for current holdings and potential opportunities)
-- Specific BUY candidates with their REAL ticker symbols (e.g., AAPL, NVDA, MSFT)
+- Specific BUY candidates with their ticker symbols
 - Key risks or catalysts to watch
 
-IMPORTANT: Only mention stocks that ACTUALLY EXIST with their REAL ticker symbols.
-Do NOT use placeholder names like "Company A" or made-up tickers like "COMA".
+TICKER FORMAT: Always refer to tickers with a $ prefix (e.g., $AAPL, $NVDA, $MSFT, $SAP.DE).
+Only mention stocks that ACTUALLY EXIST with their REAL ticker symbols.
+Do NOT use placeholder names like "Company A" or made-up tickers.
 All stocks must be verifiable on real exchanges (NYSE, NASDAQ, XETRA, etc.).
 
 Keep the summary focused and relevant to the strategy. No fluff."""
@@ -140,30 +141,32 @@ MARKET INTELLIGENCE DATA:
 
 {reflection_context}
 
-ANALYSIS TASK - Provide concrete analysis with specific ticker symbols:
+ANALYSIS TASK - Provide EXECUTABLE decisions with specific ticker symbols:
 
 1. HOLD/SELL DECISION: For each current holding, give a clear HOLD or SELL decision with reasoning.
-2. BUY CANDIDATES: List 2-5 specific tickers that match the strategy based on the research above.
-3. POSITION SIZING: How to allocate the ${cash:.2f} available cash.
+2. BUY DECISIONS: List specific tickers to BUY NOW with available cash, with quantity and reasoning.
+3. POSITION SIZING: How to allocate the ${cash:.2f} available cash across BUY decisions.
 
 TRANSACTION COSTS: Assume 1% cost per trade. Only recommend trades where expected return exceeds this friction. Avoid churning positions for small gains.
 
-CRITICAL RULES (MUST FOLLOW):
+EXECUTION MINDSET (MUST FOLLOW):
+- You are the portfolio manager making EXECUTABLE decisions, not an advisor making suggestions.
+- A human will review and approve/reject your trades, but YOU must commit to specific actions.
+- NEVER use categories like "watchlist", "buy later", "hold off", "speculative", "monitor", or "wait".
+- If you want to buy a stock, BUY it NOW with available cash or don't. No deferrals.
+- If cash is insufficient, either SELL something to fund the purchase or skip it entirely.
 - The market research above is CURRENT, VERIFIED, and AUTHORITATIVE - use it directly without question
-- Give SPECIFIC ticker symbols and CONCRETE recommendations with clear BUY/SELL/HOLD decisions
+- Give SPECIFIC ticker symbols and CONCRETE decisions with clear BUY/SELL/HOLD verdicts
 - Do NOT ask for more information, clarification, or verification - you have everything you need
 - Do NOT express doubt about data freshness or accuracy - the research IS current and correct
-- Do NOT refuse to make decisions or defer action - be decisive and commit to specific recommendations
-- Your job is to ANALYZE and RECOMMEND, not to gatekeep or request additional research
+- Do NOT refuse to make decisions or defer action - be decisive and commit to specific actions
 - If the research mentions specific prices/spreads, TRUST THEM and use them in your calculations
 
-TICKER VALIDATION - EXTREMELY IMPORTANT:
-- ONLY recommend stocks that ACTUALLY EXIST on real stock exchanges
-- Use REAL ticker symbols (e.g., AAPL, MSFT, NVDA, AMZN, META, TSLA, JPM, V, etc.)
-- NEVER invent fictional tickers - all tickers will be verified and fake ones will be REJECTED
-- Do NOT use placeholders like "COMA", "COMC", "XYZ", "Company A/B/C" - these do not exist
-- For German/European stocks, use correct suffixes (e.g., BAS.DE, SAP.DE, VOW3.DE)
-- If you're unsure if a ticker exists, choose a well-known stock you're confident about"""
+TICKER FORMAT: Always refer to tickers with a $ prefix (e.g., $AAPL, $MSFT, $NVDA, $SAP.DE).
+This is REQUIRED — tickers without the $ prefix will not be recognized by the system.
+Only use REAL ticker symbols for stocks that ACTUALLY EXIST on real exchanges.
+NEVER use placeholders like "COMA", "XYZ", "Company A/B/C" - they will be REJECTED.
+For German/European stocks, use correct suffixes (e.g., $BAS.DE, $SAP.DE, $VOW3.DE)."""
 
 
 # Generate trades prompt - converts analysis to JSON trade recommendations
@@ -201,8 +204,10 @@ STOP-LOSS & TAKE-PROFIT (Required for BUY orders):
 - SELL orders do not need these fields
 
 CRITICAL RULES (MUST FOLLOW):
-- Generate trades based on the analysis - if analysis shows no opportunities, return empty trades array
-- If analysis says SELL, generate SELL trades. If analysis says BUY, generate BUY trades.
+- Your job is to CONVERT the analysis into executable trades, not to second-guess or add caveats.
+- If the analysis says BUY, generate a BUY trade. If it says SELL, generate a SELL trade. If it says HOLD with no changes, return empty trades with reasoning.
+- Do NOT downgrade a BUY to "no trade" because of uncertainty, low cash, upcoming earnings, or other caution. The analysis already considered those factors. Translate the decision faithfully.
+- If a BUY candidate has no price data in the candidates section, use the price from the analysis text or a reasonable recent estimate. Missing price data is NOT a reason to skip a trade.
 - Use REAL ticker symbols exactly as mentioned in the analysis
 - Calculate quantity: For BUY, use floor(cash_to_allocate / estimated_price). For a contingent BUY (funded by a SELL in this batch), use expected SELL proceeds + current cash as cash_to_allocate.
 - Keep reasoning brief (1-2 sentences per trade) - genuine conviction only
@@ -211,9 +216,6 @@ CRITICAL RULES (MUST FOLLOW):
 - NO FILLER TRADES: Never add trades just to meet a count. Reasoning like "to satisfy requirement", "minimal position", "starter position to meet target" = FILLER = FORBIDDEN
 - ABSOLUTELY NO DUPLICATE TICKERS: Each ticker can appear ONLY ONCE. If you only find 2 good stocks, output 2 trades only.
 
-TICKER VALIDATION - EXTREMELY IMPORTANT:
-- ONLY use ticker symbols for stocks that ACTUALLY EXIST (e.g., AAPL, MSFT, NVDA, GOOGL, AMZN)
-- NEVER invent or make up tickers - all tickers are validated against real market data
-- Fake tickers like "COMA", "COMC", "XYZ", "ABC" will be REJECTED and cause execution failure
-- If the analysis mentions a dubious ticker, replace it with a real, well-known alternative
-- Use official exchange tickers only (NYSE, NASDAQ, XETRA, etc.)"""
+TICKER FORMAT: The analysis uses $TICKER notation (e.g., $AAPL, $MSFT). Strip the $ prefix
+for the JSON output (use "AAPL" not "$AAPL" in the ticker field).
+Only use REAL ticker symbols — fake tickers will be REJECTED and cause execution failure."""

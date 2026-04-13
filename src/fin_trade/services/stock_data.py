@@ -117,6 +117,12 @@ class StockDataService:
             if df.empty:
                 raise ValueError(f"No data found for {ticker}")
 
+            # Drop rows with missing OHLC data (e.g. partial intraday rows)
+            df = df.dropna(subset=["Open", "High", "Low", "Close"])
+
+            if df.empty:
+                raise ValueError(f"No valid price data for {ticker}")
+
             cache_path = self._get_cache_path(ticker)
             df.to_csv(cache_path)
             self._cache[ticker] = df
@@ -152,7 +158,17 @@ class StockDataService:
                     df.index = pd.to_datetime(df.index, utc=True)
                 self._cache[ticker] = df
             else:
-                df = self.update_data(ticker)
+                try:
+                    df = self.update_data(ticker)
+                except Exception:
+                    # Fall back to stale cached data if available
+                    if cache_path.exists():
+                        df = pd.read_csv(cache_path, index_col=0, parse_dates=True)
+                        if not isinstance(df.index, pd.DatetimeIndex):
+                            df.index = pd.to_datetime(df.index, utc=True)
+                        self._cache[ticker] = df
+                    else:
+                        raise
 
         # Convert timezone-aware index to naive for consistent comparisons
         if hasattr(df.index, 'tz') and df.index.tz is not None:
@@ -169,7 +185,10 @@ class StockDataService:
         df = self.get_history(ticker, days=5)
         if df.empty:
             raise ValueError(f"No price data available for {ticker}")
-        return float(df["Close"].iloc[-1])
+        close = df["Close"].dropna()
+        if close.empty:
+            raise ValueError(f"No valid close price for {ticker}")
+        return float(close.iloc[-1])
 
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float | None:
         """Calculate RSI (Relative Strength Index)."""

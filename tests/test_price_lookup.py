@@ -15,9 +15,9 @@ from fin_trade.agents.tools.price_lookup import (
 class TestExtractTickersFromText:
     """Tests for extract_tickers_from_text function."""
 
-    def test_extracts_simple_tickers(self):
-        """Test extraction of simple ticker symbols."""
-        text = "I recommend buying AAPL and MSFT for growth potential."
+    def test_extracts_dollar_prefixed_tickers(self):
+        """Test extraction of $TICKER formatted symbols."""
+        text = "I recommend buying $AAPL and $MSFT for growth potential."
         tickers = extract_tickers_from_text(text)
 
         assert "AAPL" in tickers
@@ -25,7 +25,7 @@ class TestExtractTickersFromText:
 
     def test_extracts_tickers_with_exchange_suffix(self):
         """Test extraction of tickers with exchange suffix."""
-        text = "Consider SAP.DE and BAS.DE for European exposure."
+        text = "Consider $SAP.DE and $BAS.DE for European exposure."
         tickers = extract_tickers_from_text(text)
 
         assert "SAP.DE" in tickers
@@ -33,15 +33,15 @@ class TestExtractTickersFromText:
 
     def test_extracts_crypto_tickers_with_quote_suffix(self):
         """Test extraction of crypto tickers with fiat quote suffix."""
-        text = "Momentum is strongest in BTC-USD and ETH-USD today."
+        text = "Momentum is strongest in $BTC-USD and $ETH-USD today."
         tickers = extract_tickers_from_text(text)
 
         assert "BTC-USD" in tickers
         assert "ETH-USD" in tickers
 
-    def test_excludes_common_words(self):
-        """Test that common words are excluded."""
-        text = "THE BUY signal for NVDA is strong AND NOT to be ignored."
+    def test_ignores_bare_uppercase_words(self):
+        """Test that bare uppercase words without $ are ignored."""
+        text = "THE BUY signal for NVDA is strong AND NOT to be ignored. Only $NVDA counts."
         tickers = extract_tickers_from_text(text)
 
         assert "THE" not in tickers
@@ -49,10 +49,11 @@ class TestExtractTickersFromText:
         assert "AND" not in tickers
         assert "NOT" not in tickers
         assert "NVDA" in tickers
+        assert len(tickers) == 1
 
-    def test_excludes_financial_acronyms(self):
-        """Test that financial acronyms are excluded."""
-        text = "The EPS and RSI for GOOGL indicate momentum. FED policy affects USD."
+    def test_ignores_financial_acronyms_without_prefix(self):
+        """Test that financial acronyms without $ are ignored."""
+        text = "The EPS and RSI for $GOOGL indicate momentum. FED policy affects USD."
         tickers = extract_tickers_from_text(text)
 
         assert "EPS" not in tickers
@@ -63,7 +64,7 @@ class TestExtractTickersFromText:
 
     def test_deduplicates_tickers(self):
         """Test that duplicate tickers are removed."""
-        text = "AAPL is strong. Buy AAPL now. AAPL to the moon!"
+        text = "$AAPL is strong. Buy $AAPL now. $AAPL to the moon!"
         tickers = extract_tickers_from_text(text)
 
         assert tickers.count("AAPL") == 1
@@ -75,20 +76,26 @@ class TestExtractTickersFromText:
         assert tickers == []
 
     def test_handles_no_tickers(self):
-        """Test handling of text without tickers."""
+        """Test handling of text without dollar-prefixed tickers."""
         text = "The market is doing well today with good economic data."
         tickers = extract_tickers_from_text(text)
 
-        # Should only contain uppercase words that aren't excluded
-        # In this case, there are no valid tickers
         assert len(tickers) == 0
 
     def test_extracts_single_letter_tickers(self):
-        """Test extraction of single letter tickers (like V for Visa)."""
-        text = "Consider V for payments exposure."
+        """Test extraction of single letter tickers (like $V for Visa)."""
+        text = "Consider $V for payments exposure."
         tickers = extract_tickers_from_text(text)
 
         assert "V" in tickers
+
+    def test_ignores_dollar_amounts(self):
+        """Test that dollar amounts like $250 are not extracted."""
+        text = "Buy $LNG with $250 of available cash at $185.50 per share."
+        tickers = extract_tickers_from_text(text)
+
+        assert "LNG" in tickers
+        assert len(tickers) == 1
 
 
 class TestFetchBuyCandidateData:
