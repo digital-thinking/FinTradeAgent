@@ -436,7 +436,11 @@ def _render_performance_chart(
     )
 
     # Use actual initial investment if recorded, otherwise fall back to config
-    initial_investment = state.initial_investment or config.initial_amount
+    initial_investment = (
+        state.initial_investment
+        if state.initial_investment is not None
+        else config.initial_amount
+    )
 
     # Display metrics row
     _render_performance_metrics(metrics, initial_investment)
@@ -504,7 +508,11 @@ def _calculate_performance_data(
         }
 
     # Use actual initial investment if recorded, otherwise fall back to config
-    cash = state.initial_investment or config.initial_amount
+    cash = (
+        state.initial_investment
+        if state.initial_investment is not None
+        else config.initial_amount
+    )
     holdings: dict[str, float] = {}
     trades = sorted(state.trades, key=lambda trade: trade.timestamp)
     start_date = pd.Timestamp(trades[0].timestamp).normalize()
@@ -574,7 +582,11 @@ def _calculate_performance_metrics(
         return {}
 
     # Use actual initial investment if recorded, otherwise fall back to config
-    initial = state.initial_investment or config.initial_amount
+    initial = (
+        state.initial_investment
+        if state.initial_investment is not None
+        else config.initial_amount
+    )
     current = values[-1]
     abs_gain = current - initial
     pct_gain = (abs_gain / initial) * 100 if initial > 0 else 0

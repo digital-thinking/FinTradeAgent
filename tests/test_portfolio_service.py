@@ -399,6 +399,33 @@ class TestCalculateGain:
         assert abs_gain == -2500.0
         assert pct_gain == -25.0
 
+    def test_calculate_gain_with_zero_initial_investment(
+        self, temp_data_dir, mock_security_service, sample_portfolio_config
+    ):
+        """Test that initial_investment=0.0 is respected and doesn't fall back to config."""
+        mock_security_service.get_price.return_value = 100.0
+
+        # State with 0.0 initial investment
+        state = PortfolioState(
+            cash=0.0,
+            holdings=[],
+            initial_investment=0.0,
+        )
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        abs_gain, pct_gain = service.calculate_gain(sample_portfolio_config, state)
+
+        # Value: 0
+        # Initial: 0.0 (NOT 10000.0 from config)
+        # Gain: 0.0 (0.0%)
+        assert abs_gain == 0.0
+        assert pct_gain == 0.0
+
 
 class TestIsExecutionOverdue:
     """Tests for is_execution_overdue method."""

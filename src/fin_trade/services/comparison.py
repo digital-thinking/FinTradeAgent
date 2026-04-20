@@ -64,7 +64,11 @@ class ComparisonService:
             return pd.DataFrame(columns=["date", "value"])
 
         # Reconstruct portfolio value over time
-        initial_cash = state.initial_investment or config.initial_amount
+        initial_cash = (
+            state.initial_investment
+            if state.initial_investment is not None
+            else config.initial_amount
+        )
         cash = initial_cash
         holdings: dict[str, float] = {}
         trades = sorted(state.trades, key=lambda trade: trade.timestamp)
@@ -408,7 +412,11 @@ class ComparisonService:
         if value_df.empty:
             raise ValueError(f"No value data for portfolio {portfolio_name}")
 
-        initial_value = state.initial_investment or config.initial_amount
+        initial_value = (
+            state.initial_investment
+            if state.initial_investment is not None
+            else config.initial_amount
+        )
         current_value = value_df["value"].iloc[-1]
 
         # Total return

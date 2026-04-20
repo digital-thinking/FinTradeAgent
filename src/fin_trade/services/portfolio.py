@@ -217,7 +217,11 @@ class PortfolioService:
         """Calculate absolute and percentage gain/loss."""
         current_value = self.calculate_value(state)
         # Use actual initial investment if recorded, otherwise fall back to config
-        initial = float(state.initial_investment or config.initial_amount)
+        initial = float(
+            state.initial_investment
+            if state.initial_investment is not None
+            else config.initial_amount
+        )
         absolute_gain = current_value - initial
         percentage_gain = (absolute_gain / initial) * 100 if initial > 0 else 0.0
         return float(absolute_gain), float(percentage_gain)
