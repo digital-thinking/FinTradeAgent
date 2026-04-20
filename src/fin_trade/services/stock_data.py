@@ -365,10 +365,16 @@ class StockDataService:
         change_5d = self._calculate_change_pct(df, 5)
         change_30d = self._calculate_change_pct(df, 30)
 
-        # Calculate 52-week high/low from history if not from stored data
+        # Calculate 52-week high/low from history if not from stored data.
+        # Always fetch a 400-day buffered window (≥252 trading days after
+        # weekends/holidays), independent of `days_needed` above — otherwise
+        # a 30-day slice could be mislabeled as a 52w range.
         if high_52w is None or low_52w is None:
-            high_52w = float(df["High"].max()) if "High" in df.columns else None
-            low_52w = float(df["Low"].min()) if "Low" in df.columns else None
+            range_df = self.get_history(ticker, days=400)
+            if not range_df.empty and "High" in range_df.columns:
+                high_52w = float(range_df["High"].max())
+            if not range_df.empty and "Low" in range_df.columns:
+                low_52w = float(range_df["Low"].min())
 
         pct_from_high = None
         pct_from_low = None

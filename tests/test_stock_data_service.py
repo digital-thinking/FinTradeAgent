@@ -521,6 +521,51 @@ class TestGetPriceContext:
         with pytest.raises(ValueError, match="No price data available"):
             service.get_price_context("EMPTY")
 
+    def test_52w_range_uses_400_day_window(self, tmp_path):
+        """52w high/low must come from ≥400 buffered days (≥252 trading days),
+        never from the potentially-30-day `days_needed` window.
+        """
+        service = StockDataService(data_dir=tmp_path)
+
+        # Cache ~400 days of data with the maximum High at day ~390 ago —
+        # outside a 30-day or even 365-day window, inside a 400-day window.
+        end = datetime.now()
+        dates = pd.date_range(end=end, periods=400, freq="D")
+        highs = [100.0 + i * 0.01 for i in range(400)]  # mostly climbing slowly
+        highs[10] = 500.0  # early spike at day ~390 ago
+        lows = [50.0 - i * 0.01 for i in range(400)]
+        lows[10] = 5.0  # matching early low
+        df = pd.DataFrame({
+            "Close": [100.0 + i * 0.01 for i in range(400)],
+            "High": highs,
+            "Low": lows,
+            "Volume": [1_000_000 for _ in range(400)],
+        }, index=dates)
+        service._cache["WIDE"] = df
+
+        # Security service provides MA-50 but no 52w range — forces the 52w
+        # history fallback to fire.
+        security_service = MagicMock()
+        security_service.get_52w_range.return_value = None
+        security_service.get_moving_averages.return_value = {"ma_50": 123.0}
+        security_service.get_short_interest.return_value = None
+
+        # Spy on get_history to confirm the 52w path explicitly requests 400 days.
+        original_get_history = service.get_history
+        call_days: list[int] = []
+
+        def tracking_get_history(ticker: str, days: int = 365) -> pd.DataFrame:
+            call_days.append(days)
+            return original_get_history(ticker, days=days)
+
+        service.get_history = tracking_get_history  # type: ignore[assignment]
+
+        ctx = service.get_price_context("WIDE", security_service=security_service)
+
+        assert 400 in call_days, f"Expected a days=400 fetch for 52w range; got {call_days}"
+        assert ctx.high_52w == pytest.approx(500.0)
+        assert ctx.low_52w == pytest.approx(5.0)
+
 
 class TestGetHoldingsContext:
     """Tests for get_holdings_context method."""
