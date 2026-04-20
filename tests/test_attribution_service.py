@@ -189,6 +189,45 @@ class TestCalculateAttributionMultipleHoldings:
         total_contribution = sum(h.contribution_pct for h in result.by_holding)
         assert total_contribution == pytest.approx(100.0, rel=0.01)
 
+    def test_contribution_uses_gross_absolute_basis(self, sample_config):
+        """Contribution % must use gross absolute gains in the denominator so
+        a near-zero net total does not blow percentages up to ±50,000%.
+
+        Setup: one +$500 winner and one -$499 loser → total gain = $1,
+        gross abs = $999. Contributions should be +50.05% / −49.95%.
+        """
+        mock = MagicMock()
+        prices = {"WIN": 200.0, "LOSE": 101.0}
+        info = {
+            "WIN": {"sector": "Alpha", "industry": "X"},
+            "LOSE": {"sector": "Beta", "industry": "Y"},
+        }
+        mock.get_price.side_effect = lambda t: prices[t.upper()]
+        mock.get_stock_info.side_effect = lambda t: info[t.upper()]
+
+        service = AttributionService(mock)
+        holdings = [
+            Holding(ticker="WIN", name="Winner", quantity=10, avg_price=150.0),     # +500
+            Holding(ticker="LOSE", name="Loser", quantity=1, avg_price=600.0),      # -499
+        ]
+        state = PortfolioState(cash=0.0, holdings=holdings)
+
+        result = service.calculate_attribution(sample_config, state)
+
+        # Sanity: net gain really is $1 with these holdings.
+        assert result.total_gain == pytest.approx(1.0)
+
+        winner = next(h for h in result.by_holding if h.ticker == "WIN")
+        loser = next(h for h in result.by_holding if h.ticker == "LOSE")
+        assert winner.contribution_pct == pytest.approx(50.050, abs=0.01)
+        assert loser.contribution_pct == pytest.approx(-49.950, abs=0.01)
+
+        # Sectors should mirror the same gross-absolute basis.
+        alpha = next(s for s in result.by_sector if s.sector == "Alpha")
+        beta = next(s for s in result.by_sector if s.sector == "Beta")
+        assert alpha.contribution_pct == pytest.approx(50.050, abs=0.01)
+        assert beta.contribution_pct == pytest.approx(-49.950, abs=0.01)
+
 
 class TestSectorAttribution:
     """Tests for sector-level attribution."""
