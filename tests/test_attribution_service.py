@@ -405,3 +405,34 @@ class TestEdgeCases:
 
         assert result.total_gain == 0.0
         assert result.by_holding[0].contribution_pct == 0.0
+
+    def test_fractional_crypto_quantity_preserves_value(self, sample_config):
+        """Fractional crypto quantities must flow through attribution without
+        being truncated by an int cast (0.1234 BTC → cost basis/current value > 0).
+        """
+        mock = MagicMock()
+        mock.get_price.return_value = 70_000.0
+        mock.get_stock_info.return_value = {
+            "sector": "Cryptocurrency", "industry": "Digital Asset",
+        }
+
+        service = AttributionService(mock)
+        holdings = [
+            Holding(
+                ticker="BTC-USD",
+                name="Bitcoin",
+                quantity=0.1234,
+                avg_price=60_000.0,
+            ),
+        ]
+        state = PortfolioState(cash=0.0, holdings=holdings)
+
+        result = service.calculate_attribution(sample_config, state)
+
+        btc = result.by_holding[0]
+        assert btc.quantity == pytest.approx(0.1234)
+        assert btc.cost_basis == pytest.approx(0.1234 * 60_000.0)
+        assert btc.current_value == pytest.approx(0.1234 * 70_000.0)
+        assert btc.unrealized_gain == pytest.approx(0.1234 * 10_000.0)
+        assert btc.cost_basis > 0
+        assert btc.current_value > 0

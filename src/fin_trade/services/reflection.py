@@ -21,7 +21,7 @@ class CompletedTrade:
     sell_date: datetime
     buy_price: float
     sell_price: float
-    quantity: int
+    quantity: float
     buy_reasoning: str
     sell_reasoning: str
     holding_days: int

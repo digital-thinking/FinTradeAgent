@@ -18,7 +18,7 @@ class HoldingAttribution:
     name: str
     sector: str | None
     industry: str | None
-    quantity: int
+    quantity: float
     avg_price: float
     current_price: float
     cost_basis: float
