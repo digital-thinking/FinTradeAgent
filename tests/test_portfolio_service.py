@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -459,6 +459,52 @@ class TestIsExecutionOverdue:
         )
 
         assert service.is_execution_overdue(config, state) is True
+
+    def test_monthly_cadence_uses_calendar_month(
+        self, temp_data_dir, mock_security_service
+    ):
+        """Monthly cadence rolls over by calendar month, not a fixed 30 days."""
+        config = PortfolioConfig(
+            name="Monthly",
+            strategy_prompt="Test",
+            initial_amount=10000.0,
+            num_initial_trades=5,
+            trades_per_run=3,
+            run_frequency="monthly",
+            llm_provider="openai",
+            llm_model="gpt-4o",
+        )
+
+        # Last executed on Jan 31 — next due should be Feb 28 (not Mar 2).
+        state = PortfolioState(
+            cash=10000.0, last_execution=datetime(2026, 1, 31, 9, 0, 0)
+        )
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        class _FrozenDatetime(datetime):
+            frozen_now = datetime(2026, 2, 28, 9, 0, 0)
+
+            @classmethod
+            def now(cls, tz=None):
+                return cls.frozen_now
+
+        with patch("fin_trade.services.portfolio.datetime", _FrozenDatetime):
+            # On Feb 28, the month has rolled over → overdue.
+            assert service.is_execution_overdue(config, state) is True
+
+            # On Feb 27, still within the month → not yet overdue.
+            _FrozenDatetime.frozen_now = datetime(2026, 2, 27, 9, 0, 0)
+            assert service.is_execution_overdue(config, state) is False
+
+            # Under the old 30-day rule this would be overdue; with calendar
+            # months it is not (Feb 28 is next-due, Mar 1 is past that).
+            _FrozenDatetime.frozen_now = datetime(2026, 3, 2, 9, 0, 0)
+            assert service.is_execution_overdue(config, state) is True
 
 
 class TestExecuteTrade:

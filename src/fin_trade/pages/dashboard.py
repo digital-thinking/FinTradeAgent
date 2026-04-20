@@ -5,6 +5,8 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
+from dateutil.relativedelta import relativedelta
+
 from fin_trade.cache import get_portfolio_metrics
 from fin_trade.services import PortfolioService, AttributionService, SecurityService
 from fin_trade.services.attribution import SectorAttribution, HoldingAttribution
@@ -124,7 +126,7 @@ def render_dashboard_page(portfolio_service: PortfolioService) -> None:
             elif freq == "weekly":
                 next_run = last_run + timedelta(weeks=1)
             elif freq == "monthly":
-                next_run = last_run + timedelta(days=30)
+                next_run = last_run + relativedelta(months=1)
             else:
                 next_run = last_run + timedelta(days=1) # Default
             

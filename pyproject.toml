@@ -16,6 +16,7 @@ dependencies = [
     "plotly>=5.0.0",
     "pandas>=2.0.0",
     "python-dotenv>=1.0.0",
+    "python-dateutil>=2.9.0",
     "requests>=2.31.0",
     "langgraph>=0.2.0",
     "langchain-openai>=0.2.0",

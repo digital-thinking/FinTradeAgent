@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
+from dateutil.relativedelta import relativedelta
 
 from fin_trade.models import (
     AssetClass,
@@ -229,16 +230,22 @@ class PortfolioService:
             return True
 
         now = datetime.now()
-        last = state.last_execution
+        next_due = self._next_execution_due(state.last_execution, config.run_frequency)
+        return now >= next_due
 
-        frequency_deltas: dict[Literal["daily", "weekly", "monthly"], timedelta] = {
-            "daily": timedelta(days=1),
-            "weekly": timedelta(weeks=1),
-            "monthly": timedelta(days=30),
-        }
-
-        delta = frequency_deltas.get(config.run_frequency, timedelta(weeks=1))
-        return now - last >= delta
+    @staticmethod
+    def _next_execution_due(
+        last_execution: datetime,
+        run_frequency: Literal["daily", "weekly", "monthly"],
+    ) -> datetime:
+        """Compute the next scheduled execution time from the last run."""
+        if run_frequency == "daily":
+            return last_execution + timedelta(days=1)
+        if run_frequency == "weekly":
+            return last_execution + timedelta(weeks=1)
+        if run_frequency == "monthly":
+            return last_execution + relativedelta(months=1)
+        return last_execution + timedelta(weeks=1)
 
     def _calculate_realized_pnl_for_sell(
         self,
