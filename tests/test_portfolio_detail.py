@@ -1,6 +1,6 @@
 """Tests for portfolio detail calculations."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pandas as pd
@@ -12,7 +12,7 @@ from fin_trade.pages.portfolio_detail import _calculate_performance_data
 
 def test_performance_data_marks_holdings_to_market_daily():
     """Value reflects daily closes instead of the original cost basis."""
-    trade_date = (datetime.now() - timedelta(days=5)).replace(
+    trade_date = (datetime.now(timezone.utc) - timedelta(days=5)).replace(
         hour=10, minute=0, second=0, microsecond=0
     )
     config = PortfolioConfig(
@@ -43,9 +43,11 @@ def test_performance_data_marks_holdings_to_market_daily():
     security_service = MagicMock()
 
     def rising_closes(tickers, start, end):
-        dates = pd.date_range(
-            start=pd.Timestamp(start).normalize(),
-            end=pd.Timestamp(end).normalize(),
+        s = pd.Timestamp(start).tz_localize(None).normalize()
+        e = pd.Timestamp(end).tz_localize(None).normalize()
+        dates = pd.date_range(tz="UTC", 
+            start=s,
+            end=e,
             freq="D",
         )
         closes = [100.0 + (10.0 * i / (len(dates) - 1)) for i in range(len(dates))]

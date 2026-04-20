@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -147,7 +147,7 @@ class MarketDataService:
         if key not in self._cache:
             return False
         cached_time, _ = self._cache[key]
-        return datetime.now() - cached_time < self._cache_duration
+        return datetime.now(timezone.utc) - cached_time < self._cache_duration
 
     def _get_cached(self, key: str) -> object | None:
         """Get cached data if valid."""
@@ -157,7 +157,7 @@ class MarketDataService:
 
     def _set_cached(self, key: str, data: object) -> None:
         """Store data in cache."""
-        self._cache[key] = (datetime.now(), data)
+        self._cache[key] = (datetime.now(timezone.utc), data)
 
     def get_earnings_info(
         self,
@@ -187,8 +187,12 @@ class MarketDataService:
         if security_service:
             stored_earnings = security_service.get_earnings_timestamp(ticker)
             if stored_earnings:
+                # Ensure stored_earnings is UTC-aware
+                if stored_earnings.tzinfo is None:
+                    stored_earnings = stored_earnings.replace(tzinfo=timezone.utc)
+                
                 # Check if stored date is in the future
-                hours_until = (stored_earnings - datetime.now()).total_seconds() / 3600
+                hours_until = (stored_earnings - datetime.now(timezone.utc)).total_seconds() / 3600
                 if hours_until >= -1:
                     result = EarningsInfo(
                         ticker=ticker,
@@ -234,7 +238,13 @@ class MarketDataService:
                     revenue_estimate = calendar.get("Revenue Estimate")
 
         if earnings_date:
-            hours_until = (earnings_date - datetime.now()).total_seconds() / 3600
+            # Ensure earnings_date is UTC-aware (yfinance typically returns UTC or naive)
+            if earnings_date.tzinfo is None:
+                earnings_date = earnings_date.replace(tzinfo=timezone.utc)
+            else:
+                earnings_date = earnings_date.astimezone(timezone.utc)
+                
+            hours_until = (earnings_date - datetime.now(timezone.utc)).total_seconds() / 3600
 
         result = EarningsInfo(
             ticker=ticker,
@@ -424,7 +434,7 @@ class MarketDataService:
             treasury_10y=treasury_10y,
             treasury_3m=treasury_3m,
             vix=vix,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
         )
         self._set_cached(cache_key, result)
         return result

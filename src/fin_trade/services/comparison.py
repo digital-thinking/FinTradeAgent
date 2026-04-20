@@ -1,7 +1,7 @@
 """Portfolio comparison and benchmarking service."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -73,7 +73,7 @@ class ComparisonService:
         holdings: dict[str, float] = {}
         trades = sorted(state.trades, key=lambda trade: trade.timestamp)
         start_date = pd.Timestamp(trades[0].timestamp).normalize()
-        end_date = pd.Timestamp(datetime.now()).normalize()
+        end_date = pd.Timestamp(datetime.now(timezone.utc)).normalize()
         tickers = [trade.ticker for trade in trades]
         closes = self.stock_data_service.get_closes(tickers, start_date, end_date)
         trades_by_date: dict[pd.Timestamp, list] = {}
@@ -161,7 +161,7 @@ class ComparisonService:
 
         # Get benchmark data if requested
         if include_benchmark:
-            end_date = datetime.now()
+            end_date = datetime.now(timezone.utc)
             benchmark_df = self.stock_data_service.get_benchmark_performance(
                 symbol=benchmark_symbol,
                 start_date=start_date,
@@ -424,7 +424,7 @@ class ComparisonService:
 
         # Days active
         first_trade = state.trades[0].timestamp
-        days_active = (datetime.now() - first_trade).days
+        days_active = (datetime.now(timezone.utc) - first_trade).days
         days_active = max(days_active, 1)  # Avoid division by zero
 
         # Annualized return
@@ -461,7 +461,7 @@ class ComparisonService:
             benchmark_df = self.stock_data_service.get_benchmark_performance(
                 symbol=benchmark_symbol,
                 start_date=first_trade,
-                end_date=datetime.now(),
+                end_date=datetime.now(timezone.utc),
             )
             if not benchmark_df.empty:
                 beta = self._calculate_beta(value_df[["date", "value"]], benchmark_df)
@@ -582,7 +582,7 @@ class ComparisonService:
         benchmark_window = None
         if portfolio_first_trades:
             widest_start = min(portfolio_first_trades.values())
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             try:
                 benchmark_df = self.stock_data_service.get_benchmark_performance(
                     symbol=benchmark_symbol,

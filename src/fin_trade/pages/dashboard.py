@@ -3,7 +3,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from dateutil.relativedelta import relativedelta
 
@@ -120,7 +120,7 @@ def render_dashboard_page(portfolio_service: PortfolioService) -> None:
         freq = p["Frequency"]
         
         if not last_run:
-            next_run = datetime.now() # Run immediately if never run
+            next_run = datetime.now(timezone.utc) # Run immediately if never run
             status = "Pending (New)"
         else:
             if freq == "daily":
@@ -132,7 +132,7 @@ def render_dashboard_page(portfolio_service: PortfolioService) -> None:
             else:
                 next_run = last_run + timedelta(days=1) # Default
             
-            if datetime.now() > next_run:
+            if datetime.now(timezone.utc) > next_run:
                 status = "Overdue"
             else:
                 status = "Scheduled"

@@ -1,7 +1,7 @@
 """Tests for ComparisonService."""
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -25,9 +25,12 @@ def mock_stock_data_service():
     mock.get_price.return_value = 100.0
 
     def get_closes(tickers, start, end):
-        dates = pd.date_range(
-            start=pd.Timestamp(start).normalize(),
-            end=pd.Timestamp(end).normalize(),
+        # Normalize both to naive for the test mock if there is a mismatch
+        s = pd.Timestamp(start).tz_localize(None).normalize()
+        e = pd.Timestamp(end).tz_localize(None).normalize()
+        dates = pd.date_range(tz="UTC", 
+            start=s,
+            end=e,
             freq="D",
         )
         return pd.DataFrame(
@@ -66,7 +69,7 @@ def sample_config():
 @pytest.fixture
 def sample_trades():
     """Sample trade history with profits and losses."""
-    base_date = datetime.now() - timedelta(days=30)
+    base_date = datetime.now(timezone.utc) - timedelta(days=30)
     return [
         Trade(
             timestamp=base_date,
@@ -178,7 +181,7 @@ class TestCalculateMetricsWithTrades:
 
         # Mock benchmark data
         mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
-            "date": [datetime.now() - timedelta(days=30), datetime.now()],
+            "date": [datetime.now(timezone.utc) - timedelta(days=30), datetime.now(timezone.utc)],
             "price": [400.0, 420.0],
             "cumulative_return": [0.0, 5.0],
         })
@@ -201,7 +204,7 @@ class TestCalculateMetricsWithTrades:
         )
         mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
         mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
-            "date": [datetime.now()],
+            "date": [datetime.now(timezone.utc)],
             "price": [400.0],
             "cumulative_return": [0.0],
         })
@@ -223,7 +226,7 @@ class TestCalculateMetricsBeta:
         sample_config,
     ):
         """A portfolio that tracks the benchmark should have beta near 1."""
-        dates = pd.date_range(start="2026-01-05", periods=5, freq="B")
+        dates = pd.date_range(tz="UTC", start="2026-01-05", periods=5, freq="B")
         trade = Trade(
             timestamp=dates[0].to_pydatetime(),
             ticker="AAPL",
@@ -262,7 +265,7 @@ class TestCalculateMetricsBeta:
         sample_config,
     ):
         """A constant-value portfolio should have zero covariance with the benchmark."""
-        dates = pd.date_range(start="2026-01-05", periods=5, freq="B")
+        dates = pd.date_range(tz="UTC", start="2026-01-05", periods=5, freq="B")
         trade = Trade(
             timestamp=dates[0].to_pydatetime(),
             ticker="AAPL",
@@ -305,7 +308,7 @@ class TestCalculateMetricsAlpha:
         sample_config,
     ):
         """A portfolio that matches the benchmark should have zero alpha."""
-        dates = pd.bdate_range(end=pd.Timestamp(datetime.now()).normalize(), periods=253)
+        dates = pd.bdate_range(tz="UTC", end=pd.Timestamp(datetime.now(timezone.utc)).normalize(), periods=253)
         benchmark_returns = np.tile(
             np.array([0.0010, -0.0004, 0.0013, 0.0002, -0.0001]),
             51,
@@ -350,13 +353,13 @@ class TestCalculateMetricsAlpha:
         sample_config,
     ):
         """A portfolio with benchmark beta and +5% annualized excess should show +5% alpha."""
-        dates = pd.bdate_range(end=pd.Timestamp(datetime.now()).normalize(), periods=253)
+        dates = pd.bdate_range(tz="UTC", end=pd.Timestamp(datetime.now(timezone.utc)).normalize(), periods=253)
         benchmark_returns = np.tile(
             np.array([0.0010, -0.0004, 0.0013, 0.0002, -0.0001]),
             51,
         )[:252]
         benchmark_prices = build_price_series(100.0, benchmark_returns.tolist())
-        days_active = max((datetime.now() - dates[0].to_pydatetime()).days, 1)
+        days_active = max((datetime.now(timezone.utc) - dates[0].to_pydatetime()).days, 1)
         years = days_active / 365
         benchmark_annualized_return = ((benchmark_prices[-1] / benchmark_prices[0]) ** (1 / years) - 1) * 100
         target_portfolio_annualized_return = benchmark_annualized_return + 5.0
@@ -410,7 +413,7 @@ class TestCalculateMetricsVolatility:
         sample_config,
     ):
         """Volatility should use daily returns after filling calendar gaps."""
-        dates = pd.bdate_range(end=pd.Timestamp(datetime.now()).normalize(), periods=3)
+        dates = pd.bdate_range(tz="UTC", end=pd.Timestamp(datetime.now(timezone.utc)).normalize(), periods=3)
         values = [100.0, 101.0, 98.98]
         trade = Trade(
             timestamp=dates[0].to_pydatetime(),
@@ -442,7 +445,7 @@ class TestCalculateMetricsVolatility:
 
         daily_returns = (
             pd.Series(values, index=dates)
-            .reindex(pd.date_range(start=dates[0], end=dates[-1], freq="D"), method="ffill")
+            .reindex(pd.date_range(tz="UTC", start=dates[0], end=dates[-1], freq="D"), method="ffill")
             .pct_change()
             .dropna()
         )
@@ -459,7 +462,7 @@ class TestBuildPortfolioValueSeries:
         sample_config
     ):
         """Value reflects daily closes instead of the original cost basis."""
-        trade_date = (datetime.now() - timedelta(days=5)).replace(
+        trade_date = (datetime.now(timezone.utc) - timedelta(days=5)).replace(
             hour=10, minute=0, second=0, microsecond=0
         )
         trade = Trade(
@@ -480,7 +483,7 @@ class TestBuildPortfolioValueSeries:
         mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
 
         def rising_closes(tickers, start, end):
-            dates = pd.date_range(
+            dates = pd.date_range(tz="UTC", 
                 start=pd.Timestamp(start).normalize(),
                 end=pd.Timestamp(end).normalize(),
                 freq="D",
@@ -503,12 +506,12 @@ class TestWinRateCalculation:
         """Test 100% win rate."""
         trades = [
             Trade(
-                timestamp=datetime.now() - timedelta(days=10),
+                timestamp=datetime.now(timezone.utc) - timedelta(days=10),
                 ticker="AAPL", name="Apple", action="BUY",
                 quantity=10, price=100.0, reasoning="Buy",
             ),
             Trade(
-                timestamp=datetime.now(),
+                timestamp=datetime.now(timezone.utc),
                 ticker="AAPL", name="Apple", action="SELL",
                 quantity=10, price=110.0, reasoning="Sell",  # Winner
             ),
@@ -521,12 +524,12 @@ class TestWinRateCalculation:
         """Test 0% win rate."""
         trades = [
             Trade(
-                timestamp=datetime.now() - timedelta(days=10),
+                timestamp=datetime.now(timezone.utc) - timedelta(days=10),
                 ticker="AAPL", name="Apple", action="BUY",
                 quantity=10, price=100.0, reasoning="Buy",
             ),
             Trade(
-                timestamp=datetime.now(),
+                timestamp=datetime.now(timezone.utc),
                 ticker="AAPL", name="Apple", action="SELL",
                 quantity=10, price=90.0, reasoning="Sell",  # Loser
             ),
@@ -539,7 +542,7 @@ class TestWinRateCalculation:
         """Test returns None when no positions have been closed."""
         trades = [
             Trade(
-                timestamp=datetime.now(),
+                timestamp=datetime.now(timezone.utc),
                 ticker="AAPL", name="Apple", action="BUY",
                 quantity=10, price=100.0, reasoning="Buy",
             ),
@@ -556,7 +559,7 @@ class TestWinRateCalculation:
 
     def test_win_rate_per_tax_lot(self, comparison_service, sample_config):
         """A SELL closing one winning and one losing lot produces 50% win rate (1 of 2)."""
-        base_date = datetime.now() - timedelta(days=10)
+        base_date = datetime.now(timezone.utc) - timedelta(days=10)
         trades = [
             Trade(
                 timestamp=base_date,
@@ -669,7 +672,7 @@ class TestGetNormalizedReturns:
         )
         mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
         mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
-            "date": pd.date_range(start=datetime.now() - timedelta(days=30), periods=30, freq="D"),
+            "date": pd.date_range(tz="UTC", start=datetime.now(timezone.utc) - timedelta(days=30), periods=30, freq="D"),
             "price": [400.0 + i for i in range(30)],
             "cumulative_return": [i * 0.1 for i in range(30)],
         })
@@ -697,7 +700,7 @@ class TestGetComparisonTable:
         )
         mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
         mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
-            "date": [datetime.now() - timedelta(days=30), datetime.now()],
+            "date": [datetime.now(timezone.utc) - timedelta(days=30), datetime.now(timezone.utc)],
             "price": [400.0, 420.0],
             "cumulative_return": [0.0, 5.0],
         })
@@ -719,7 +722,7 @@ class TestGetComparisonTable:
     ):
         """Benchmark row numbers must match calculate_metrics run on a synthetic
         portfolio whose value series equals the benchmark price series."""
-        dates = pd.bdate_range(end=pd.Timestamp(datetime.now()).normalize(), periods=60)
+        dates = pd.bdate_range(tz="UTC", end=pd.Timestamp(datetime.now(timezone.utc)).normalize(), periods=60)
         first_trade_date = dates[0].to_pydatetime()
         benchmark_returns = np.tile(
             np.array([0.0030, -0.0015, 0.0045, -0.0020, 0.0010]),
@@ -806,7 +809,7 @@ class TestGetComparisonTable:
             num_trades=1,
         ))
         mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
-            "date": [datetime.now() - timedelta(days=365), datetime.now()],
+            "date": [datetime.now(timezone.utc) - timedelta(days=365), datetime.now(timezone.utc)],
             "price": [100.0, 110.0],
             "cumulative_return": [0.0, 10.0],
         })

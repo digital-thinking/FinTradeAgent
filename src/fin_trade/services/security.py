@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -80,7 +80,7 @@ class SecurityService:
         data_file = self._get_data_file_path(ticker)
 
         # Add metadata
-        data["_saved_at"] = datetime.now().isoformat()
+        data["_saved_at"] = datetime.now(timezone.utc).isoformat()
         data["ticker"] = ticker
 
         # Convert any non-serializable values
@@ -257,7 +257,11 @@ class SecurityService:
         if not saved_at:
             return True
         saved_time = datetime.fromisoformat(saved_at)
-        return datetime.now() - saved_time > timedelta(hours=max_age_hours)
+        # Normalize to UTC-aware if naive
+        if saved_time.tzinfo is None:
+            saved_time = saved_time.replace(tzinfo=timezone.utc)
+            
+        return datetime.now(timezone.utc) - saved_time > timedelta(hours=max_age_hours)
 
     # ==================== Rich Data Methods ====================
     # These methods expose already-stored yfinance data without new API calls

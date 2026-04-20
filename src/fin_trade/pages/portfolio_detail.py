@@ -1,7 +1,7 @@
 """Portfolio detail page."""
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 import plotly.graph_objects as go
@@ -392,7 +392,6 @@ def _render_performance_chart(
     security_service: SecurityService,
 ) -> None:
     """Render the portfolio performance chart with interactive features."""
-    from datetime import datetime, timedelta
     from fin_trade.services import StockDataService
 
     st.subheader("Performance")
@@ -451,7 +450,7 @@ def _render_performance_chart(
         try:
             stock_data_service = StockDataService()
             start_date = filtered_timestamps[0]
-            end_date = filtered_timestamps[-1] if len(filtered_timestamps) > 1 else datetime.now()
+            end_date = filtered_timestamps[-1] if len(filtered_timestamps) > 1 else datetime.now(timezone.utc)
             benchmark_df = stock_data_service.get_benchmark_performance(
                 symbol=benchmark_symbol,
                 start_date=start_date,
@@ -516,7 +515,7 @@ def _calculate_performance_data(
     holdings: dict[str, float] = {}
     trades = sorted(state.trades, key=lambda trade: trade.timestamp)
     start_date = pd.Timestamp(trades[0].timestamp).normalize()
-    end_date = pd.Timestamp(datetime.now()).normalize()
+    end_date = pd.Timestamp(datetime.now(timezone.utc)).normalize()
     closes = security_service.get_closes(
         [trade.ticker for trade in trades],
         start_date,
@@ -640,7 +639,7 @@ def _filter_by_time_range(
     if time_range == "All" or not timestamps:
         return timestamps, values, cash_values, holdings_values, trade_points
 
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     if time_range == "1W":
         cutoff = now - timedelta(weeks=1)
     elif time_range == "1M":
@@ -1033,7 +1032,7 @@ def _render_agent_execution(
                 st.session_state.debate_transcript = None
 
             # Record execution time regardless of trades
-            state.last_execution = datetime.now()
+            state.last_execution = datetime.now(timezone.utc)
             portfolio_service.save_state(portfolio_name, state)
             st.session_state.recommendation = recommendation
             st.rerun()

@@ -3,7 +3,7 @@
 import json
 import re
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -84,11 +84,11 @@ class PortfolioService:
         )
 
     @staticmethod
-    def _to_naive_datetime(dt: datetime) -> datetime:
-        """Convert a datetime to naive (no timezone) for consistent comparisons."""
-        if dt.tzinfo is not None:
-            return dt.replace(tzinfo=None)
-        return dt
+    def _to_utc_aware(dt: datetime) -> datetime:
+        """Convert a datetime to UTC-aware for consistent comparisons."""
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
 
     def _load_state(self, name: str, initial_amount: float) -> PortfolioState:
         """Load portfolio state from JSON, or create new if not exists."""
@@ -114,7 +114,7 @@ class PortfolioService:
 
         trades = [
             Trade(
-                timestamp=self._to_naive_datetime(datetime.fromisoformat(t["timestamp"])),
+                timestamp=self._to_utc_aware(datetime.fromisoformat(t["timestamp"])),
                 ticker=t.get("ticker", t.get("isin", "UNKNOWN")),
                 name=t.get("name", t.get("ticker", "Unknown")),
                 action=t["action"],
@@ -134,7 +134,7 @@ class PortfolioService:
 
         last_execution = None
         if data.get("last_execution"):
-            last_execution = self._to_naive_datetime(datetime.fromisoformat(data["last_execution"]))
+            last_execution = self._to_utc_aware(datetime.fromisoformat(data["last_execution"]))
 
         # Calculate initial_investment from trade history if not recorded
         initial_investment = data.get("initial_investment")
@@ -233,7 +233,7 @@ class PortfolioService:
         if state.last_execution is None:
             return True
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         next_due = self._next_execution_due(state.last_execution, config.run_frequency)
         return now >= next_due
 
@@ -398,7 +398,7 @@ class PortfolioService:
                 ))
 
         trade = Trade(
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
             ticker=security.ticker,
             name=security.name,
             action=action,
@@ -415,7 +415,7 @@ class PortfolioService:
             cash=cash,
             holdings=holdings,
             trades=trades,
-            last_execution=datetime.now(),
+            last_execution=datetime.now(timezone.utc),
             initial_investment=state.initial_investment,
         )
 
@@ -513,7 +513,7 @@ class PortfolioService:
             archive_dir = self.state_dir / "archive"
             archive_dir.mkdir(parents=True, exist_ok=True)
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             archive_path = archive_dir / f"{name}_{timestamp}.json"
             shutil.move(str(state_path), str(archive_path))
         elif state_path.exists():
@@ -552,7 +552,7 @@ class PortfolioService:
             archive_dir = self.state_dir / "archive"
             archive_dir.mkdir(parents=True, exist_ok=True)
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             archive_path = archive_dir / f"{name}_{timestamp}.json"
             shutil.move(str(state_path), str(archive_path))
         elif state_path.exists():

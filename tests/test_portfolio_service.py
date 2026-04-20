@@ -1,7 +1,7 @@
 """Tests for PortfolioService."""
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -257,7 +257,7 @@ class TestLoadState:
         assert len(state.holdings) == 1
         assert state.holdings[0].ticker == "AAPL"
         assert len(state.trades) == 1
-        assert state.last_execution == datetime(2024, 1, 15, 10, 30)
+        assert state.last_execution == datetime(2024, 1, 15, 10, 30, tzinfo=timezone.utc)
 
 
 class TestSaveState:
@@ -448,7 +448,7 @@ class TestIsExecutionOverdue:
         self, temp_data_dir, mock_security_service, sample_portfolio_config
     ):
         """Test returns False when executed recently (within frequency)."""
-        state = PortfolioState(cash=10000.0, last_execution=datetime.now())
+        state = PortfolioState(cash=10000.0, last_execution=datetime.now(timezone.utc))
 
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
@@ -476,7 +476,7 @@ class TestIsExecutionOverdue:
 
         # Executed 2 days ago
         state = PortfolioState(
-            cash=10000.0, last_execution=datetime.now() - timedelta(days=2)
+            cash=10000.0, last_execution=datetime.now(timezone.utc) - timedelta(days=2)
         )
 
         service = PortfolioService(
@@ -504,7 +504,7 @@ class TestIsExecutionOverdue:
 
         # Last executed on Jan 31 — next due should be Feb 28 (not Mar 2).
         state = PortfolioState(
-            cash=10000.0, last_execution=datetime(2026, 1, 31, 9, 0, 0)
+            cash=10000.0, last_execution=datetime(2026, 1, 31, 9, 0, 0, tzinfo=timezone.utc)
         )
 
         service = PortfolioService(
@@ -514,10 +514,12 @@ class TestIsExecutionOverdue:
         )
 
         class _FrozenDatetime(datetime):
-            frozen_now = datetime(2026, 2, 28, 9, 0, 0)
+            frozen_now = datetime(2026, 2, 28, 9, 0, 0, tzinfo=timezone.utc)
 
             @classmethod
             def now(cls, tz=None):
+                if tz:
+                    return cls.frozen_now.astimezone(tz)
                 return cls.frozen_now
 
         with patch("fin_trade.services.portfolio.datetime", _FrozenDatetime):
@@ -525,12 +527,12 @@ class TestIsExecutionOverdue:
             assert service.is_execution_overdue(config, state) is True
 
             # On Feb 27, still within the month → not yet overdue.
-            _FrozenDatetime.frozen_now = datetime(2026, 2, 27, 9, 0, 0)
+            _FrozenDatetime.frozen_now = datetime(2026, 2, 27, 9, 0, 0, tzinfo=timezone.utc)
             assert service.is_execution_overdue(config, state) is False
 
             # Under the old 30-day rule this would be overdue; with calendar
             # months it is not (Feb 28 is next-due, Mar 1 is past that).
-            _FrozenDatetime.frozen_now = datetime(2026, 3, 2, 9, 0, 0)
+            _FrozenDatetime.frozen_now = datetime(2026, 3, 2, 9, 0, 0, tzinfo=timezone.utc)
             assert service.is_execution_overdue(config, state) is True
 
 
@@ -1636,3 +1638,60 @@ class TestExecuteTradeAssetClass:
         )
 
         assert state.holdings == []
+
+
+class TestTimestampNormalization:
+    """Tests for timestamp normalization to UTC."""
+
+    def test_normalizes_naive_timestamp_on_load(self, temp_data_dir, mock_security_service):
+        """Test that naive timestamps are treated as UTC on load."""
+        state_data = {
+            "cash": 10000.0,
+            "trades": [
+                {
+                    "timestamp": "2024-01-15T23:00:00",  # Naive
+                    "ticker": "AAPL",
+                    "name": "Apple Inc.",
+                    "action": "BUY",
+                    "quantity": 10,
+                    "price": 150.0,
+                    "reasoning": "Test",
+                }
+            ],
+            "last_execution": "2024-01-15T23:00:00",
+        }
+        state_path = temp_data_dir["state"] / "normalization.json"
+        state_path.write_text(json.dumps(state_data))
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+        state = service._load_state("normalization", 10000.0)
+
+        expected = datetime(2024, 1, 15, 23, 0, 0, tzinfo=timezone.utc)
+        assert state.trades[0].timestamp == expected
+        assert state.last_execution == expected
+
+    def test_filters_correctly_with_utc_cutoff(self, temp_data_dir, mock_security_service):
+        """
+        Unit test: a trade created at local 23:00 on day D still falls on day D when
+        filtered with a UTC cutoff of D 00:00.
+        """
+        # "Local" 23:00 on 2024-01-15, stored as UTC-aware
+        trade_time = datetime(2024, 1, 15, 23, 0, 0, tzinfo=timezone.utc)
+        
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+        
+        # Cutoff at 00:00 UTC on 2024-01-15
+        cutoff = datetime(2024, 1, 15, 0, 0, 0, tzinfo=timezone.utc)
+        
+        # The trade at 23:00 is >= 00:00
+        assert trade_time >= cutoff
+        # And if we normalize both to date
+        assert trade_time.date() == cutoff.date()

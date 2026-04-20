@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fin_trade.agents.graphs.debate_agent import build_debate_agent_graph
@@ -105,7 +105,7 @@ class LangGraphAgentService:
         metrics: ExecutionMetrics,
     ) -> None:
         """Save workflow execution to log file for debugging."""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         log_file = _logs_dir / f"{portfolio_name}_{timestamp}_langgraph.md"
 
         # Extract relevant info from state
@@ -145,7 +145,7 @@ class LangGraphAgentService:
         prompt_analysis = result.get("_prompt_analysis", "N/A")
         prompt_generate = result.get("_prompt_generate", "N/A")
 
-        log_content = f"""# LangGraph Agent Log - {datetime.now().isoformat()}
+        log_content = f"""# LangGraph Agent Log - {datetime.now(timezone.utc).isoformat()}
 
 **Portfolio:** {portfolio_name}
 **Agent Mode:** langgraph (simple)
@@ -469,7 +469,7 @@ class DebateAgentService:
         metrics: ExecutionMetrics,
     ) -> None:
         """Save debate workflow execution to log file for debugging."""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         log_file = _logs_dir / f"{portfolio_name}_{timestamp}_debate.md"
 
         # Extract debate info
@@ -518,7 +518,7 @@ class DebateAgentService:
         prompt_moderator = result.get("_prompt_moderator", "N/A")
         prompt_generate = result.get("_prompt_generate", "N/A")
 
-        log_content = f"""# Debate Agent Log - {datetime.now().isoformat()}
+        log_content = f"""# Debate Agent Log - {datetime.now(timezone.utc).isoformat()}
 
 **Portfolio:** {portfolio_name}
 **Agent Mode:** debate

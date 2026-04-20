@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -105,8 +105,8 @@ class StockDataService:
         """Check if the cache file is still valid (default: 24 hours)."""
         if not cache_path.exists():
             return False
-        mtime = datetime.fromtimestamp(cache_path.stat().st_mtime)
-        return datetime.now() - mtime < timedelta(hours=max_age_hours)
+        mtime = datetime.fromtimestamp(cache_path.stat().st_mtime, tz=timezone.utc)
+        return datetime.now(timezone.utc) - mtime < timedelta(hours=max_age_hours)
 
     def update_data(self, ticker: str, period: str = "1y") -> pd.DataFrame:
         """Fetch and cache latest price data for a ticker."""
@@ -187,7 +187,10 @@ class StockDataService:
             df.index = df.index.tz_localize(None)
 
         if days > 0:
-            cutoff = datetime.now() - timedelta(days=days)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            # Ensure cutoff is naive for comparison if index was stripped
+            if hasattr(df.index, 'tz') and df.index.tz is None:
+                cutoff = cutoff.replace(tzinfo=None)
             df = df[df.index >= cutoff]
         return df
 
@@ -221,7 +224,13 @@ class StockDataService:
 
         history_start = start_date - pd.Timedelta(days=7)
         history_index = pd.date_range(start=history_start, end=end_date, freq="D")
-        days_needed = max((datetime.now() - history_start.to_pydatetime()).days + 1, 1)
+        
+        now = datetime.now(timezone.utc)
+        hist_start_dt = history_start.to_pydatetime()
+        if hist_start_dt.tzinfo is None:
+            now = now.replace(tzinfo=None)
+            
+        days_needed = max((now - hist_start_dt).days + 1, 1)
 
         close_series = {}
         for ticker in normalized_tickers:
@@ -289,7 +298,12 @@ class StockDataService:
         if len(df) < 2:
             return None
 
-        cutoff = datetime.now() - timedelta(days=days)
+        now = datetime.now(timezone.utc)
+        # Ensure 'now' is naive if the index was stripped
+        if hasattr(df.index, 'tz') and df.index.tz is None:
+            now = now.replace(tzinfo=None)
+
+        cutoff = now - timedelta(days=days)
         recent = df[df.index >= cutoff]
 
         if len(recent) < 2:
@@ -522,7 +536,7 @@ class StockDataService:
         """
         # Default to 1 year of data
         if end_date is None:
-            end_date = datetime.now()
+            end_date = datetime.now(timezone.utc)
         if start_date is None:
             start_date = end_date - timedelta(days=365)
 
