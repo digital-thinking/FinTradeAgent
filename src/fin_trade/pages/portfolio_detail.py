@@ -1077,6 +1077,11 @@ def _render_agent_execution(
                 # Sort trades: SELL first, then BUY
                 # This ensures cash from sells is available for buys
                 sorted_trades = sorted(trades, key=lambda t: 0 if t.action == "SELL" else 1)
+                quoted_prices: dict[str, float] = {}
+
+                for trade in sorted_trades:
+                    if trade.ticker not in quoted_prices:
+                        quoted_prices[trade.ticker] = security_service.get_price(trade.ticker)
 
                 for trade in sorted_trades:
                     state = portfolio_service.execute_trade(
@@ -1085,6 +1090,7 @@ def _render_agent_execution(
                         trade.action,
                         trade.quantity,
                         trade.reasoning,
+                        price=quoted_prices[trade.ticker],
                         stop_loss_price=trade.stop_loss_price,
                         take_profit_price=trade.take_profit_price,
                         asset_class=config.asset_class,

@@ -468,8 +468,6 @@ class TestExecuteTrade:
         self, temp_data_dir, mock_security_service, empty_portfolio_state
     ):
         """Test executing a BUY trade."""
-        mock_security_service.force_update_price.return_value = 100.0
-
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
             state_dir=temp_data_dir["state"],
@@ -482,6 +480,7 @@ class TestExecuteTrade:
             action="BUY",
             quantity=10,
             reasoning="Test buy",
+            price=100.0,
         )
 
         # Cash should decrease: 10000 - (10 * 100) = 9000
@@ -492,11 +491,36 @@ class TestExecuteTrade:
         assert len(new_state.trades) == 1
         assert new_state.trades[0].action == "BUY"
 
+    def test_uses_explicit_trade_price_instead_of_refetching(
+        self, temp_data_dir, mock_security_service, empty_portfolio_state
+    ):
+        """Test execute_trade writes the quoted price it was given."""
+        mock_security_service.get_price.return_value = 999.99
+        mock_security_service.force_update_price.return_value = 999.99
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        new_state = service.execute_trade(
+            empty_portfolio_state,
+            ticker="AAPL",
+            action="BUY",
+            quantity=1,
+            reasoning="Use quoted price",
+            price=123.45,
+        )
+
+        assert new_state.trades[0].price == 123.45
+        assert new_state.holdings[0].avg_price == 123.45
+        mock_security_service.force_update_price.assert_not_called()
+
     def test_executes_sell_trade(
         self, temp_data_dir, mock_security_service, sample_portfolio_state
     ):
         """Test executing a SELL trade."""
-        mock_security_service.force_update_price.return_value = 200.0
         mock_security_service.lookup_ticker.return_value = sample_portfolio_state.holdings[0]
 
         service = PortfolioService(
@@ -511,6 +535,7 @@ class TestExecuteTrade:
             action="SELL",
             quantity=5,
             reasoning="Taking profits",
+            price=200.0,
         )
 
         # Cash should increase: 5000 + (5 * 200) = 6000
@@ -523,8 +548,6 @@ class TestExecuteTrade:
         self, temp_data_dir, mock_security_service, empty_portfolio_state
     ):
         """Test BUY fails when insufficient cash."""
-        mock_security_service.force_update_price.return_value = 5000.0  # Very expensive
-
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
             state_dir=temp_data_dir["state"],
@@ -538,14 +561,13 @@ class TestExecuteTrade:
                 action="BUY",
                 quantity=10,  # Would cost 50000, but only have 10000
                 reasoning="Test",
+                price=5000.0,
             )
 
     def test_buy_allows_negative_cash_with_override(
         self, temp_data_dir, mock_security_service, empty_portfolio_state
     ):
         """Test BUY can proceed below zero cash when override is enabled."""
-        mock_security_service.force_update_price.return_value = 5000.0
-
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
             state_dir=temp_data_dir["state"],
@@ -558,6 +580,7 @@ class TestExecuteTrade:
             action="BUY",
             quantity=3,  # Costs 15000, starts with 10000
             reasoning="Manual override",
+            price=5000.0,
             allow_negative_cash=True,
         )
 
@@ -571,8 +594,6 @@ class TestExecuteTrade:
         self, temp_data_dir, mock_security_service, sample_portfolio_state
     ):
         """Test SELL fails when insufficient holdings."""
-        mock_security_service.force_update_price.return_value = 100.0
-
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
             state_dir=temp_data_dir["state"],
@@ -586,14 +607,13 @@ class TestExecuteTrade:
                 action="SELL",
                 quantity=100,  # Only have 10 shares
                 reasoning="Test",
+                price=100.0,
             )
 
     def test_sell_fails_when_not_holding_stock(
         self, temp_data_dir, mock_security_service, empty_portfolio_state
     ):
         """Test SELL fails when not holding the stock."""
-        mock_security_service.force_update_price.return_value = 100.0
-
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
             state_dir=temp_data_dir["state"],
@@ -607,14 +627,13 @@ class TestExecuteTrade:
                 action="SELL",
                 quantity=10,
                 reasoning="Test",
+                price=100.0,
             )
 
     def test_buy_updates_average_price_for_existing_holding(
         self, temp_data_dir, mock_security_service, sample_portfolio_state
     ):
         """Test BUY updates average price when adding to existing position."""
-        mock_security_service.force_update_price.return_value = 200.0
-
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
             state_dir=temp_data_dir["state"],
@@ -627,6 +646,7 @@ class TestExecuteTrade:
             action="BUY",
             quantity=10,  # Buy 10 more at $200
             reasoning="Averaging up",
+            price=200.0,
         )
 
         # Now have 20 shares total
@@ -640,8 +660,6 @@ class TestExecuteTrade:
         self, temp_data_dir, mock_security_service, empty_portfolio_state
     ):
         """Test BUY trade records stop-loss and take-profit prices."""
-        mock_security_service.force_update_price.return_value = 100.0
-
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
             state_dir=temp_data_dir["state"],
@@ -654,6 +672,7 @@ class TestExecuteTrade:
             action="BUY",
             quantity=10,
             reasoning="Test buy",
+            price=100.0,
             stop_loss_price=90.0,
             take_profit_price=120.0,
         )
@@ -671,8 +690,6 @@ class TestExecuteTrade:
         self, temp_data_dir, mock_security_service
     ):
         """Test BUY updates stop-loss/take-profit when adding to position."""
-        mock_security_service.force_update_price.return_value = 100.0
-
         # Start with a holding that has SL/TP
         initial_state = PortfolioState(
             cash=5000.0,
@@ -700,6 +717,7 @@ class TestExecuteTrade:
             action="BUY",
             quantity=5,
             reasoning="Adding to position",
+            price=100.0,
             stop_loss_price=85.0,  # New SL/TP
             take_profit_price=130.0,
         )
@@ -713,8 +731,6 @@ class TestExecuteTrade:
         self, temp_data_dir, mock_security_service
     ):
         """Test BUY preserves existing SL/TP when not provided in new trade."""
-        mock_security_service.force_update_price.return_value = 100.0
-
         # Start with a holding that has SL/TP
         initial_state = PortfolioState(
             cash=5000.0,
@@ -742,6 +758,7 @@ class TestExecuteTrade:
             action="BUY",
             quantity=5,
             reasoning="Adding to position",
+            price=100.0,
             # Not providing SL/TP
         )
 
@@ -754,7 +771,6 @@ class TestExecuteTrade:
         self, temp_data_dir, mock_security_service
     ):
         """Test partial SELL preserves SL/TP on remaining shares."""
-        mock_security_service.force_update_price.return_value = 100.0
         mock_security_service.lookup_ticker.return_value = MagicMock(
             ticker="AAPL", name="Apple Inc."
         )
@@ -785,6 +801,7 @@ class TestExecuteTrade:
             action="SELL",
             quantity=5,
             reasoning="Taking partial profits",
+            price=100.0,
         )
 
         holding = new_state.holdings[0]
@@ -810,6 +827,7 @@ class TestExecuteTrade:
                 action="BUY",
                 quantity=0,
                 reasoning="Test",
+                price=100.0,
             )
 
     def test_rejects_negative_quantity(
@@ -829,6 +847,7 @@ class TestExecuteTrade:
                 action="BUY",
                 quantity=-5,
                 reasoning="Test",
+                price=100.0,
             )
 
 
@@ -1346,8 +1365,6 @@ class TestExecuteTradeAssetClass:
     def test_rejects_fractional_quantity_for_stocks(
         self, temp_data_dir, mock_security_service, empty_portfolio_state
     ):
-        mock_security_service.force_update_price.return_value = 100.0
-
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
             state_dir=temp_data_dir["state"],
@@ -1361,13 +1378,13 @@ class TestExecuteTradeAssetClass:
                 action="BUY",
                 quantity=1.5,
                 reasoning="Invalid fractional stock trade",
+                price=100.0,
                 asset_class=AssetClass.STOCKS,
             )
 
     def test_allows_fractional_quantity_for_crypto(
         self, temp_data_dir, mock_security_service, empty_portfolio_state
     ):
-        mock_security_service.force_update_price.return_value = 40000.0
         mock_security_service.lookup_ticker.return_value = MagicMock(
             ticker="BTC-USD",
             name="Bitcoin USD",
@@ -1385,6 +1402,7 @@ class TestExecuteTradeAssetClass:
             action="BUY",
             quantity=0.1,
             reasoning="Open BTC position",
+            price=40000.0,
             asset_class=AssetClass.CRYPTO,
         )
 

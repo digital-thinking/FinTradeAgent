@@ -241,6 +241,7 @@ class PortfolioService:
         action: Literal["BUY", "SELL"],
         quantity: float,
         reasoning: str,
+        price: float,
         stop_loss_price: float | None = None,
         take_profit_price: float | None = None,
         asset_class: AssetClass = AssetClass.STOCKS,
@@ -248,8 +249,11 @@ class PortfolioService:
     ) -> PortfolioState:
         """Execute a trade and return updated state."""
         quantity = float(quantity)
+        price = float(price)
         if quantity <= 0:
             raise ValueError(f"Invalid quantity: {quantity}. Must be greater than 0.")
+        if price <= 0:
+            raise ValueError(f"Invalid price: {price}. Must be greater than 0.")
         if asset_class == AssetClass.STOCKS and not quantity.is_integer():
             raise ValueError(f"Stock quantities must be whole numbers, got {quantity}.")
 
@@ -257,8 +261,6 @@ class PortfolioService:
 
         # Lookup security info from ticker
         security = self.security_service.lookup_ticker(ticker)
-        # Force update price when executing trades to ensure fresh data
-        price = self.security_service.force_update_price(ticker)
         cost = price * quantity
 
         holdings = list(state.holdings)

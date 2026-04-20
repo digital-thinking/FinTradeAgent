@@ -480,6 +480,20 @@ def _apply_pending_trades(
 
     config, state = portfolio_service.load_portfolio(portfolio_filename)
 
+    quoted_prices: dict[str, float] = {}
+    try:
+        for i in selected_indices:
+            rec = recommendations[i]
+            ticker = ticker_corrections.get(i, rec.get("ticker", ""))
+            quantity = quantity_adjustments.get(i, rec.get("quantity", 0))
+            if quantity <= 0 or not ticker:
+                continue
+            if ticker not in quoted_prices:
+                quoted_prices[ticker] = security_service.get_price(ticker)
+    except Exception as e:
+        st.error(f"Failed to capture quoted prices: {e}")
+        return
+
     # If this is an empty portfolio and we need more cash, increase it
     if increase_cash_if_needed:
         # Calculate total cost of BUY trades (using adjusted quantities)
@@ -491,12 +505,9 @@ def _apply_pending_trades(
                 quantity = quantity_adjustments.get(i, rec.get("quantity", 0))
                 if quantity <= 0:
                     continue
-                try:
-                    price = security_service.get_price(ticker)
-                    if price:
-                        total_buy_cost += price * quantity
-                except Exception:
-                    pass
+                price = quoted_prices.get(ticker)
+                if price is not None:
+                    total_buy_cost += price * quantity
 
         # If we need more cash, increase it
         if total_buy_cost > state.cash:
@@ -537,6 +548,7 @@ def _apply_pending_trades(
                 action,
                 quantity,
                 reasoning,
+                price=quoted_prices[ticker],
                 stop_loss_price=stop_loss_price,
                 take_profit_price=take_profit_price,
                 asset_class=config.asset_class,
