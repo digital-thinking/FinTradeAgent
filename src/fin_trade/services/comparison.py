@@ -341,6 +341,23 @@ class ComparisonService:
 
         return float(((end_value / start_value) ** (1 / years) - 1) * 100)
 
+    def _calculate_daily_returns(self, value_df: pd.DataFrame) -> pd.Series:
+        """Calculate daily returns from a daily-resampled portfolio value series."""
+        series_df = value_df.copy()
+        series_df["date"] = pd.to_datetime(series_df["date"]).dt.normalize()
+        series_df = series_df.sort_values("date").drop_duplicates(subset="date", keep="last")
+
+        if series_df.empty:
+            return pd.Series(dtype=float)
+
+        daily_index = pd.date_range(
+            start=series_df["date"].iloc[0],
+            end=series_df["date"].iloc[-1],
+            freq="D",
+        )
+        daily_values = series_df.set_index("date")["value"].reindex(daily_index, method="ffill")
+        return daily_values.pct_change().dropna()
+
     def calculate_metrics(
         self,
         portfolio_name: str,
@@ -396,9 +413,7 @@ class ComparisonService:
         )
 
         # Calculate daily returns for volatility and Sharpe
-        value_df = value_df.sort_values("date")
-        value_df["daily_return"] = value_df["value"].pct_change()
-        daily_returns = value_df["daily_return"].dropna()
+        daily_returns = self._calculate_daily_returns(value_df)
 
         volatility = None
         sharpe_ratio = None

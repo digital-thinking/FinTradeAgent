@@ -399,6 +399,58 @@ class TestCalculateMetricsAlpha:
         assert metrics.alpha_pct == pytest.approx(5.0, abs=0.3)
 
 
+class TestCalculateMetricsVolatility:
+    """Tests for volatility from daily-resampled returns."""
+
+    def test_calculates_volatility_from_daily_resampled_returns(
+        self,
+        comparison_service,
+        mock_portfolio_service,
+        mock_stock_data_service,
+        sample_config,
+    ):
+        """Volatility should use daily returns after filling calendar gaps."""
+        dates = pd.bdate_range(end=pd.Timestamp(datetime.now()).normalize(), periods=3)
+        values = [100.0, 101.0, 98.98]
+        trade = Trade(
+            timestamp=dates[0].to_pydatetime(),
+            ticker="AAPL",
+            name="Apple Inc.",
+            action="BUY",
+            quantity=1,
+            price=100.0,
+            reasoning="Test volatility",
+        )
+        state = PortfolioState(
+            cash=0.0,
+            trades=[trade],
+            holdings=[Holding(ticker="AAPL", name="Apple Inc.", quantity=1, avg_price=100.0)],
+            initial_investment=100.0,
+        )
+        mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
+        comparison_service._build_portfolio_value_series = MagicMock(return_value=pd.DataFrame({
+            "date": dates,
+            "value": values,
+        }))
+        mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
+            "date": [dates[0], dates[-1]],
+            "price": [100.0, 100.0],
+            "cumulative_return": [0.0, 0.0],
+        })
+
+        metrics = comparison_service.calculate_metrics("test")
+
+        daily_returns = (
+            pd.Series(values, index=dates)
+            .reindex(pd.date_range(start=dates[0], end=dates[-1], freq="D"), method="ffill")
+            .pct_change()
+            .dropna()
+        )
+        expected_volatility = float(daily_returns.std() * np.sqrt(252) * 100)
+
+        assert metrics.volatility_pct == pytest.approx(expected_volatility)
+
+
 class TestBuildPortfolioValueSeries:
     """Tests for historical portfolio value reconstruction."""
 
