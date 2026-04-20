@@ -364,7 +364,12 @@ class PortfolioService:
 
         elif action == "SELL":
             existing = next((h for h in holdings if h.ticker == ticker), None)
-            if not existing or existing.quantity < quantity:
+            # Tolerant comparison: 0.1 + 0.2 == 0.30000000000000004 would
+            # otherwise either reject a legitimate sell or leave a ~5e-17
+            # residual holding behind. Crypto needs tighter tolerance than
+            # stocks because positions can be very small.
+            qty_tol = 1e-9 if asset_class == AssetClass.CRYPTO else 1e-6
+            if not existing or quantity - existing.quantity > qty_tol:
                 raise ValueError(
                     f"Insufficient holdings: need {quantity}, have {existing.quantity if existing else 0}"
                 )
@@ -378,7 +383,7 @@ class PortfolioService:
             cash += cost
             new_qty = existing.quantity - quantity
             holdings = [h for h in holdings if h.ticker != ticker]
-            if new_qty > 0:
+            if new_qty > qty_tol:
                 holdings.append(Holding(
                     ticker=existing.ticker,
                     name=existing.name,

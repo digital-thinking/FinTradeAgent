@@ -1554,3 +1554,58 @@ class TestExecuteTradeAssetClass:
         assert len(new_state.holdings) == 1
         assert new_state.holdings[0].ticker == "BTC-USD"
         assert new_state.holdings[0].quantity == 0.1
+
+    def test_full_sell_after_fractional_buys_leaves_no_residual(
+        self, temp_data_dir, mock_security_service, empty_portfolio_state
+    ):
+        """BUY 0.1 + BUY 0.2 then SELL 0.3 must close the position cleanly.
+
+        0.1 + 0.2 == 0.30000000000000004 in IEEE-754, so a naive SELL would
+        either reject (need 0.3, have 0.3...04 looks fine, but if we mirrored
+        the numbers the other way around it would) or leave a ~5e-17
+        residual holding. With tolerant comparison the SELL succeeds and the
+        dust is dropped.
+        """
+        mock_security_service.lookup_ticker.return_value = MagicMock(
+            ticker="BTC-USD",
+            name="Bitcoin USD",
+        )
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        state = service.execute_trade(
+            empty_portfolio_state,
+            ticker="BTC-USD",
+            action="BUY",
+            quantity=0.1,
+            reasoning="First slice",
+            price=1000.0,
+            asset_class=AssetClass.CRYPTO,
+        )
+        state = service.execute_trade(
+            state,
+            ticker="BTC-USD",
+            action="BUY",
+            quantity=0.2,
+            reasoning="Second slice",
+            price=1000.0,
+            asset_class=AssetClass.CRYPTO,
+        )
+        # Sanity check: floating-point residue really is present before sell.
+        assert state.holdings[0].quantity != 0.3
+
+        state = service.execute_trade(
+            state,
+            ticker="BTC-USD",
+            action="SELL",
+            quantity=0.3,
+            reasoning="Close position",
+            price=1100.0,
+            asset_class=AssetClass.CRYPTO,
+        )
+
+        assert state.holdings == []
