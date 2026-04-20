@@ -26,7 +26,7 @@ class TestEarningsInfo:
             earnings_date=datetime(2025, 1, 30),
             eps_estimate=2.50,
             revenue_estimate=120e9,
-            days_until_earnings=5,
+            hours_until_earnings=5.0 * 24,  # 5 days
         )
 
         result = info.to_context_string()
@@ -37,6 +37,21 @@ class TestEarningsInfo:
         assert "EPS est: $2.50" in result
         assert "Rev est: $120.00B" in result
 
+    def test_to_context_string_today(self):
+        """Test formatting when earnings is today (less than 24h away)."""
+        info = EarningsInfo(
+            ticker="AAPL",
+            earnings_date=datetime(2025, 1, 30),
+            eps_estimate=2.50,
+            revenue_estimate=120e9,
+            hours_until_earnings=5.0,  # 5 hours away
+        )
+
+        result = info.to_context_string()
+
+        assert "AAPL" in result
+        assert "(today)" in result
+
     def test_to_context_string_with_no_date(self):
         """Test formatting when no earnings date available."""
         info = EarningsInfo(
@@ -44,7 +59,7 @@ class TestEarningsInfo:
             earnings_date=None,
             eps_estimate=None,
             revenue_estimate=None,
-            days_until_earnings=None,
+            hours_until_earnings=None,
         )
 
         result = info.to_context_string()
@@ -420,6 +435,54 @@ class TestGetMacroData:
 
 class TestGetFullContextForHoldings:
     """Tests for get_full_context_for_holdings method."""
+
+    @patch("fin_trade.services.market_data.datetime")
+    @patch("fin_trade.services.market_data.yf")
+    def test_earnings_filtering(self, mock_yf, mock_datetime, tmp_path):
+        """Test that earnings are filtered based on hours (Bug-F23)."""
+        now = datetime(2026, 4, 21, 12, 0, 0)
+        mock_datetime.now.return_value = now
+
+        service = MarketDataService(cache_dir=tmp_path)
+        service.get_macro_data = MagicMock(return_value=MacroData(
+            sp500_price=4800, sp500_change_pct=1.0, nasdaq_price=None, nasdaq_change_pct=None,
+            dow_price=None, dow_change_pct=None, treasury_10y=None, treasury_3m=None,
+            vix=None, timestamp=now
+        ))
+        service.get_sec_filings = MagicMock(return_value=[])
+        service.get_insider_trades = MagicMock(return_value=[])
+
+        # 1. Earnings 3h ago -> Should NOT be rendered
+        # 2. Earnings 5h from now -> Should be rendered as "today"
+        # 3. Earnings 2 days away -> Should be rendered as "2 days away"
+        
+        earnings_3h_ago = now - timedelta(hours=3)
+        earnings_5h_from_now = now + timedelta(hours=5)
+        earnings_2_days_away = now + timedelta(days=2)
+
+        def mock_get_earnings_info(ticker):
+            if ticker == "PAST":
+                return EarningsInfo(ticker="PAST", earnings_date=earnings_3h_ago, 
+                                    eps_estimate=None, revenue_estimate=None, 
+                                    hours_until_earnings=(earnings_3h_ago - now).total_seconds() / 3600)
+            if ticker == "TODAY":
+                return EarningsInfo(ticker="TODAY", earnings_date=earnings_5h_from_now, 
+                                    eps_estimate=None, revenue_estimate=None, 
+                                    hours_until_earnings=(earnings_5h_from_now - now).total_seconds() / 3600)
+            if ticker == "FUTURE":
+                return EarningsInfo(ticker="FUTURE", earnings_date=earnings_2_days_away, 
+                                    eps_estimate=None, revenue_estimate=None, 
+                                    hours_until_earnings=(earnings_2_days_away - now).total_seconds() / 3600)
+            return None
+
+        with patch.object(service, 'get_earnings_info', side_effect=mock_get_earnings_info):
+            context = service.get_full_context_for_holdings(["PAST", "TODAY", "FUTURE"])
+            
+            assert "PAST" not in context
+            assert "TODAY" in context
+            assert "(today)" in context
+            assert "FUTURE" in context
+            assert "2 days away" in context
 
     @patch("fin_trade.services.market_data.yf")
     def test_returns_full_context(self, mock_yf, tmp_path):

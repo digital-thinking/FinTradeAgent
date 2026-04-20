@@ -23,7 +23,7 @@ class EarningsInfo:
     earnings_date: datetime | None
     eps_estimate: float | None
     revenue_estimate: float | None
-    days_until_earnings: int | None
+    hours_until_earnings: float | None
 
     def to_context_string(self) -> str:
         """Format earnings info for agent context."""
@@ -31,8 +31,12 @@ class EarningsInfo:
             return f"{self.ticker}: No upcoming earnings date available"
 
         parts = [f"{self.ticker}: Earnings on {self.earnings_date.strftime('%Y-%m-%d')}"]
-        if self.days_until_earnings is not None:
-            parts.append(f"({self.days_until_earnings} days away)")
+        if self.hours_until_earnings is not None:
+            if self.hours_until_earnings < 24:
+                parts.append("(today)")
+            else:
+                days = int(self.hours_until_earnings / 24)
+                parts.append(f"({days} days away)")
         if self.eps_estimate is not None:
             parts.append(f"EPS est: ${self.eps_estimate:.2f}")
         if self.revenue_estimate is not None:
@@ -184,14 +188,14 @@ class MarketDataService:
             stored_earnings = security_service.get_earnings_timestamp(ticker)
             if stored_earnings:
                 # Check if stored date is in the future
-                days_until = (stored_earnings - datetime.now()).days
-                if days_until >= 0:
+                hours_until = (stored_earnings - datetime.now()).total_seconds() / 3600
+                if hours_until >= -1:
                     result = EarningsInfo(
                         ticker=ticker,
                         earnings_date=stored_earnings,
                         eps_estimate=None,  # Not available from stored data
                         revenue_estimate=None,
-                        days_until_earnings=days_until,
+                        hours_until_earnings=hours_until,
                     )
                     self._set_cached(cache_key, result)
                     return result
@@ -202,7 +206,7 @@ class MarketDataService:
         earnings_date = None
         eps_estimate = None
         revenue_estimate = None
-        days_until = None
+        hours_until = None
 
         # calendar can be a DataFrame or dict depending on yfinance version
         if calendar is not None:
@@ -230,14 +234,14 @@ class MarketDataService:
                     revenue_estimate = calendar.get("Revenue Estimate")
 
         if earnings_date:
-            days_until = (earnings_date - datetime.now()).days
+            hours_until = (earnings_date - datetime.now()).total_seconds() / 3600
 
         result = EarningsInfo(
             ticker=ticker,
             earnings_date=earnings_date,
             eps_estimate=eps_estimate,
             revenue_estimate=revenue_estimate,
-            days_until_earnings=days_until,
+            hours_until_earnings=hours_until,
         )
         self._set_cached(cache_key, result)
         return result
@@ -438,12 +442,17 @@ class MarketDataService:
         earnings_upcoming = []
         for ticker in tickers:
             info = self.get_earnings_info(ticker)
-            if info.days_until_earnings is not None and 0 <= info.days_until_earnings <= 30:
+            if (
+                info.hours_until_earnings is not None
+                and -1 <= info.hours_until_earnings <= 30 * 24
+            ):
                 earnings_upcoming.append(info)
 
         if earnings_upcoming:
             lines.append("UPCOMING EARNINGS (next 30 days):")
-            for info in sorted(earnings_upcoming, key=lambda x: x.days_until_earnings or 999):
+            for info in sorted(
+                earnings_upcoming, key=lambda x: x.hours_until_earnings or 9999
+            ):
                 lines.append(f"  {info.to_context_string()}")
             lines.append("")
 
