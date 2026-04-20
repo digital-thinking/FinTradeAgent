@@ -22,6 +22,19 @@ def mock_stock_data_service():
     """Create a mock StockDataService."""
     mock = MagicMock()
     mock.get_price.return_value = 100.0
+
+    def get_closes(tickers, start, end):
+        dates = pd.date_range(
+            start=pd.Timestamp(start).normalize(),
+            end=pd.Timestamp(end).normalize(),
+            freq="D",
+        )
+        return pd.DataFrame(
+            {ticker.upper(): [mock.get_price.return_value] * len(dates) for ticker in tickers},
+            index=dates,
+        )
+
+    mock.get_closes.side_effect = get_closes
     return mock
 
 
@@ -171,6 +184,51 @@ class TestCalculateMetricsWithTrades:
 
         # 1 profitable AAPL sell (160 > 150), 1 losing MSFT sell (280 < 300)
         assert metrics.win_rate_pct == 50.0
+
+
+class TestBuildPortfolioValueSeries:
+    """Tests for historical portfolio value reconstruction."""
+
+    def test_marks_holdings_to_market_each_day(
+        self, comparison_service, mock_portfolio_service, mock_stock_data_service,
+        sample_config
+    ):
+        """Value reflects daily closes instead of the original cost basis."""
+        trade_date = (datetime.now() - timedelta(days=5)).replace(
+            hour=10, minute=0, second=0, microsecond=0
+        )
+        trade = Trade(
+            timestamp=trade_date,
+            ticker="AAPL",
+            name="Apple Inc.",
+            action="BUY",
+            quantity=10,
+            price=100.0,
+            reasoning="Test buy",
+        )
+        state = PortfolioState(
+            cash=9000.0,
+            trades=[trade],
+            holdings=[Holding(ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=100.0)],
+            initial_investment=10000.0,
+        )
+        mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
+
+        def rising_closes(tickers, start, end):
+            dates = pd.date_range(
+                start=pd.Timestamp(start).normalize(),
+                end=pd.Timestamp(end).normalize(),
+                freq="D",
+            )
+            closes = [100.0 + (10.0 * i / (len(dates) - 1)) for i in range(len(dates))]
+            return pd.DataFrame({"AAPL": closes}, index=dates)
+
+        mock_stock_data_service.get_closes.side_effect = rising_closes
+
+        result = comparison_service._build_portfolio_value_series("test")
+
+        assert len(result) == 6
+        assert result["value"].iloc[-1] == pytest.approx(10100.0)
 
 
 class TestWinRateCalculation:

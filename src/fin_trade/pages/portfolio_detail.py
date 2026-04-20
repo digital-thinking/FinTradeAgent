@@ -476,6 +476,7 @@ def _calculate_performance_data(
 ) -> dict:
     """Calculate portfolio value over time with trade markers and stacked data."""
     from datetime import datetime
+    import pandas as pd
 
     timestamps = []
     values = []
@@ -483,66 +484,65 @@ def _calculate_performance_data(
     holdings_values = []  # Track holdings value over time
     trade_points = []  # (timestamp, value, action, ticker, quantity)
 
+    if not state.trades:
+        return {
+            "timestamps": timestamps,
+            "values": values,
+            "cash_values": cash_values,
+            "holdings_values": holdings_values,
+            "trade_points": trade_points,
+        }
+
     # Use actual initial investment if recorded, otherwise fall back to config
     cash = state.initial_investment or config.initial_amount
-    holdings: dict[str, dict] = {}
+    holdings: dict[str, float] = {}
+    trades = sorted(state.trades, key=lambda trade: trade.timestamp)
+    start_date = pd.Timestamp(trades[0].timestamp).normalize()
+    end_date = pd.Timestamp(datetime.now()).normalize()
+    closes = security_service.get_closes(
+        [trade.ticker for trade in trades],
+        start_date,
+        end_date,
+    )
+    trades_by_date: dict[pd.Timestamp, list] = {}
+    for trade in trades:
+        trade_date = pd.Timestamp(trade.timestamp).normalize()
+        trades_by_date.setdefault(trade_date, []).append(trade)
 
-    for trade in state.trades:
-        trade_cost = trade.price * trade.quantity
+    for date, close_row in closes.iterrows():
+        for trade in trades_by_date.get(date, []):
+            ticker = trade.ticker.upper()
+            trade_cost = trade.price * trade.quantity
 
-        if trade.action == "BUY":
-            cash -= trade_cost
-            if trade.ticker in holdings:
-                existing = holdings[trade.ticker]
-                total_qty = existing["quantity"] + trade.quantity
-                avg_price = (
-                    existing["avg_price"] * existing["quantity"] + trade_cost
-                ) / total_qty
-                holdings[trade.ticker] = {"quantity": total_qty, "avg_price": avg_price}
-            else:
-                holdings[trade.ticker] = {"quantity": trade.quantity, "avg_price": trade.price}
-        else:  # SELL
-            cash += trade_cost
-            if trade.ticker in holdings:
-                holdings[trade.ticker]["quantity"] -= trade.quantity
-                if holdings[trade.ticker]["quantity"] <= 0:
-                    del holdings[trade.ticker]
+            if trade.action == "BUY":
+                cash -= trade_cost
+                holdings[ticker] = holdings.get(ticker, 0.0) + trade.quantity
+            else:  # SELL
+                cash += trade_cost
+                holdings[ticker] = holdings.get(ticker, 0.0) - trade.quantity
+                if holdings[ticker] <= 0:
+                    del holdings[ticker]
 
-        # Calculate portfolio value at this point
-        holdings_value = sum(h["quantity"] * h["avg_price"] for h in holdings.values())
+        holdings_value = sum(
+            quantity * float(close_row[ticker])
+            for ticker, quantity in holdings.items()
+        )
         total_value = cash + holdings_value
 
-        timestamps.append(trade.timestamp)
+        timestamps.append(date)
         values.append(total_value)
         cash_values.append(cash)
         holdings_values.append(holdings_value)
-        trade_points.append({
-            "timestamp": trade.timestamp,
-            "value": total_value,
-            "action": trade.action,
-            "ticker": trade.ticker,
-            "quantity": trade.quantity,
-            "price": trade.price,
-        })
 
-    # Add current value as final point
-    try:
-        current_holdings_value = 0.0
-        for ticker, h in holdings.items():
-            try:
-                current_price = security_service.get_price(ticker)
-                current_holdings_value += h["quantity"] * current_price
-            except Exception:
-                current_holdings_value += h["quantity"] * h["avg_price"]
-
-        current_total = cash + current_holdings_value
-        now = datetime.now()
-        timestamps.append(now)
-        values.append(current_total)
-        cash_values.append(cash)
-        holdings_values.append(current_holdings_value)
-    except Exception:
-        pass
+        for trade in trades_by_date.get(date, []):
+            trade_points.append({
+                "timestamp": trade.timestamp,
+                "value": total_value,
+                "action": trade.action,
+                "ticker": trade.ticker,
+                "quantity": trade.quantity,
+                "price": trade.price,
+            })
 
     return {
         "timestamps": timestamps,

@@ -134,6 +134,18 @@ class StockDataService:
         """Force refresh price data for a ticker (use when executing trades)."""
         return self.update_data(ticker)
 
+    def _period_for_days(self, days: int) -> str:
+        """Map a requested day count to a yfinance history period."""
+        if days <= 365:
+            return "1y"
+        if days <= 730:
+            return "2y"
+        if days <= 1825:
+            return "5y"
+        if days <= 3650:
+            return "10y"
+        return "max"
+
     def get_history(self, ticker: str, days: int = 365) -> pd.DataFrame:
         """Get price history for a ticker."""
         ticker = ticker.upper()
@@ -159,7 +171,7 @@ class StockDataService:
                 self._cache[ticker] = df
             else:
                 try:
-                    df = self.update_data(ticker)
+                    df = self.update_data(ticker, period=self._period_for_days(days))
                 except Exception:
                     # Fall back to stale cached data if available
                     if cache_path.exists():
@@ -189,6 +201,53 @@ class StockDataService:
         if close.empty:
             raise ValueError(f"No valid close price for {ticker}")
         return float(close.iloc[-1])
+
+    def get_closes(
+        self,
+        tickers: list[str],
+        start: datetime,
+        end: datetime,
+    ) -> pd.DataFrame:
+        """Get aligned adjusted daily closes for tickers over a date range."""
+        start_date = pd.Timestamp(start).normalize()
+        end_date = pd.Timestamp(end).normalize()
+        if end_date < start_date:
+            raise ValueError("end must be on or after start")
+
+        normalized_tickers = list(dict.fromkeys(ticker.upper() for ticker in tickers))
+        date_index = pd.date_range(start=start_date, end=end_date, freq="D")
+        if not normalized_tickers:
+            return pd.DataFrame(index=date_index)
+
+        history_start = start_date - pd.Timedelta(days=7)
+        history_index = pd.date_range(start=history_start, end=end_date, freq="D")
+        days_needed = max((datetime.now() - history_start.to_pydatetime()).days + 1, 1)
+
+        close_series = {}
+        for ticker in normalized_tickers:
+            df = self.get_history(ticker, days=days_needed)
+            if df.empty:
+                raise ValueError(f"No price data available for {ticker}")
+
+            close_column = "Adj Close" if "Adj Close" in df.columns else "Close"
+            if close_column not in df.columns:
+                raise ValueError(f"No close price data available for {ticker}")
+
+            closes = df[close_column].dropna().copy()
+            if closes.empty:
+                raise ValueError(f"No valid close price data for {ticker}")
+
+            closes.index = pd.to_datetime(closes.index).normalize()
+            closes = closes.groupby(level=0).last()
+            closes = closes[(closes.index >= history_start) & (closes.index <= end_date)]
+            closes = closes.reindex(history_index).ffill().reindex(date_index)
+
+            if closes.isna().any():
+                raise ValueError(f"No close price data for {ticker} at start of range")
+
+            close_series[ticker] = closes.astype(float)
+
+        return pd.DataFrame(close_series, index=date_index)
 
     def get_cached_price(self, ticker: str) -> float | None:
         """Return the last cached close price without ever fetching from yfinance.
@@ -488,4 +547,3 @@ class StockDataService:
         result = result.reset_index(drop=True)
 
         return result
-

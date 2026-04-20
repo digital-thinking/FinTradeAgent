@@ -71,7 +71,12 @@ class TestUpdateData:
         # Create mock DataFrame
         dates = pd.date_range("2024-01-01", periods=5, freq="D")
         mock_df = pd.DataFrame(
-            {"Close": [100.0, 101.0, 102.0, 103.0, 104.0]},
+            {
+                "Open": [99.0, 100.0, 101.0, 102.0, 103.0],
+                "High": [101.0, 102.0, 103.0, 104.0, 105.0],
+                "Low": [98.0, 99.0, 100.0, 101.0, 102.0],
+                "Close": [100.0, 101.0, 102.0, 103.0, 104.0],
+            },
             index=dates,
         )
 
@@ -119,7 +124,15 @@ class TestForceUpdate:
     def test_calls_update_data(self, mock_yf, tmp_path):
         """Test force_update delegates to update_data."""
         dates = pd.date_range("2024-01-01", periods=3, freq="D")
-        mock_df = pd.DataFrame({"Close": [100.0, 101.0, 102.0]}, index=dates)
+        mock_df = pd.DataFrame(
+            {
+                "Open": [99.0, 100.0, 101.0],
+                "High": [101.0, 102.0, 103.0],
+                "Low": [98.0, 99.0, 100.0],
+                "Close": [100.0, 101.0, 102.0],
+            },
+            index=dates,
+        )
 
         mock_ticker = MagicMock()
         mock_ticker.history.return_value = mock_df
@@ -130,6 +143,20 @@ class TestForceUpdate:
 
         assert len(result) == 3
         mock_yf.Ticker.assert_called_with("FORCE")
+
+
+class TestPeriodForDays:
+    """Tests for yfinance period selection."""
+
+    def test_maps_days_to_fetch_periods(self, tmp_path):
+        """Test longer requested histories fetch longer periods."""
+        service = StockDataService(data_dir=tmp_path)
+
+        assert service._period_for_days(365) == "1y"
+        assert service._period_for_days(366) == "2y"
+        assert service._period_for_days(731) == "5y"
+        assert service._period_for_days(1826) == "10y"
+        assert service._period_for_days(3651) == "max"
 
 
 class TestGetHistory:
@@ -180,7 +207,15 @@ class TestGetHistory:
 
         # Mock fresh data
         fresh_dates = pd.date_range(end=datetime.now(), periods=5, freq="D")
-        fresh_df = pd.DataFrame({"Close": [100.0, 101.0, 102.0, 103.0, 104.0]}, index=fresh_dates)
+        fresh_df = pd.DataFrame(
+            {
+                "Open": [99.0, 100.0, 101.0, 102.0, 103.0],
+                "High": [101.0, 102.0, 103.0, 104.0, 105.0],
+                "Low": [98.0, 99.0, 100.0, 101.0, 102.0],
+                "Close": [100.0, 101.0, 102.0, 103.0, 104.0],
+            },
+            index=fresh_dates,
+        )
 
         mock_ticker = MagicMock()
         mock_ticker.history.return_value = fresh_df
@@ -245,6 +280,41 @@ class TestGetPrice:
         price = service.get_price("upper")
 
         assert price == 102.0
+
+
+class TestGetCloses:
+    """Tests for aligned daily close retrieval."""
+
+    def test_returns_adjusted_closes_on_daily_index(self, tmp_path):
+        """Test adjusted closes are aligned and forward-filled by day."""
+        service = StockDataService(data_dir=tmp_path)
+        start = pd.Timestamp(datetime.now()).normalize() - pd.Timedelta(days=5)
+        end = start + pd.Timedelta(days=3)
+        df = pd.DataFrame(
+            {
+                "Close": [1000.0, 1004.0, 1006.0],
+                "Adj Close": [100.0, 104.0, 106.0],
+            },
+            index=[start, start + pd.Timedelta(days=2), start + pd.Timedelta(days=3)],
+        )
+        service._cache["AAPL"] = df
+
+        result = service.get_closes(["aapl"], start, end)
+
+        assert list(result.columns) == ["AAPL"]
+        assert result.index.equals(pd.date_range(start=start, end=end, freq="D"))
+        assert result.loc[start, "AAPL"] == 100.0
+        assert result.loc[start + pd.Timedelta(days=1), "AAPL"] == 100.0
+        assert result.loc[start + pd.Timedelta(days=2), "AAPL"] == 104.0
+
+    def test_raises_when_end_before_start(self, tmp_path):
+        """Test date ranges must be ordered."""
+        service = StockDataService(data_dir=tmp_path)
+        start = datetime.now()
+        end = start - timedelta(days=1)
+
+        with pytest.raises(ValueError, match="end must be on or after start"):
+            service.get_closes(["AAPL"], start, end)
 
 
 class TestCalculateRsi:

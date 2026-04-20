@@ -65,56 +65,43 @@ class ComparisonService:
         # Reconstruct portfolio value over time
         initial_cash = state.initial_investment or config.initial_amount
         cash = initial_cash
-        holdings: dict[str, dict] = {}  # ticker -> {quantity, avg_price}
+        holdings: dict[str, float] = {}
+        trades = sorted(state.trades, key=lambda trade: trade.timestamp)
+        start_date = pd.Timestamp(trades[0].timestamp).normalize()
+        end_date = pd.Timestamp(datetime.now()).normalize()
+        tickers = [trade.ticker for trade in trades]
+        closes = self.stock_data_service.get_closes(tickers, start_date, end_date)
+        trades_by_date: dict[pd.Timestamp, list] = {}
+        for trade in trades:
+            trade_date = pd.Timestamp(trade.timestamp).normalize()
+            trades_by_date.setdefault(trade_date, []).append(trade)
 
         records = []
 
-        for trade in state.trades:
-            trade_cost = trade.price * trade.quantity
+        for date, close_row in closes.iterrows():
+            for trade in trades_by_date.get(date, []):
+                ticker = trade.ticker.upper()
+                trade_cost = trade.price * trade.quantity
 
-            if trade.action == "BUY":
-                cash -= trade_cost
-                if trade.ticker in holdings:
-                    existing = holdings[trade.ticker]
-                    total_qty = existing["quantity"] + trade.quantity
-                    avg_price = (
-                        existing["avg_price"] * existing["quantity"] + trade_cost
-                    ) / total_qty
-                    holdings[trade.ticker] = {"quantity": total_qty, "avg_price": avg_price}
-                else:
-                    holdings[trade.ticker] = {"quantity": trade.quantity, "avg_price": trade.price}
-            else:  # SELL
-                cash += trade_cost
-                if trade.ticker in holdings:
-                    holdings[trade.ticker]["quantity"] -= trade.quantity
-                    if holdings[trade.ticker]["quantity"] <= 0:
-                        del holdings[trade.ticker]
+                if trade.action == "BUY":
+                    cash -= trade_cost
+                    holdings[ticker] = holdings.get(ticker, 0.0) + trade.quantity
+                else:  # SELL
+                    cash += trade_cost
+                    holdings[ticker] = holdings.get(ticker, 0.0) - trade.quantity
+                    if holdings[ticker] <= 0:
+                        del holdings[ticker]
 
-            # Calculate portfolio value at this point using trade prices
             holdings_value = sum(
-                h["quantity"] * h["avg_price"] for h in holdings.values()
+                quantity * float(close_row[ticker])
+                for ticker, quantity in holdings.items()
             )
             total_value = cash + holdings_value
 
             records.append({
-                "date": trade.timestamp,
+                "date": date,
                 "value": total_value,
             })
-
-        # Add current value as final point
-        current_holdings_value = 0.0
-        for ticker, h in holdings.items():
-            try:
-                current_price = self.stock_data_service.get_price(ticker)
-                current_holdings_value += h["quantity"] * current_price
-            except Exception:
-                current_holdings_value += h["quantity"] * h["avg_price"]
-
-        current_total = cash + current_holdings_value
-        records.append({
-            "date": datetime.now(),
-            "value": current_total,
-        })
 
         df = pd.DataFrame(records)
         df["date"] = pd.to_datetime(df["date"])

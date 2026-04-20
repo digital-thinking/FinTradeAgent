@@ -145,6 +145,10 @@ class SecurityService:
         """Get the current price for a ticker symbol (cached, auto-updates if >24h old)."""
         return self._stock_data_service.get_price(ticker)
 
+    def get_closes(self, tickers: list[str], start: datetime, end: datetime):
+        """Get aligned daily closes for ticker symbols."""
+        return self._stock_data_service.get_closes(tickers, start, end)
+
     def is_crypto_ticker(self, ticker: str) -> bool:
         """Check whether a ticker is a crypto symbol with fiat quote suffix."""
         normalized = ticker.upper()
