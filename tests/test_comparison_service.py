@@ -651,6 +651,78 @@ class TestGetComparisonTable:
         assert "Max Drawdown" in result.index
         assert "Win Rate" in result.index
 
+    def test_benchmark_row_matches_calculate_metrics_on_synthetic_tracker(
+        self,
+        comparison_service,
+        mock_portfolio_service,
+        mock_stock_data_service,
+        sample_config,
+    ):
+        """Benchmark row numbers must match calculate_metrics run on a synthetic
+        portfolio whose value series equals the benchmark price series."""
+        dates = pd.bdate_range(end=pd.Timestamp(datetime.now()).normalize(), periods=60)
+        first_trade_date = dates[0].to_pydatetime()
+        benchmark_returns = np.tile(
+            np.array([0.0030, -0.0015, 0.0045, -0.0020, 0.0010]),
+            12,
+        )[:59]
+        benchmark_prices = build_price_series(100.0, benchmark_returns.tolist())
+        trade = Trade(
+            timestamp=first_trade_date,
+            ticker="AAPL",
+            name="Apple Inc.",
+            action="BUY",
+            quantity=1,
+            price=100.0,
+            reasoning="Track benchmark",
+        )
+        state = PortfolioState(
+            cash=0.0,
+            trades=[trade],
+            holdings=[Holding(ticker="AAPL", name="Apple Inc.", quantity=1, avg_price=100.0)],
+            initial_investment=100.0,
+        )
+        mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
+        benchmark_df = pd.DataFrame({
+            "date": dates,
+            "price": benchmark_prices,
+            "cumulative_return": [
+                ((price / benchmark_prices[0]) - 1) * 100 for price in benchmark_prices
+            ],
+        })
+        mock_stock_data_service.get_benchmark_performance.return_value = benchmark_df
+        # Pin the portfolio's value series to the benchmark price series so that
+        # calculate_metrics on this portfolio must produce the same numbers as
+        # the benchmark row.
+        comparison_service._build_portfolio_value_series = MagicMock(
+            return_value=pd.DataFrame({"date": dates, "value": benchmark_prices})
+        )
+
+        expected = comparison_service.calculate_metrics("test", "SPY")
+        result = comparison_service.get_comparison_table(["test"], benchmark_symbol="SPY")
+
+        benchmark_col = result["SPY"]
+
+        # Volatility, Sharpe, max drawdown, annualized return must match the
+        # synthetic tracker portfolio's metrics and never be the old hardcoded
+        # placeholders.
+        assert benchmark_col["Volatility"] == f"{expected.volatility_pct:.1f}%"
+        assert benchmark_col["Volatility"] != "~15%"
+        assert benchmark_col["Sharpe Ratio"] == f"{expected.sharpe_ratio:.2f}"
+        assert benchmark_col["Sharpe Ratio"] != "N/A"
+        assert benchmark_col["Max Drawdown"] == f"-{expected.max_drawdown_pct:.1f}%"
+        assert benchmark_col["Max Drawdown"] != "N/A"
+        assert benchmark_col["Annualized Return"] == (
+            f"{expected.annualized_return_pct:+.1f}%"
+        )
+        assert benchmark_col["Days Active"] == str(expected.days_active)
+        assert benchmark_col["Days Active"] != "365"
+
+        window = result.attrs["benchmark_window"]
+        assert window["symbol"] == "SPY"
+        assert window["start"] == first_trade_date
+        assert window["days"] == expected.days_active
+
     def test_labels_fallback_alpha_as_excess_return(
         self, comparison_service, mock_portfolio_service, mock_stock_data_service, sample_config
     ):

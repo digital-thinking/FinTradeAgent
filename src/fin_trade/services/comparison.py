@@ -492,6 +492,7 @@ class ComparisonService:
         """
         metrics_data = {}
         portfolio_metrics: dict[str, PortfolioMetrics] = {}
+        portfolio_first_trades: dict[str, datetime] = {}
         use_excess_return_label = False
         if benchmark_symbol is None and portfolio_names:
             first_config, _ = self.portfolio_service.load_portfolio(portfolio_names[0])
@@ -500,6 +501,11 @@ class ComparisonService:
 
         for name in portfolio_names:
             try:
+                _, state = self.portfolio_service.load_portfolio(name)
+                if state.trades:
+                    portfolio_first_trades[name] = min(
+                        trade.timestamp for trade in state.trades
+                    )
                 metrics = self.calculate_metrics(name, benchmark_symbol)
                 portfolio_metrics[name] = metrics
                 use_excess_return_label = use_excess_return_label or metrics.beta is None
@@ -542,28 +548,83 @@ class ComparisonService:
                     "Trades": str(metrics.num_trades),
                 }
 
-        # Add benchmark column
-        try:
-            benchmark_df = self.stock_data_service.get_benchmark_performance(
-                symbol=benchmark_symbol,
-                start_date=datetime.now() - pd.Timedelta(days=365),
-                end_date=datetime.now(),
-            )
-            if not benchmark_df.empty:
-                benchmark_return = benchmark_df["cumulative_return"].iloc[-1]
-                metrics_data[benchmark_symbol] = {
-                    "Total Return": f"{benchmark_return:+.1f}%",
-                    "Annualized Return": f"{benchmark_return:+.1f}%",  # Approximate for 1 year
-                    "Volatility": "~15%",  # Historical average
-                    "Sharpe Ratio": "N/A",
-                    "Max Drawdown": "N/A",
-                    "Win Rate": "N/A",
-                    alpha_label: "+0.0%",  # Benchmark is reference
-                    "Beta": "1.00",
-                    "Days Active": "365",
-                    "Trades": "N/A",
-                }
-        except Exception:
-            pass
+        # Benchmark column: compute real metrics over the widest portfolio window
+        # (earliest first_trade across the set → now) so numbers are directly
+        # comparable to the portfolio rows instead of being fabricated.
+        benchmark_window = None
+        if portfolio_first_trades:
+            widest_start = min(portfolio_first_trades.values())
+            now = datetime.now()
+            try:
+                benchmark_df = self.stock_data_service.get_benchmark_performance(
+                    symbol=benchmark_symbol,
+                    start_date=widest_start,
+                    end_date=now,
+                )
+                if not benchmark_df.empty:
+                    benchmark_value_df = benchmark_df[["date", "price"]].rename(
+                        columns={"price": "value"}
+                    )
+                    start_price = float(benchmark_df["price"].iloc[0])
+                    end_price = float(benchmark_df["price"].iloc[-1])
+                    days_active = max((now - widest_start).days, 1)
 
-        return pd.DataFrame(metrics_data)
+                    total_return = (
+                        ((end_price - start_price) / start_price) * 100
+                        if start_price > 0
+                        else 0.0
+                    )
+                    annualized_return = self._calculate_annualized_return(
+                        start_price, end_price, days_active
+                    )
+
+                    daily_returns = self._calculate_daily_returns(benchmark_value_df)
+                    volatility = None
+                    sharpe_ratio = None
+                    if len(daily_returns) > 1:
+                        volatility = float(daily_returns.std() * np.sqrt(252) * 100)
+                        if volatility > 0 and annualized_return is not None:
+                            excess_return = annualized_return - self.RISK_FREE_RATE * 100
+                            sharpe_ratio = excess_return / volatility
+
+                    max_drawdown = self._calculate_max_drawdown(
+                        benchmark_value_df["value"].tolist()
+                    )
+
+                    metrics_data[benchmark_symbol] = {
+                        "Total Return": f"{total_return:+.1f}%",
+                        "Annualized Return": (
+                            f"{annualized_return:+.1f}%"
+                            if annualized_return is not None
+                            else "N/A"
+                        ),
+                        "Volatility": (
+                            f"{volatility:.1f}%"
+                            if volatility is not None
+                            else "N/A"
+                        ),
+                        "Sharpe Ratio": (
+                            f"{sharpe_ratio:.2f}"
+                            if sharpe_ratio is not None
+                            else "N/A"
+                        ),
+                        "Max Drawdown": f"-{max_drawdown:.1f}%",
+                        "Win Rate": "N/A",
+                        alpha_label: "+0.0%",
+                        "Beta": "1.00",
+                        "Days Active": str(days_active),
+                        "Trades": "N/A",
+                    }
+                    benchmark_window = {
+                        "symbol": benchmark_symbol,
+                        "start": widest_start,
+                        "end": now,
+                        "days": days_active,
+                    }
+            except Exception:
+                pass
+
+        result = pd.DataFrame(metrics_data)
+        if benchmark_window is not None:
+            result.attrs["benchmark_window"] = benchmark_window
+        return result
