@@ -26,7 +26,7 @@ class CompletedTrade:
     quantity: float
     buy_reasoning: str
     sell_reasoning: str
-    holding_days: int
+    holding_days: float
     profit_loss: float
     return_pct: float
     is_winner: bool
@@ -100,19 +100,19 @@ class ReflectionResult:
         lines.append(f"Average Winner: +{self.metrics.avg_gain_pct:.1f}% | "
                     f"Average Loser: {self.metrics.avg_loss_pct:.1f}%")
         lines.append(f"Total Realized P/L: ${self.metrics.total_realized_profit:,.2f}")
-        lines.append(f"Average Holding Period: {self.metrics.avg_holding_days:.0f} days")
+        lines.append(f"Average Holding Period: {self.metrics.avg_holding_days:.1f} days")
         lines.append("")
 
         # Best and worst trades
         if self.metrics.best_trade:
             bt = self.metrics.best_trade
             lines.append(f"Best Trade: {bt.ticker} +{bt.return_pct:.1f}% "
-                        f"(held {bt.holding_days} days)")
+                        f"(held {bt.holding_days:.1f} days)")
             lines.append(f"  Reasoning: {bt.buy_reasoning[:100]}...")
         if self.metrics.worst_trade:
             wt = self.metrics.worst_trade
             lines.append(f"Worst Trade: {wt.ticker} {wt.return_pct:.1f}% "
-                        f"(held {wt.holding_days} days)")
+                        f"(held {wt.holding_days:.1f} days)")
             lines.append(f"  Reasoning: {wt.buy_reasoning[:100]}...")
         lines.append("")
 
@@ -195,7 +195,7 @@ class ReflectionService:
                         buy = open_buys[0]
                         matched_qty = min(buy.quantity, remaining_sell_qty)
 
-                        holding_days = (trade.timestamp - buy.timestamp).days
+                        holding_days = (trade.timestamp - buy.timestamp).total_seconds() / 86400
                         profit_loss = (trade.price - buy.price) * matched_qty
                         return_pct = ((trade.price - buy.price) / buy.price) * 100
 
@@ -404,7 +404,7 @@ class ReflectionService:
         if metrics.avg_winner_holding_days > 0 and metrics.avg_loser_holding_days > 0:
             if metrics.avg_loser_holding_days > metrics.avg_winner_holding_days * 1.5:
                 insights.append(
-                    f"Losers held avg {metrics.avg_loser_holding_days:.0f} days vs winners {metrics.avg_winner_holding_days:.0f} days. "
+                    f"Losers held avg {metrics.avg_loser_holding_days:.1f} days vs winners {metrics.avg_winner_holding_days:.1f} days. "
                     "Reverse this pattern."
                 )
 
@@ -419,7 +419,7 @@ class ReflectionService:
         if metrics.best_trade:
             bt = metrics.best_trade
             insights.append(
-                f"Best trade ({bt.ticker} +{bt.return_pct:.1f}%) held for {bt.holding_days} days. "
+                f"Best trade ({bt.ticker} +{bt.return_pct:.1f}%) held for {bt.holding_days:.1f} days. "
                 "Look for similar setups."
             )
 

@@ -309,6 +309,39 @@ class TestFindCompletedTrades:
         assert result[0].buy_price == 150.0
         assert result[0].return_pct == pytest.approx(13.33, rel=0.1)
 
+    def test_fractional_holding_days(self):
+        """Test detecting a completed BUY->SELL cycle with fractional days (e.g., 4h)."""
+        service = ReflectionService()
+        buy_time = datetime(2025, 1, 1, 10, 0, 0)
+        sell_time = datetime(2025, 1, 1, 14, 0, 0)  # Exactly 4 hours later
+        
+        trades = [
+            Trade(
+                timestamp=buy_time,
+                ticker="AAPL",
+                name="Apple Inc.",
+                action="BUY",
+                quantity=10,
+                price=150.0,
+                reasoning="Quick scalp",
+            ),
+            Trade(
+                timestamp=sell_time,
+                ticker="AAPL",
+                name="Apple Inc.",
+                action="SELL",
+                quantity=10,
+                price=155.0,
+                reasoning="Target reached in 4h",
+            ),
+        ]
+
+        result = service._find_completed_trades(trades)
+
+        assert len(result) == 1
+        # 4h = 4/24 days = 1/6 ≈ 0.166666... days
+        assert result[0].holding_days == pytest.approx(0.166, abs=0.01)
+
     def test_partial_fill_rebuild_retains_sl_tp(self, monkeypatch):
         """Partially filled BUY must keep its SL/TP on the open remainder."""
         from fin_trade.services import reflection as reflection_module
