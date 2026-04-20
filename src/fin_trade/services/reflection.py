@@ -7,8 +7,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
+from fin_trade.models import Trade
+
 if TYPE_CHECKING:
-    from fin_trade.models import PortfolioState, Trade
+    from fin_trade.models import PortfolioState
 
 
 @dataclass
@@ -221,7 +223,10 @@ class ReflectionService:
                             # Buy fully consumed, remove it
                             open_buys.pop(0)
                         else:
-                            # Buy partially consumed, update remaining quantity
+                            # Buy partially consumed, update remaining quantity.
+                            # SL/TP must carry over so downstream consumers (and
+                            # further FIFO matches) still see the original risk
+                            # bracket on the unfilled portion.
                             open_buys[0] = Trade(
                                 ticker=buy.ticker,
                                 name=buy.name,
@@ -230,6 +235,8 @@ class ReflectionService:
                                 price=buy.price,
                                 timestamp=buy.timestamp,
                                 reasoning=buy.reasoning,
+                                stop_loss_price=buy.stop_loss_price,
+                                take_profit_price=buy.take_profit_price,
                             )
 
         return sorted(completed, key=lambda t: t.sell_date, reverse=True)
