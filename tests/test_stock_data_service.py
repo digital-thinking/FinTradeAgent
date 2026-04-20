@@ -89,10 +89,37 @@ class TestUpdateData:
 
         assert len(result) == 5
         assert "TEST" in service._cache
+        mock_ticker.history.assert_called_once_with(period="1y", auto_adjust=True)
 
         # Check file was created
         cache_path = tmp_path / "TEST_prices.csv"
         assert cache_path.exists()
+
+    @patch("fin_trade.services.stock_data.yf")
+    def test_caches_split_adjusted_closes(self, mock_yf, tmp_path):
+        """Test cached closes preserve split-adjusted history."""
+        dates = pd.date_range("2024-01-01", periods=2, freq="D")
+        adjusted_df = pd.DataFrame(
+            {
+                "Open": [99.0, 109.0],
+                "High": [101.0, 111.0],
+                "Low": [98.0, 108.0],
+                "Close": [100.0, 110.0],
+            },
+            index=dates,
+        )
+
+        mock_ticker = MagicMock()
+        mock_ticker.history.return_value = adjusted_df
+        mock_yf.Ticker.return_value = mock_ticker
+
+        service = StockDataService(data_dir=tmp_path)
+        service.update_data("SPLIT")
+
+        cached_df = pd.read_csv(tmp_path / "SPLIT_prices.csv", index_col=0, parse_dates=True)
+
+        assert cached_df["Close"].tolist() == [100.0, 110.0]
+        mock_ticker.history.assert_called_once_with(period="1y", auto_adjust=True)
 
     @patch("fin_trade.services.stock_data.yf")
     def test_raises_error_for_empty_data(self, mock_yf, tmp_path):

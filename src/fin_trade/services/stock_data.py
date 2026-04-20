@@ -113,7 +113,7 @@ class StockDataService:
         ticker = ticker.upper()
         try:
             stock = yf.Ticker(ticker)
-            df = stock.history(period=period)
+            df = stock.history(period=period, auto_adjust=True)
             if df.empty:
                 raise ValueError(f"No data found for {ticker}")
 
@@ -533,7 +533,7 @@ class StockDataService:
         if df.empty:
             raise ValueError(f"No benchmark data in date range for {symbol}")
 
-        # Calculate cumulative return from start
+        # update_data() caches auto-adjusted history, so Close is split/dividend adjusted here.
         start_price = df["Close"].iloc[0]
         df = df.copy()
         df["cumulative_return"] = ((df["Close"] / start_price) - 1) * 100
