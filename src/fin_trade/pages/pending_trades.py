@@ -494,7 +494,7 @@ def _apply_pending_trades(
         st.error(f"Failed to capture quoted prices: {e}")
         return
 
-    # If this is an empty portfolio and we need more cash, increase it
+    # If this is an empty portfolio, validate the initial BUY batch against available cash.
     if increase_cash_if_needed:
         # Calculate total cost of BUY trades (using adjusted quantities)
         total_buy_cost = 0.0
@@ -509,13 +509,12 @@ def _apply_pending_trades(
                 if price is not None:
                     total_buy_cost += price * quantity
 
-        # If we need more cash, increase it
         if total_buy_cost > state.cash:
-            cash_needed = total_buy_cost - state.cash
-            state.cash += cash_needed + 100  # Add a small buffer
-
-        # Record actual initial investment (cash before first trades)
-        state.initial_investment = state.cash
+            st.error(
+                f"Insufficient cash for initial trades: need ${total_buy_cost:.2f}, "
+                f"have ${state.cash:.2f}."
+            )
+            return
 
     errors = []
     applied_indices = []
@@ -542,6 +541,8 @@ def _apply_pending_trades(
             continue
 
         try:
+            if state.initial_investment is None and not state.trades:
+                state.initial_investment = state.cash
             state = portfolio_service.execute_trade(
                 state,
                 ticker,
