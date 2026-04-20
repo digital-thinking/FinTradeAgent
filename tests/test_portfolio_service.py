@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from fin_trade.models import AssetClass, Holding, PortfolioConfig, PortfolioState
+from fin_trade.models import AssetClass, Holding, PortfolioConfig, PortfolioState, Trade
 from fin_trade.services.portfolio import PortfolioService
 
 
@@ -543,6 +543,60 @@ class TestExecuteTrade:
         # Should still have 5 shares
         assert len(new_state.holdings) == 1
         assert new_state.holdings[0].quantity == 5
+        assert new_state.trades[-1].realized_pnl == pytest.approx(250.0)
+
+    def test_sell_records_fifo_realized_pnl(
+        self, temp_data_dir, mock_security_service
+    ):
+        """Test SELL realized P/L is calculated from FIFO buy lots."""
+        initial_state = PortfolioState(
+            cash=700.0,
+            holdings=[
+                Holding(
+                    ticker="AAPL",
+                    name="Apple Inc.",
+                    quantity=20,
+                    avg_price=15.0,
+                )
+            ],
+            trades=[
+                Trade(
+                    timestamp=datetime(2024, 1, 15, 10, 0),
+                    ticker="AAPL",
+                    name="Apple Inc.",
+                    action="BUY",
+                    quantity=10,
+                    price=10.0,
+                    reasoning="Initial position",
+                ),
+                Trade(
+                    timestamp=datetime(2024, 1, 16, 10, 0),
+                    ticker="AAPL",
+                    name="Apple Inc.",
+                    action="BUY",
+                    quantity=10,
+                    price=20.0,
+                    reasoning="Add to position",
+                ),
+            ],
+        )
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        new_state = service.execute_trade(
+            initial_state,
+            ticker="AAPL",
+            action="SELL",
+            quantity=15,
+            reasoning="Take profits",
+            price=25.0,
+        )
+
+        assert new_state.trades[-1].realized_pnl == pytest.approx(175.0)
 
     def test_buy_fails_with_insufficient_cash(
         self, temp_data_dir, mock_security_service, empty_portfolio_state
@@ -786,7 +840,19 @@ class TestExecuteTrade:
                     take_profit_price=120.0,
                 )
             ],
-            trades=[],
+            trades=[
+                Trade(
+                    timestamp=datetime(2024, 1, 15, 10, 0),
+                    ticker="AAPL",
+                    name="Apple Inc.",
+                    action="BUY",
+                    quantity=10,
+                    price=90.0,
+                    reasoning="Open position",
+                    stop_loss_price=80.0,
+                    take_profit_price=120.0,
+                )
+            ],
         )
 
         service = PortfolioService(
@@ -986,6 +1052,39 @@ class TestLoadStateStopLoss:
 
         assert state.holdings[0].stop_loss_price is None
         assert state.holdings[0].take_profit_price is None
+
+    def test_handles_missing_realized_pnl_in_older_trade_state(
+        self, temp_data_dir, mock_security_service
+    ):
+        """Test graceful handling of missing realized P/L in older state files."""
+        state_data = {
+            "cash": 5000.0,
+            "holdings": [],
+            "trades": [
+                {
+                    "timestamp": "2024-01-15T10:30:00",
+                    "ticker": "AAPL",
+                    "name": "Apple Inc.",
+                    "action": "SELL",
+                    "quantity": 5,
+                    "price": 175.0,
+                    "reasoning": "Trim position",
+                }
+            ],
+        }
+        state_path = temp_data_dir["state"] / "test.json"
+        state_path.write_text(json.dumps(state_data))
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        state = service._load_state("test", initial_amount=10000.0)
+
+        assert len(state.trades) == 1
+        assert state.trades[0].realized_pnl is None
 
 
 class TestClonePortfolio:

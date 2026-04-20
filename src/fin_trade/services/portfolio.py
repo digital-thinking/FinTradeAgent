@@ -122,6 +122,11 @@ class PortfolioService:
                 reasoning=t["reasoning"],
                 stop_loss_price=t.get("stop_loss_price"),
                 take_profit_price=t.get("take_profit_price"),
+                realized_pnl=(
+                    float(t["realized_pnl"])
+                    if t.get("realized_pnl") is not None
+                    else None
+                ),
             )
             for t in data.get("trades", [])
         ]
@@ -184,6 +189,7 @@ class PortfolioService:
                     "reasoning": t.reasoning,
                     "stop_loss_price": t.stop_loss_price,
                     "take_profit_price": t.take_profit_price,
+                    "realized_pnl": t.realized_pnl,
                 }
                 for t in state.trades
             ],
@@ -234,6 +240,56 @@ class PortfolioService:
         delta = frequency_deltas.get(config.run_frequency, timedelta(weeks=1))
         return now - last >= delta
 
+    def _calculate_realized_pnl_for_sell(
+        self,
+        trades: list[Trade],
+        ticker: str,
+        quantity: float,
+        sell_price: float,
+    ) -> float:
+        """Calculate FIFO realized P/L for a SELL trade."""
+        lots: list[list[float]] = []
+        normalized_ticker = ticker.upper()
+
+        for trade in trades:
+            if trade.ticker.upper() != normalized_ticker:
+                continue
+
+            if trade.action == "BUY":
+                lots.append([trade.quantity, trade.price])
+                continue
+
+            remaining_to_match = trade.quantity
+            while remaining_to_match > 0 and lots:
+                lot_quantity, lot_price = lots[0]
+                matched_quantity = min(remaining_to_match, lot_quantity)
+                remaining_to_match -= matched_quantity
+                lot_quantity -= matched_quantity
+                if lot_quantity <= 0:
+                    lots.pop(0)
+                else:
+                    lots[0][0] = lot_quantity
+
+        remaining_to_sell = quantity
+        realized_pnl = 0.0
+        while remaining_to_sell > 0 and lots:
+            lot_quantity, lot_price = lots[0]
+            matched_quantity = min(remaining_to_sell, lot_quantity)
+            realized_pnl += matched_quantity * (sell_price - lot_price)
+            remaining_to_sell -= matched_quantity
+            lot_quantity -= matched_quantity
+            if lot_quantity <= 0:
+                lots.pop(0)
+            else:
+                lots[0][0] = lot_quantity
+
+        if remaining_to_sell > 0:
+            raise ValueError(
+                f"Insufficient trade lots for {ticker}: need {quantity}, have {quantity - remaining_to_sell}"
+            )
+
+        return realized_pnl
+
     def execute_trade(
         self,
         state: PortfolioState,
@@ -266,6 +322,7 @@ class PortfolioService:
         holdings = list(state.holdings)
         trades = list(state.trades)
         cash = state.cash
+        realized_pnl = None
 
         if action == "BUY":
             if cost > cash and not allow_negative_cash:
@@ -305,6 +362,12 @@ class PortfolioService:
                     f"Insufficient holdings: need {quantity}, have {existing.quantity if existing else 0}"
                 )
 
+            realized_pnl = self._calculate_realized_pnl_for_sell(
+                trades,
+                ticker,
+                quantity,
+                price,
+            )
             cash += cost
             new_qty = existing.quantity - quantity
             holdings = [h for h in holdings if h.ticker != ticker]
@@ -328,6 +391,7 @@ class PortfolioService:
             reasoning=reasoning,
             stop_loss_price=stop_loss_price,
             take_profit_price=take_profit_price,
+            realized_pnl=realized_pnl,
         )
         trades.append(trade)
 

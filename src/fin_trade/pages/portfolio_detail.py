@@ -93,35 +93,45 @@ def _render_summary(
 ) -> None:
     """Render the portfolio summary metrics."""
     total_value = portfolio_service.calculate_value(state)
-    abs_gain, pct_gain = portfolio_service.calculate_gain(config, state)
     is_overdue = portfolio_service.is_execution_overdue(config, state)
 
-    # Calculate holdings value
+    # Calculate holdings and realized/unrealized P/L.
     holdings_value = 0.0
+    holdings_cost_basis = 0.0
     for holding in state.holdings:
+        holdings_cost_basis += holding.avg_price * holding.quantity
         try:
             price = security_service.get_price(holding.ticker)
             holdings_value += price * holding.quantity
         except Exception:
             holdings_value += holding.avg_price * holding.quantity
 
-    col1, col2, col3, col4, col5 = st.columns(5)
+    unrealized_pnl = holdings_value - holdings_cost_basis
+    realized_pnl = sum(
+        trade.realized_pnl or 0.0
+        for trade in state.trades
+        if trade.realized_pnl is not None
+    )
+
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
 
     with col1:
         st.metric("Total Value", f"${total_value:,.2f}")
 
     with col2:
-        gain_delta = f"{pct_gain:+.1f}%"
-        st.metric("Gain/Loss", f"${abs_gain:,.2f}", delta=gain_delta)
+        st.metric("Unrealized P/L", f"${unrealized_pnl:,.2f}")
 
     with col3:
+        st.metric("Realized P/L", f"${realized_pnl:,.2f}")
+
+    with col4:
         holdings_label = "Crypto Holdings" if config.asset_class == AssetClass.CRYPTO else "Stock Holdings"
         st.metric(holdings_label, f"${holdings_value:,.2f}")
 
-    with col4:
+    with col5:
         st.metric("Cash Available", f"${state.cash:,.2f}")
 
-    with col5:
+    with col6:
         render_large_status_badge(is_overdue)
 
     with st.expander("Portfolio Configuration"):

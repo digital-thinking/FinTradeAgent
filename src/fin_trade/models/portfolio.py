@@ -38,6 +38,7 @@ class Trade:
     reasoning: str
     stop_loss_price: float | None = None
     take_profit_price: float | None = None
+    realized_pnl: float | None = None
 
 
 @dataclass

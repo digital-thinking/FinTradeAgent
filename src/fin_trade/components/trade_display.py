@@ -403,7 +403,7 @@ def render_trade_history(
     # Show skeleton placeholder while building table
     table_placeholder = st.empty()
     with table_placeholder.container():
-        render_skeleton_table(rows=min(len(trades), 10), cols=8)
+        render_skeleton_table(rows=min(len(trades), 10), cols=11)
 
     # Build trade data for DataFrame
     trade_data = []
@@ -417,6 +417,7 @@ def render_trade_history(
             "Quantity": _format_quantity(trade.quantity, asset_class),
             "Price": trade.price,
             "Total": total,
+            "Realized P/L": getattr(trade, "realized_pnl", None),
             "Stop Loss": getattr(trade, 'stop_loss_price', None),
             "Take Profit": getattr(trade, 'take_profit_price', None),
             "Reasoning": trade.reasoning,
@@ -441,6 +442,7 @@ def render_trade_history(
                 ),
                 "Price": st.column_config.NumberColumn("Price", format="$%.2f"),
                 "Total": st.column_config.NumberColumn("Total", format="$%.2f"),
+                "Realized P/L": st.column_config.NumberColumn("Realized P/L", format="$%.2f"),
                 "Stop Loss": st.column_config.NumberColumn("Stop Loss", format="$%.2f"),
                 "Take Profit": st.column_config.NumberColumn("Take Profit", format="$%.2f"),
                 "Reasoning": st.column_config.TextColumn("Reasoning", width="large"),
@@ -448,4 +450,3 @@ def render_trade_history(
             hide_index=True,
             width='stretch',
         )
-
