@@ -186,6 +186,88 @@ class TestCalculateMetricsWithTrades:
         assert metrics.win_rate_pct == 50.0
 
 
+class TestCalculateMetricsBeta:
+    """Tests for beta calculation from daily return covariance."""
+
+    def test_calculates_beta_from_aligned_daily_returns(
+        self,
+        comparison_service,
+        mock_portfolio_service,
+        mock_stock_data_service,
+        sample_config,
+    ):
+        """A portfolio that tracks the benchmark should have beta near 1."""
+        dates = pd.date_range(start="2026-01-05", periods=5, freq="B")
+        trade = Trade(
+            timestamp=dates[0].to_pydatetime(),
+            ticker="AAPL",
+            name="Apple Inc.",
+            action="BUY",
+            quantity=1,
+            price=100.0,
+            reasoning="Track benchmark",
+        )
+        state = PortfolioState(
+            cash=0.0,
+            trades=[trade],
+            holdings=[Holding(ticker="AAPL", name="Apple Inc.", quantity=1, avg_price=100.0)],
+            initial_investment=100.0,
+        )
+        mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
+        comparison_service._build_portfolio_value_series = MagicMock(return_value=pd.DataFrame({
+            "date": dates,
+            "value": [100.0, 102.0, 101.0, 103.0, 104.0],
+        }))
+        mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
+            "date": dates,
+            "price": [250.0, 255.0, 252.5, 257.5, 260.0],
+            "cumulative_return": [0.0, 2.0, 1.0, 3.0, 4.0],
+        })
+
+        metrics = comparison_service.calculate_metrics("test")
+
+        assert metrics.beta == pytest.approx(1.0)
+
+    def test_calculates_zero_beta_for_constant_value_portfolio(
+        self,
+        comparison_service,
+        mock_portfolio_service,
+        mock_stock_data_service,
+        sample_config,
+    ):
+        """A constant-value portfolio should have zero covariance with the benchmark."""
+        dates = pd.date_range(start="2026-01-05", periods=5, freq="B")
+        trade = Trade(
+            timestamp=dates[0].to_pydatetime(),
+            ticker="AAPL",
+            name="Apple Inc.",
+            action="BUY",
+            quantity=1,
+            price=100.0,
+            reasoning="Stay flat",
+        )
+        state = PortfolioState(
+            cash=100.0,
+            trades=[trade],
+            holdings=[],
+            initial_investment=100.0,
+        )
+        mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
+        comparison_service._build_portfolio_value_series = MagicMock(return_value=pd.DataFrame({
+            "date": dates,
+            "value": [100.0, 100.0, 100.0, 100.0, 100.0],
+        }))
+        mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
+            "date": dates,
+            "price": [250.0, 255.0, 252.5, 257.5, 260.0],
+            "cumulative_return": [0.0, 2.0, 1.0, 3.0, 4.0],
+        })
+
+        metrics = comparison_service.calculate_metrics("test")
+
+        assert metrics.beta == pytest.approx(0.0)
+
+
 class TestBuildPortfolioValueSeries:
     """Tests for historical portfolio value reconstruction."""
 

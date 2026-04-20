@@ -269,6 +269,62 @@ class ComparisonService:
 
         return (profitable / total_closed) * 100
 
+    def _calculate_beta(
+        self,
+        portfolio_values: pd.DataFrame,
+        benchmark_values: pd.DataFrame,
+    ) -> float | None:
+        """Calculate beta from aligned business-day return series."""
+        portfolio_series = portfolio_values.copy()
+        benchmark_series = benchmark_values.copy()
+
+        portfolio_series["date"] = pd.to_datetime(portfolio_series["date"]).dt.normalize()
+        benchmark_series["date"] = pd.to_datetime(benchmark_series["date"]).dt.normalize()
+
+        portfolio_series = portfolio_series.sort_values("date").drop_duplicates(
+            subset="date", keep="last"
+        )
+        benchmark_series = benchmark_series.sort_values("date").drop_duplicates(
+            subset="date", keep="last"
+        )
+
+        common_start = max(
+            portfolio_series["date"].min(),
+            benchmark_series["date"].min(),
+        )
+        common_end = min(
+            portfolio_series["date"].max(),
+            benchmark_series["date"].max(),
+        )
+        business_days = pd.date_range(start=common_start, end=common_end, freq="B")
+        if len(business_days) < 2:
+            return None
+
+        aligned_portfolio = portfolio_series.set_index("date")["value"].reindex(
+            business_days,
+            method="ffill",
+        )
+        aligned_benchmark = benchmark_series.set_index("date")["price"].reindex(
+            business_days,
+            method="ffill",
+        )
+
+        portfolio_returns = aligned_portfolio.pct_change().dropna()
+        benchmark_returns = aligned_benchmark.pct_change().dropna()
+        if len(portfolio_returns) < 2 or len(benchmark_returns) < 2:
+            return None
+
+        benchmark_return_values = benchmark_returns.to_numpy()
+        benchmark_variance = float(np.var(benchmark_return_values))
+        if np.isclose(benchmark_variance, 0.0):
+            return None
+
+        portfolio_return_values = portfolio_returns.to_numpy()
+        covariance = float(
+            np.cov(portfolio_return_values, benchmark_return_values, ddof=0)[0, 1]
+        )
+        return covariance / benchmark_variance
+
     def calculate_metrics(
         self,
         portfolio_name: str,
@@ -353,17 +409,14 @@ class ComparisonService:
                 start_date=first_trade,
                 end_date=datetime.now(),
             )
-            if not benchmark_df.empty and len(benchmark_df) > 10:
+            if not benchmark_df.empty:
                 # Calculate benchmark return over same period
                 benchmark_return = benchmark_df["cumulative_return"].iloc[-1]
 
                 # Alpha = portfolio return - benchmark return
                 alpha = total_return - benchmark_return
 
-                # Beta requires daily returns correlation
-                # Simplified: use total return ratio as proxy
-                if benchmark_return != 0:
-                    beta = total_return / benchmark_return
+                beta = self._calculate_beta(value_df[["date", "value"]], benchmark_df)
         except Exception:
             pass  # Benchmark data unavailable
 
