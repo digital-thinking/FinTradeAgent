@@ -190,6 +190,21 @@ class StockDataService:
             raise ValueError(f"No valid close price for {ticker}")
         return float(close.iloc[-1])
 
+    def get_cached_price(self, ticker: str) -> float | None:
+        """Return the last cached close price without ever fetching from yfinance.
+
+        Returns None if no cached CSV exists or the file has no valid close.
+        """
+        ticker = ticker.upper()
+        cache_path = self._get_cache_path(ticker)
+        if not cache_path.exists():
+            return None
+        df = pd.read_csv(cache_path, index_col=0, parse_dates=True)
+        close = df["Close"].dropna() if "Close" in df.columns else pd.Series(dtype=float)
+        if close.empty:
+            return None
+        return float(close.iloc[-1])
+
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float | None:
         """Calculate RSI (Relative Strength Index)."""
         if len(prices) < period + 1:

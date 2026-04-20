@@ -209,6 +209,22 @@ class SecurityService:
             "marketCap": info.get("marketCap"),
         }
 
+    def delete_security(self, ticker: str) -> None:
+        """Delete cached security data (info JSON + price CSV) for a ticker."""
+        ticker = ticker.upper()
+
+        data_file = self._get_data_file_path(ticker)
+        if data_file.exists():
+            data_file.unlink()
+
+        price_file = self.data_dir / f"{ticker}_prices.csv"
+        if price_file.exists():
+            price_file.unlink()
+
+        self._by_ticker.pop(ticker, None)
+        self._full_info.pop(ticker, None)
+        self._stock_data_service._cache.pop(ticker, None)
+
     def refresh_security_data(self, ticker: str) -> dict:
         """Force refresh security data from yfinance and save to file."""
         ticker = ticker.upper()

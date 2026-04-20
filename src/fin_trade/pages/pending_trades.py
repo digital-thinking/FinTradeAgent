@@ -41,6 +41,10 @@ def render_pending_trades_page() -> None:
     _display_persistent_messages()
 
     log_service = ExecutionLogService()
+    security_service = SecurityService()
+    portfolio_service = PortfolioService(security_service=security_service)
+
+    _render_add_manual_trade(portfolio_service, security_service, log_service)
 
     # Get recent logs with recommendations
     logs = log_service.get_logs(limit=50)
@@ -100,9 +104,6 @@ def render_pending_trades_page() -> None:
         st.metric("BUY / SELL", f"{total_buys} / {total_sells}")
 
     st.divider()
-
-    # Initialize security service for ticker lookups
-    security_service = SecurityService()
 
     # Render each execution's pending trades
     for log, recommendations, executed, rejected, pending_indices in logs_with_pending:
@@ -579,3 +580,163 @@ def _apply_pending_trades(
 
     st.rerun()
 
+
+def _render_add_manual_trade(
+    portfolio_service: PortfolioService,
+    security_service: SecurityService,
+    log_service: ExecutionLogService,
+) -> None:
+    """Render a form to add a manual pending trade."""
+    portfolio_filenames = portfolio_service.list_portfolios()
+    if not portfolio_filenames:
+        return
+
+    portfolio_configs: dict[str, tuple[str, AssetClass]] = {}
+    for filename in portfolio_filenames:
+        config, _ = portfolio_service.load_portfolio(filename)
+        portfolio_configs[config.name] = (filename, config.asset_class)
+
+    cached_ticker_names: dict[str, str] = {
+        t: sec.name for t, sec in security_service._by_ticker.items()
+    }
+    cached_tickers = sorted(cached_ticker_names.keys())
+
+    def _format_ticker(t: str) -> str:
+        name = cached_ticker_names.get(t)
+        return f"{t} — {name}" if name and name != t else t
+
+    with st.expander("➕ Add Manual Trade", expanded=False):
+        with st.form("add_manual_trade_form", clear_on_submit=True):
+            col1, col2, col3 = st.columns([2, 1, 1])
+
+            with col1:
+                selected_portfolio_name = st.selectbox(
+                    "Portfolio",
+                    options=list(portfolio_configs.keys()),
+                )
+
+            with col2:
+                action = st.selectbox("Action", options=["BUY", "SELL"])
+
+            with col3:
+                ticker_selection = st.selectbox(
+                    "Ticker",
+                    options=cached_tickers,
+                    index=None,
+                    placeholder="Search cached or type a new ticker",
+                    accept_new_options=True,
+                    format_func=_format_ticker,
+                )
+                ticker = (ticker_selection or "").strip().upper()
+
+            asset_class = portfolio_configs[selected_portfolio_name][1]
+            unit_label = "Units" if asset_class == AssetClass.CRYPTO else "Shares"
+
+            col4, col5, col6 = st.columns(3)
+            with col4:
+                if asset_class == AssetClass.CRYPTO:
+                    quantity = st.number_input(
+                        unit_label, min_value=0.0, value=0.0, step=0.0001, format="%.8f"
+                    )
+                else:
+                    quantity = st.number_input(
+                        unit_label, min_value=0, value=0, step=1
+                    )
+
+            with col5:
+                stop_loss_price = st.number_input(
+                    "Stop-loss price (optional)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=0.01,
+                    format="%.2f",
+                )
+
+            with col6:
+                take_profit_price = st.number_input(
+                    "Take-profit price (optional)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=0.01,
+                    format="%.2f",
+                )
+
+            reasoning = st.text_area(
+                "Reasoning (optional)",
+                placeholder="Why are you placing this trade?",
+            )
+
+            submitted = st.form_submit_button("Add to Pending Trades", type="primary")
+
+            if submitted:
+                _submit_manual_trade(
+                    portfolio_name=selected_portfolio_name,
+                    ticker=ticker,
+                    action=action,
+                    quantity=quantity,
+                    stop_loss_price=stop_loss_price if stop_loss_price > 0 else None,
+                    take_profit_price=take_profit_price if take_profit_price > 0 else None,
+                    reasoning=reasoning.strip(),
+                    security_service=security_service,
+                    log_service=log_service,
+                )
+
+
+def _submit_manual_trade(
+    portfolio_name: str,
+    ticker: str,
+    action: str,
+    quantity: float,
+    stop_loss_price: float | None,
+    take_profit_price: float | None,
+    reasoning: str,
+    security_service: SecurityService,
+    log_service: ExecutionLogService,
+) -> None:
+    """Validate and persist a manual trade as a new pending execution log entry."""
+    if not ticker:
+        st.error("Ticker is required.")
+        return
+    if quantity <= 0:
+        st.error("Quantity must be greater than zero.")
+        return
+
+    try:
+        price = security_service.get_price(ticker)
+    except Exception as e:
+        st.error(f"Could not look up ticker '{ticker}': {e}")
+        return
+
+    if not price or price <= 0:
+        st.error(f"Ticker '{ticker}' not found or has no price.")
+        return
+
+    recommendation = {
+        "ticker": ticker,
+        "name": ticker,
+        "action": action,
+        "quantity": quantity,
+        "reasoning": reasoning or "Manually added trade.",
+    }
+    if stop_loss_price is not None:
+        recommendation["stop_loss_price"] = stop_loss_price
+    if take_profit_price is not None:
+        recommendation["take_profit_price"] = take_profit_price
+
+    log_service.log_execution(
+        portfolio_name=portfolio_name,
+        agent_mode="manual",
+        model="manual",
+        duration_ms=0,
+        input_tokens=0,
+        output_tokens=0,
+        num_trades=1,
+        success=True,
+        recommendations=[recommendation],
+    )
+
+    st.session_state["pending_trades_messages"] = [{
+        "type": "success",
+        "text": f"Added manual {action} {quantity} {ticker} to pending trades.",
+    }]
+    st.rerun()
