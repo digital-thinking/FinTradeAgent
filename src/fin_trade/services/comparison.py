@@ -24,6 +24,7 @@ class PortfolioMetrics:
     sharpe_ratio: float | None  # (return - risk_free_rate) / volatility
     max_drawdown_pct: float
     win_rate_pct: float | None  # % of trades that were profitable
+    profit_factor_pct: float | None  # Σwinners_$ / |Σlosers_$|
     alpha_pct: float | None  # Excess return vs benchmark
     beta: float | None  # Correlation with benchmark
     days_active: int
@@ -221,15 +222,21 @@ class ComparisonService:
 
         return max_dd
 
-    def _calculate_win_rate(self, trades: list) -> float | None:
-        """Calculate percentage of profitable trades."""
+    def _calculate_performance_stats(self, trades: list) -> tuple[float | None, float | None]:
+        """Calculate win rate (%) and profit factor (Σwins/|Σlosses|).
+
+        Win rate is calculated per tax-lot closure (FIFO), not per SELL event.
+        Profit factor is sum of gross profits / sum of gross losses.
+        """
         if not trades:
-            return None
+            return None, None
 
         # Track positions and realized P/L
         positions: dict[str, list[tuple[float, int]]] = {}  # ticker -> [(price, qty), ...]
-        profitable = 0
-        total_closed = 0
+        profitable_lots = 0
+        total_lots_closed = 0
+        gross_profits = 0.0
+        gross_losses = 0.0
 
         for trade in trades:
             if trade.action == "BUY":
@@ -241,15 +248,20 @@ class ComparisonService:
                     # FIFO: sell oldest shares first
                     remaining_to_sell = trade.quantity
                     sell_price = trade.price
-                    total_cost = 0.0
-                    total_shares_closed = 0
 
                     while remaining_to_sell > 0 and positions[trade.ticker]:
                         buy_price, buy_qty = positions[trade.ticker][0]
                         shares_to_close = min(remaining_to_sell, buy_qty)
 
-                        total_cost += buy_price * shares_to_close
-                        total_shares_closed += shares_to_close
+                        # Calculate P/L for this tax lot
+                        pnl = (sell_price - buy_price) * shares_to_close
+                        if pnl > 0:
+                            profitable_lots += 1
+                            gross_profits += pnl
+                        elif pnl < 0:
+                            gross_losses += abs(pnl)
+                        # We count a "lot" as each unique BUY entry we touch
+                        total_lots_closed += 1
 
                         remaining_to_sell -= shares_to_close
                         if shares_to_close >= buy_qty:
@@ -257,17 +269,18 @@ class ComparisonService:
                         else:
                             positions[trade.ticker][0] = (buy_price, buy_qty - shares_to_close)
 
-                    # Count once per sell trade
-                    if total_shares_closed > 0:
-                        avg_cost = total_cost / total_shares_closed
-                        if sell_price > avg_cost:
-                            profitable += 1
-                        total_closed += 1
+        win_rate = None
+        if total_lots_closed > 0:
+            win_rate = (profitable_lots / total_lots_closed) * 100
 
-        if total_closed == 0:
-            return None
+        profit_factor = None
+        if gross_losses > 0:
+            profit_factor = gross_profits / gross_losses
+        elif gross_profits > 0:
+            # Infinite profit factor if no losses, but some profit
+            profit_factor = float('inf')
 
-        return (profitable / total_closed) * 100
+        return win_rate, profit_factor
 
     def _calculate_beta(
         self,
@@ -383,6 +396,7 @@ class ComparisonService:
                 sharpe_ratio=None,
                 max_drawdown_pct=0.0,
                 win_rate_pct=None,
+                profit_factor_pct=None,
                 alpha_pct=None,
                 beta=None,
                 days_active=0,
@@ -429,8 +443,8 @@ class ComparisonService:
         # Max drawdown
         max_drawdown = self._calculate_max_drawdown(value_df["value"].tolist())
 
-        # Win rate
-        win_rate = self._calculate_win_rate(state.trades)
+        # Performance stats (win rate, profit factor)
+        win_rate, profit_factor = self._calculate_performance_stats(state.trades)
 
         # Alpha and Beta (vs benchmark)
         alpha = None
@@ -470,6 +484,7 @@ class ComparisonService:
             sharpe_ratio=sharpe_ratio,
             max_drawdown_pct=max_drawdown,
             win_rate_pct=win_rate,
+            profit_factor_pct=profit_factor,
             alpha_pct=alpha,
             beta=beta,
             days_active=days_active,
@@ -536,6 +551,11 @@ class ComparisonService:
                     "Win Rate": (
                         f"{metrics.win_rate_pct:.0f}%"
                         if metrics.win_rate_pct is not None
+                        else "N/A"
+                    ),
+                    "Profit Factor": (
+                        f"{metrics.profit_factor_pct:.2f}"
+                        if metrics.profit_factor_pct is not None
                         else "N/A"
                     ),
                     alpha_label: (
@@ -610,6 +630,7 @@ class ComparisonService:
                         ),
                         "Max Drawdown": f"-{max_drawdown:.1f}%",
                         "Win Rate": "N/A",
+                        "Profit Factor": "N/A",
                         alpha_label: "+0.0%",
                         "Beta": "1.00",
                         "Days Active": str(days_active),

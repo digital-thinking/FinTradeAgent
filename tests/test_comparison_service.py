@@ -497,7 +497,7 @@ class TestBuildPortfolioValueSeries:
 
 
 class TestWinRateCalculation:
-    """Tests for _calculate_win_rate method."""
+    """Tests for _calculate_performance_stats method."""
 
     def test_win_rate_all_winners(self, comparison_service):
         """Test 100% win rate."""
@@ -513,8 +513,9 @@ class TestWinRateCalculation:
                 quantity=10, price=110.0, reasoning="Sell",  # Winner
             ),
         ]
-        win_rate = comparison_service._calculate_win_rate(trades)
+        win_rate, profit_factor = comparison_service._calculate_performance_stats(trades)
         assert win_rate == 100.0
+        assert profit_factor == float('inf')
 
     def test_win_rate_all_losers(self, comparison_service):
         """Test 0% win rate."""
@@ -530,8 +531,9 @@ class TestWinRateCalculation:
                 quantity=10, price=90.0, reasoning="Sell",  # Loser
             ),
         ]
-        win_rate = comparison_service._calculate_win_rate(trades)
+        win_rate, profit_factor = comparison_service._calculate_performance_stats(trades)
         assert win_rate == 0.0
+        assert profit_factor == 0.0
 
     def test_win_rate_no_closed_positions(self, comparison_service):
         """Test returns None when no positions have been closed."""
@@ -542,13 +544,70 @@ class TestWinRateCalculation:
                 quantity=10, price=100.0, reasoning="Buy",
             ),
         ]
-        win_rate = comparison_service._calculate_win_rate(trades)
+        win_rate, profit_factor = comparison_service._calculate_performance_stats(trades)
         assert win_rate is None
+        assert profit_factor is None
 
     def test_win_rate_empty_trades(self, comparison_service):
         """Test returns None for empty trades list."""
-        win_rate = comparison_service._calculate_win_rate([])
+        win_rate, profit_factor = comparison_service._calculate_performance_stats([])
         assert win_rate is None
+        assert profit_factor is None
+
+    def test_win_rate_per_tax_lot(self, comparison_service, sample_config):
+        """A SELL closing one winning and one losing lot produces 50% win rate (1 of 2)."""
+        base_date = datetime.now() - timedelta(days=10)
+        trades = [
+            Trade(
+                timestamp=base_date,
+                ticker="AAPL", name="Apple", action="BUY",
+                quantity=10, price=100.0, reasoning="Buy lot 1",
+            ),
+            Trade(
+                timestamp=base_date + timedelta(days=1),
+                ticker="AAPL", name="Apple", action="BUY",
+                quantity=10, price=120.0, reasoning="Buy lot 2",
+            ),
+            Trade(
+                timestamp=base_date + timedelta(days=2),
+                ticker="AAPL", name="Apple", action="SELL",
+                quantity=20, price=110.0, reasoning="Sell both lots",
+            ),
+        ]
+        # Current implementation (per-SELL) would say:
+        # avg_cost = (10*100 + 10*120)/20 = 110.
+        # sell_price 110 is NOT > 110, so win rate 0%?
+        # Or if it was 111, it would be 100% win rate.
+        #
+        # New implementation (per-tax-lot) should say:
+        # Lot 1: bought 100, sold 110 -> Winner
+        # Lot 2: bought 120, sold 110 -> Loser
+        # Win rate: 1/2 = 50%
+
+        # Let's adjust prices to make it clear:
+        trades[2].price = 111.0
+        # Lot 1: 111 > 100 (Win)
+        # Lot 2: 111 < 120 (Loss)
+        # Win rate should be 50%
+
+        # Also test profit factor:
+        # Winners: (111 - 100) * 10 = 110
+        # Losers: |(111 - 120) * 10| = |-90| = 90
+        # Profit factor = 110 / 90 = 1.222...
+
+        # We need to update calculate_metrics to return profit_factor_pct
+        state = PortfolioState(
+            cash=10000.0,
+            trades=trades,
+            holdings=[],
+            initial_investment=10000.0,
+        )
+        with patch.object(comparison_service.portfolio_service, 'load_portfolio') as mock_load:
+            mock_load.return_value = (sample_config, state)
+            metrics = comparison_service.calculate_metrics("test")
+
+        assert metrics.win_rate_pct == 50.0
+        assert metrics.profit_factor_pct == pytest.approx(1.222, abs=0.001)
 
 
 class TestMaxDrawdownCalculation:
@@ -740,6 +799,7 @@ class TestGetComparisonTable:
             sharpe_ratio=0.5,
             max_drawdown_pct=2.0,
             win_rate_pct=50.0,
+            profit_factor_pct=1.5,
             alpha_pct=10.0,
             beta=None,
             days_active=365,
@@ -770,6 +830,7 @@ class TestPortfolioMetricsDataclass:
             sharpe_ratio=0.85,
             max_drawdown_pct=10.2,
             win_rate_pct=65.0,
+            profit_factor_pct=2.1,
             alpha_pct=3.5,
             beta=1.1,
             days_active=180,
@@ -782,6 +843,7 @@ class TestPortfolioMetricsDataclass:
         assert metrics.sharpe_ratio == 0.85
         assert metrics.max_drawdown_pct == 10.2
         assert metrics.win_rate_pct == 65.0
+        assert metrics.profit_factor_pct == 2.1
         assert metrics.alpha_pct == 3.5
         assert metrics.beta == 1.1
         assert metrics.days_active == 180
@@ -796,6 +858,7 @@ class TestPortfolioMetricsDataclass:
             sharpe_ratio=None,
             max_drawdown_pct=0.0,
             win_rate_pct=None,
+            profit_factor_pct=None,
             alpha_pct=None,
             beta=None,
             days_active=0,
@@ -805,6 +868,7 @@ class TestPortfolioMetricsDataclass:
         assert metrics.annualized_return_pct is None
         assert metrics.sharpe_ratio is None
         assert metrics.win_rate_pct is None
+        assert metrics.profit_factor_pct is None
 
 
 class TestDefaultBenchmark:
