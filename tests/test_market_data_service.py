@@ -130,7 +130,7 @@ class TestMacroData:
             dow_price=38000.0,
             dow_change_pct=0.75,
             treasury_10y=4.25,
-            treasury_2y=4.50,
+            treasury_3m=4.50,
             vix=15.5,
             timestamp=datetime.now(),
         )
@@ -147,9 +147,9 @@ class TestMacroData:
         assert "15.50" in result
         assert "INTEREST RATES" in result
         assert "10-Year Treasury" in result
-        assert "2-Year Treasury" in result
-        assert "Yield Spread" in result
-        assert "INVERTED" in result  # Since 2Y > 10Y
+        assert "3-Month Treasury" in result
+        assert "Yield Spread (10Y-3M)" in result
+        assert "INVERTED" in result  # Since 3M > 10Y
 
     def test_to_context_string_normal_yield_curve(self):
         """Test formatting with normal yield curve."""
@@ -161,7 +161,7 @@ class TestMacroData:
             dow_price=None,
             dow_change_pct=None,
             treasury_10y=4.50,
-            treasury_2y=4.25,
+            treasury_3m=4.25,
             vix=None,
             timestamp=datetime.now(),
         )
@@ -415,7 +415,7 @@ class TestGetMacroData:
         assert result.dow_price == 38000
         assert result.vix == 15
         assert result.treasury_10y == 4.25
-        assert result.treasury_2y == 4.50
+        assert result.treasury_3m == 4.50
 
 
 class TestGetFullContextForHoldings:
@@ -455,7 +455,7 @@ class TestGetFullContextForHoldings:
                 dow_price=None,
                 dow_change_pct=None,
                 treasury_10y=None,
-                treasury_2y=None,
+                treasury_3m=None,
                 vix=None,
                 timestamp=datetime.now(),
             )
@@ -478,7 +478,7 @@ class TestGetHoldingsContextByAssetClass:
             dow_price=None,
             dow_change_pct=None,
             treasury_10y=None,
-            treasury_2y=None,
+            treasury_3m=None,
             vix=None,
             timestamp=datetime.now(),
         ))

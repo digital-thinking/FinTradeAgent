@@ -89,7 +89,7 @@ class MacroData:
     dow_price: float | None
     dow_change_pct: float | None
     treasury_10y: float | None
-    treasury_2y: float | None
+    treasury_3m: float | None
     vix: float | None
     timestamp: datetime
 
@@ -112,16 +112,17 @@ class MacroData:
         if self.vix:
             lines.append(f"  VIX (Volatility): {self.vix:.2f}")
 
-        if self.treasury_10y or self.treasury_2y:
+        if self.treasury_10y or self.treasury_3m:
             lines.append("INTEREST RATES:")
             if self.treasury_10y:
                 lines.append(f"  10-Year Treasury: {self.treasury_10y:.2f}%")
-            if self.treasury_2y:
-                lines.append(f"  2-Year Treasury: {self.treasury_2y:.2f}%")
-            if self.treasury_10y and self.treasury_2y:
-                spread = self.treasury_10y - self.treasury_2y
+            if self.treasury_3m:
+                lines.append(f"  3-Month Treasury: {self.treasury_3m:.2f}%")
+            if self.treasury_10y and self.treasury_3m:
+                # Yahoo's ^IRX is the 3M bill, so this inversion signal is 10Y-3M, not 10Y-2Y.
+                spread = self.treasury_10y - self.treasury_3m
                 inversion = " (INVERTED - recession signal)" if spread < 0 else ""
-                lines.append(f"  Yield Spread (10Y-2Y): {spread:.2f}%{inversion}")
+                lines.append(f"  Yield Spread (10Y-3M): {spread:.2f}%{inversion}")
 
         return "\n".join(lines)
 
@@ -407,7 +408,7 @@ class MarketDataService:
         dow_price, dow_change = get_latest_price_and_change("^DJI")
         vix, _ = get_latest_price_and_change("^VIX")
         treasury_10y = get_treasury_yield("^TNX")
-        treasury_2y = get_treasury_yield("^IRX")  # 3-month as proxy, 2Y is ^TWO
+        treasury_3m = get_treasury_yield("^IRX")  # ^IRX is the 3-month T-bill yield.
 
         result = MacroData(
             sp500_price=sp500_price,
@@ -417,7 +418,7 @@ class MarketDataService:
             dow_price=dow_price,
             dow_change_pct=dow_change,
             treasury_10y=treasury_10y,
-            treasury_2y=treasury_2y,
+            treasury_3m=treasury_3m,
             vix=vix,
             timestamp=datetime.now(),
         )
