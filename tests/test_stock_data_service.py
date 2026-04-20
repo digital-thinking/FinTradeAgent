@@ -383,6 +383,46 @@ class TestCalculateRsi:
 
         assert rsi == 100.0
 
+    def test_uses_wilder_smoothing(self, tmp_path):
+        """RSI must use Wilder's (1978) EWM smoothing, not a simple rolling mean.
+
+        Feeds a 20-day hand-crafted close series and checks the final RSI
+        against the value produced by Wilder's recursive smoothing
+        (equivalent to pandas ewm(alpha=1/period, adjust=False).mean()).
+        """
+        service = StockDataService(data_dir=tmp_path)
+
+        # Hand-crafted 20-day series (mix of gains and losses).
+        closes = [
+            46.1250, 47.1250, 46.4375, 46.9375, 44.9375,
+            44.2500, 44.6250, 45.7500, 47.8125, 47.5625,
+            47.0000, 44.5625, 46.3125, 47.6875, 46.6875,
+            45.6875, 43.0625, 43.5625, 44.8750, 43.6875,
+        ]
+        prices = pd.Series(closes)
+        period = 14
+
+        # Independently compute the expected RSI with Wilder's smoothing:
+        # y[t] = ((p-1)*y[t-1] + x[t]) / p, seeded at 0 to match how pandas
+        # ewm(adjust=False) consumes the NaN-at-index-0 produced by .diff().
+        diffs = [b - a for a, b in zip(closes[:-1], closes[1:])]
+        gains = [0.0] + [max(d, 0.0) for d in diffs]
+        losses = [0.0] + [max(-d, 0.0) for d in diffs]
+        avg_gain, avg_loss = gains[0], losses[0]
+        for g, l in zip(gains[1:], losses[1:]):
+            avg_gain = ((period - 1) * avg_gain + g) / period
+            avg_loss = ((period - 1) * avg_loss + l) / period
+        expected_rs = avg_gain / avg_loss
+        expected_rsi = 100 - 100 / (1 + expected_rs)
+
+        rsi = service._calculate_rsi(prices, period=period)
+
+        assert rsi is not None
+        # Simple rolling-mean implementation would give ~48.05; Wilder's
+        # smoothing (the correct formula) yields ~42.10 here.
+        assert rsi == pytest.approx(expected_rsi, abs=1e-9)
+        assert rsi == pytest.approx(42.098057, abs=1e-4)
+
 
 class TestCalculateChangePct:
     """Tests for _calculate_change_pct method."""

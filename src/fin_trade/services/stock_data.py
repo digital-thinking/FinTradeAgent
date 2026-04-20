@@ -265,7 +265,7 @@ class StockDataService:
         return float(close.iloc[-1])
 
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float | None:
-        """Calculate RSI (Relative Strength Index)."""
+        """Calculate RSI using Wilder's smoothing (1978)."""
         if len(prices) < period + 1:
             return None
 
@@ -273,8 +273,8 @@ class StockDataService:
         gain = delta.where(delta > 0, 0.0)
         loss = (-delta).where(delta < 0, 0.0)
 
-        avg_gain = gain.rolling(window=period).mean()
-        avg_loss = loss.rolling(window=period).mean()
+        avg_gain = gain.ewm(alpha=1 / period, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1 / period, adjust=False).mean()
 
         if avg_loss.iloc[-1] == 0:
             return 100.0
