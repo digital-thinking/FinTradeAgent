@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -104,6 +105,31 @@ def sample_trades():
             reasoning="Stop loss",
         ),
     ]
+
+
+def build_price_series(start_price: float, returns: list[float]) -> list[float]:
+    """Build a price series from a starting price and daily returns."""
+    prices = [start_price]
+    for daily_return in returns:
+        prices.append(prices[-1] * (1 + daily_return))
+    return prices
+
+
+def find_constant_return_shift(
+    benchmark_returns: np.ndarray,
+    target_growth_ratio: float,
+) -> float:
+    """Find a constant daily return shift that reaches the target growth ratio."""
+    low = -0.01
+    high = 0.01
+    for _ in range(100):
+        mid = (low + high) / 2
+        growth_ratio = float(np.prod(1 + benchmark_returns + mid))
+        if growth_ratio < target_growth_ratio:
+            low = mid
+        else:
+            high = mid
+    return (low + high) / 2
 
 
 class TestCalculateMetricsNoTrades:
@@ -266,6 +292,111 @@ class TestCalculateMetricsBeta:
         metrics = comparison_service.calculate_metrics("test")
 
         assert metrics.beta == pytest.approx(0.0)
+
+
+class TestCalculateMetricsAlpha:
+    """Tests for Jensen's alpha calculation."""
+
+    def test_calculates_zero_alpha_for_perfect_benchmark_tracker(
+        self,
+        comparison_service,
+        mock_portfolio_service,
+        mock_stock_data_service,
+        sample_config,
+    ):
+        """A portfolio that matches the benchmark should have zero alpha."""
+        dates = pd.bdate_range(end=pd.Timestamp(datetime.now()).normalize(), periods=253)
+        benchmark_returns = np.tile(
+            np.array([0.0010, -0.0004, 0.0013, 0.0002, -0.0001]),
+            51,
+        )[:252]
+        benchmark_prices = build_price_series(100.0, benchmark_returns.tolist())
+        trade = Trade(
+            timestamp=dates[0].to_pydatetime(),
+            ticker="AAPL",
+            name="Apple Inc.",
+            action="BUY",
+            quantity=1,
+            price=100.0,
+            reasoning="Match benchmark",
+        )
+        state = PortfolioState(
+            cash=0.0,
+            trades=[trade],
+            holdings=[Holding(ticker="AAPL", name="Apple Inc.", quantity=1, avg_price=100.0)],
+            initial_investment=100.0,
+        )
+        mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
+        comparison_service._build_portfolio_value_series = MagicMock(return_value=pd.DataFrame({
+            "date": dates,
+            "value": benchmark_prices,
+        }))
+        mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
+            "date": dates,
+            "price": benchmark_prices,
+            "cumulative_return": [((price / benchmark_prices[0]) - 1) * 100 for price in benchmark_prices],
+        })
+
+        metrics = comparison_service.calculate_metrics("test")
+
+        assert metrics.beta == pytest.approx(1.0)
+        assert metrics.alpha_pct == pytest.approx(0.0, abs=0.1)
+
+    def test_calculates_positive_jensens_alpha_for_outperformance(
+        self,
+        comparison_service,
+        mock_portfolio_service,
+        mock_stock_data_service,
+        sample_config,
+    ):
+        """A portfolio with benchmark beta and +5% annualized excess should show +5% alpha."""
+        dates = pd.bdate_range(end=pd.Timestamp(datetime.now()).normalize(), periods=253)
+        benchmark_returns = np.tile(
+            np.array([0.0010, -0.0004, 0.0013, 0.0002, -0.0001]),
+            51,
+        )[:252]
+        benchmark_prices = build_price_series(100.0, benchmark_returns.tolist())
+        days_active = max((datetime.now() - dates[0].to_pydatetime()).days, 1)
+        years = days_active / 365
+        benchmark_annualized_return = ((benchmark_prices[-1] / benchmark_prices[0]) ** (1 / years) - 1) * 100
+        target_portfolio_annualized_return = benchmark_annualized_return + 5.0
+        target_growth_ratio = (1 + target_portfolio_annualized_return / 100) ** years
+        portfolio_return_shift = find_constant_return_shift(
+            benchmark_returns,
+            target_growth_ratio,
+        )
+        portfolio_returns = benchmark_returns + portfolio_return_shift
+        portfolio_prices = build_price_series(100.0, portfolio_returns.tolist())
+        trade = Trade(
+            timestamp=dates[0].to_pydatetime(),
+            ticker="AAPL",
+            name="Apple Inc.",
+            action="BUY",
+            quantity=1,
+            price=100.0,
+            reasoning="Beat benchmark",
+        )
+        state = PortfolioState(
+            cash=0.0,
+            trades=[trade],
+            holdings=[Holding(ticker="AAPL", name="Apple Inc.", quantity=1, avg_price=100.0)],
+            initial_investment=100.0,
+        )
+        mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
+        comparison_service._build_portfolio_value_series = MagicMock(return_value=pd.DataFrame({
+            "date": dates,
+            "value": portfolio_prices,
+        }))
+        mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
+            "date": dates,
+            "price": benchmark_prices,
+            "cumulative_return": [((price / benchmark_prices[0]) - 1) * 100 for price in benchmark_prices],
+        })
+
+        metrics = comparison_service.calculate_metrics("test")
+
+        assert metrics.beta == pytest.approx(1.0, abs=1e-6)
+        assert metrics.alpha_pct == pytest.approx(5.0, abs=0.3)
 
 
 class TestBuildPortfolioValueSeries:
@@ -467,6 +598,40 @@ class TestGetComparisonTable:
         assert "Sharpe Ratio" in result.index
         assert "Max Drawdown" in result.index
         assert "Win Rate" in result.index
+
+    def test_labels_fallback_alpha_as_excess_return(
+        self, comparison_service, mock_portfolio_service, mock_stock_data_service, sample_config
+    ):
+        """Fallback alpha should be labeled as Excess Return when beta is unavailable."""
+        state = PortfolioState(
+            cash=10000.0,
+            trades=[],
+            holdings=[],
+        )
+        mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
+        comparison_service.calculate_metrics = MagicMock(return_value=PortfolioMetrics(
+            total_return_pct=10.0,
+            annualized_return_pct=10.0,
+            volatility_pct=12.0,
+            sharpe_ratio=0.5,
+            max_drawdown_pct=2.0,
+            win_rate_pct=50.0,
+            alpha_pct=10.0,
+            beta=None,
+            days_active=365,
+            num_trades=1,
+        ))
+        mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
+            "date": [datetime.now() - timedelta(days=365), datetime.now()],
+            "price": [100.0, 110.0],
+            "cumulative_return": [0.0, 10.0],
+        })
+
+        result = comparison_service.get_comparison_table(["test"])
+
+        assert "Excess Return" in result.index
+        assert "Alpha" not in result.index
+        assert result.loc["Excess Return", "test"] == "+10.0%"
 
 
 class TestPortfolioMetricsDataclass:

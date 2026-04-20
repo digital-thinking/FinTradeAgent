@@ -325,6 +325,22 @@ class ComparisonService:
         )
         return covariance / benchmark_variance
 
+    def _calculate_annualized_return(
+        self,
+        start_value: float,
+        end_value: float,
+        days_active: int,
+    ) -> float | None:
+        """Calculate annualized return percentage for a period."""
+        if days_active <= 0 or start_value <= 0 or end_value <= 0:
+            return None
+
+        years = days_active / 365
+        if years <= 0:
+            return None
+
+        return float(((end_value / start_value) ** (1 / years) - 1) * 100)
+
     def calculate_metrics(
         self,
         portfolio_name: str,
@@ -373,10 +389,11 @@ class ComparisonService:
         days_active = max(days_active, 1)  # Avoid division by zero
 
         # Annualized return
-        years = days_active / 365
-        annualized_return = None
-        if years > 0 and current_value > 0 and initial_value > 0:
-            annualized_return = ((current_value / initial_value) ** (1 / years) - 1) * 100
+        annualized_return = self._calculate_annualized_return(
+            initial_value,
+            current_value,
+            days_active,
+        )
 
         # Calculate daily returns for volatility and Sharpe
         value_df = value_df.sort_values("date")
@@ -410,13 +427,24 @@ class ComparisonService:
                 end_date=datetime.now(),
             )
             if not benchmark_df.empty:
-                # Calculate benchmark return over same period
-                benchmark_return = benchmark_df["cumulative_return"].iloc[-1]
-
-                # Alpha = portfolio return - benchmark return
-                alpha = total_return - benchmark_return
-
                 beta = self._calculate_beta(value_df[["date", "value"]], benchmark_df)
+                benchmark_annualized_return = self._calculate_annualized_return(
+                    float(benchmark_df["price"].iloc[0]),
+                    float(benchmark_df["price"].iloc[-1]),
+                    days_active,
+                )
+                if (
+                    annualized_return is not None
+                    and benchmark_annualized_return is not None
+                ):
+                    risk_free_rate_pct = self.RISK_FREE_RATE * 100
+                    if beta is None:
+                        alpha = annualized_return - benchmark_annualized_return
+                    else:
+                        alpha = annualized_return - (
+                            risk_free_rate_pct
+                            + beta * (benchmark_annualized_return - risk_free_rate_pct)
+                        )
         except Exception:
             pass  # Benchmark data unavailable
 
@@ -448,6 +476,8 @@ class ComparisonService:
             DataFrame with portfolios as columns and metrics as rows
         """
         metrics_data = {}
+        portfolio_metrics: dict[str, PortfolioMetrics] = {}
+        use_excess_return_label = False
         if benchmark_symbol is None and portfolio_names:
             first_config, _ = self.portfolio_service.load_portfolio(portfolio_names[0])
             benchmark_symbol = self.get_default_benchmark(first_config.asset_class)
@@ -456,20 +486,46 @@ class ComparisonService:
         for name in portfolio_names:
             try:
                 metrics = self.calculate_metrics(name, benchmark_symbol)
-                metrics_data[name] = {
+                portfolio_metrics[name] = metrics
+                use_excess_return_label = use_excess_return_label or metrics.beta is None
+            except Exception as e:
+                metrics_data[name] = {"Error": str(e)}
+
+        alpha_label = "Excess Return" if use_excess_return_label else "Alpha"
+
+        for name, metrics in portfolio_metrics.items():
+            metrics_data[name] = {
                     "Total Return": f"{metrics.total_return_pct:+.1f}%",
-                    "Annualized Return": f"{metrics.annualized_return_pct:+.1f}%" if metrics.annualized_return_pct else "N/A",
-                    "Volatility": f"{metrics.volatility_pct:.1f}%" if metrics.volatility_pct else "N/A",
-                    "Sharpe Ratio": f"{metrics.sharpe_ratio:.2f}" if metrics.sharpe_ratio else "N/A",
+                    "Annualized Return": (
+                        f"{metrics.annualized_return_pct:+.1f}%"
+                        if metrics.annualized_return_pct is not None
+                        else "N/A"
+                    ),
+                    "Volatility": (
+                        f"{metrics.volatility_pct:.1f}%"
+                        if metrics.volatility_pct is not None
+                        else "N/A"
+                    ),
+                    "Sharpe Ratio": (
+                        f"{metrics.sharpe_ratio:.2f}"
+                        if metrics.sharpe_ratio is not None
+                        else "N/A"
+                    ),
                     "Max Drawdown": f"-{metrics.max_drawdown_pct:.1f}%",
-                    "Win Rate": f"{metrics.win_rate_pct:.0f}%" if metrics.win_rate_pct else "N/A",
-                    "Alpha": f"{metrics.alpha_pct:+.1f}%" if metrics.alpha_pct else "N/A",
-                    "Beta": f"{metrics.beta:.2f}" if metrics.beta else "N/A",
+                    "Win Rate": (
+                        f"{metrics.win_rate_pct:.0f}%"
+                        if metrics.win_rate_pct is not None
+                        else "N/A"
+                    ),
+                    alpha_label: (
+                        f"{metrics.alpha_pct:+.1f}%"
+                        if metrics.alpha_pct is not None
+                        else "N/A"
+                    ),
+                    "Beta": f"{metrics.beta:.2f}" if metrics.beta is not None else "N/A",
                     "Days Active": str(metrics.days_active),
                     "Trades": str(metrics.num_trades),
                 }
-            except Exception as e:
-                metrics_data[name] = {"Error": str(e)}
 
         # Add benchmark column
         try:
@@ -487,7 +543,7 @@ class ComparisonService:
                     "Sharpe Ratio": "N/A",
                     "Max Drawdown": "N/A",
                     "Win Rate": "N/A",
-                    "Alpha": "0.0%",  # Benchmark is reference
+                    alpha_label: "+0.0%",  # Benchmark is reference
                     "Beta": "1.00",
                     "Days Active": "365",
                     "Trades": "N/A",
