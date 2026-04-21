@@ -101,6 +101,19 @@ class StockDataService:
         """Get the cache file path for a ticker."""
         return self.data_dir / f"{ticker.upper()}_prices.csv"
 
+    @staticmethod
+    def _to_naive_utc(value) -> pd.Timestamp:
+        """Normalize any datetime/Timestamp to tz-naive UTC.
+
+        Internal convention: all datetimes in this service are tz-naive and
+        interpreted as UTC. Callers may pass tz-aware values; this helper is
+        the single boundary that converts them.
+        """
+        ts = pd.Timestamp(value)
+        if ts.tz is not None:
+            ts = ts.tz_convert("UTC").tz_localize(None)
+        return ts
+
     def _is_cache_valid(self, cache_path: Path, max_age_hours: int = 24) -> bool:
         """Check if the cache file is still valid (default: 24 hours)."""
         if not cache_path.exists():
@@ -182,15 +195,12 @@ class StockDataService:
                     else:
                         raise
 
-        # Convert timezone-aware index to naive for consistent comparisons
-        if hasattr(df.index, 'tz') and df.index.tz is not None:
+        # Internal convention: index is always tz-naive UTC.
+        if df.index.tz is not None:
             df.index = df.index.tz_localize(None)
 
         if days > 0:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-            # Ensure cutoff is naive for comparison if index was stripped
-            if hasattr(df.index, 'tz') and df.index.tz is None:
-                cutoff = cutoff.replace(tzinfo=None)
+            cutoff = self._to_naive_utc(datetime.now(timezone.utc)) - pd.Timedelta(days=days)
             df = df[df.index >= cutoff]
         return df
 
@@ -212,8 +222,8 @@ class StockDataService:
         end: datetime,
     ) -> pd.DataFrame:
         """Get aligned adjusted daily closes for tickers over a date range."""
-        start_date = pd.Timestamp(start).normalize()
-        end_date = pd.Timestamp(end).normalize()
+        start_date = self._to_naive_utc(start).normalize()
+        end_date = self._to_naive_utc(end).normalize()
         if end_date < start_date:
             raise ValueError("end must be on or after start")
 
@@ -224,13 +234,9 @@ class StockDataService:
 
         history_start = start_date - pd.Timedelta(days=7)
         history_index = pd.date_range(start=history_start, end=end_date, freq="D")
-        
-        now = datetime.now(timezone.utc)
-        hist_start_dt = history_start.to_pydatetime()
-        if hist_start_dt.tzinfo is None:
-            now = now.replace(tzinfo=None)
-            
-        days_needed = max((now - hist_start_dt).days + 1, 1)
+
+        now = self._to_naive_utc(datetime.now(timezone.utc))
+        days_needed = max((now - history_start).days + 1, 1)
 
         close_series = {}
         for ticker in normalized_tickers:
@@ -298,12 +304,7 @@ class StockDataService:
         if len(df) < 2:
             return None
 
-        now = datetime.now(timezone.utc)
-        # Ensure 'now' is naive if the index was stripped
-        if hasattr(df.index, 'tz') and df.index.tz is None:
-            now = now.replace(tzinfo=None)
-
-        cutoff = now - timedelta(days=days)
+        cutoff = self._to_naive_utc(datetime.now(timezone.utc)) - pd.Timedelta(days=days)
         recent = df[df.index >= cutoff]
 
         if len(recent) < 2:
@@ -540,15 +541,18 @@ class StockDataService:
         if start_date is None:
             start_date = end_date - timedelta(days=365)
 
+        start_ts = self._to_naive_utc(start_date)
+        end_ts = self._to_naive_utc(end_date)
+
         # Get historical data - calculate days needed from date range
-        days_needed = (end_date - start_date).days + 10
+        days_needed = (end_ts - start_ts).days + 10
         df = self.get_history(symbol, days=days_needed)
 
         if df.empty:
             raise ValueError(f"No benchmark data available for {symbol}")
 
         # Filter by date range
-        df = df[(df.index >= start_date) & (df.index <= end_date)]
+        df = df[(df.index >= start_ts) & (df.index <= end_ts)]
 
         if df.empty:
             raise ValueError(f"No benchmark data in date range for {symbol}")

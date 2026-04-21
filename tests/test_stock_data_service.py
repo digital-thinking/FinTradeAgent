@@ -1,7 +1,7 @@
 """Tests for StockDataService."""
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -342,6 +342,46 @@ class TestGetCloses:
 
         with pytest.raises(ValueError, match="end must be on or after start"):
             service.get_closes(["AAPL"], start, end)
+
+    def test_accepts_tz_aware_bounds(self, tmp_path):
+        """tz-aware start/end must not raise — trade timestamps are tz-aware UTC."""
+        service = StockDataService(data_dir=tmp_path)
+        dates = pd.date_range(end=datetime.now(), periods=30, freq="D")
+        df = pd.DataFrame(
+            {"Close": [100.0 + i for i in range(30)], "Adj Close": [100.0 + i for i in range(30)]},
+            index=dates,
+        )
+        service._cache["AAPL"] = df
+
+        tz_aware_end = datetime.now(timezone.utc)
+        tz_aware_start = tz_aware_end - timedelta(days=10)
+
+        result = service.get_closes(["AAPL"], tz_aware_start, tz_aware_end)
+
+        assert list(result.columns) == ["AAPL"]
+        assert len(result) == 11  # inclusive day range
+        assert result["AAPL"].notna().all()
+
+
+class TestGetBenchmarkPerformance:
+    """Tests for get_benchmark_performance."""
+
+    def test_accepts_tz_aware_bounds(self, tmp_path):
+        """tz-aware start_date/end_date must not raise (caller supplies UTC)."""
+        service = StockDataService(data_dir=tmp_path)
+        dates = pd.date_range(end=datetime.now(), periods=30, freq="D")
+        df = pd.DataFrame({"Close": [100.0 + i for i in range(30)]}, index=dates)
+        service._cache["SPY"] = df
+
+        tz_aware_end = datetime.now(timezone.utc)
+        tz_aware_start = tz_aware_end - timedelta(days=20)
+
+        result = service.get_benchmark_performance(
+            symbol="SPY", start_date=tz_aware_start, end_date=tz_aware_end
+        )
+
+        assert not result.empty
+        assert "cumulative_return" in result.columns
 
 
 class TestCalculateRsi:
