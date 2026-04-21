@@ -1,7 +1,7 @@
 """Portfolio comparison and benchmarking service."""
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -72,19 +72,20 @@ class ComparisonService:
         cash = initial_cash
         holdings: dict[str, float] = {}
         trades = sorted(state.trades, key=lambda trade: trade.timestamp)
-        start_date = pd.Timestamp(trades[0].timestamp).normalize()
-        end_date = pd.Timestamp(datetime.now(timezone.utc)).normalize()
         tickers = [trade.ticker for trade in trades]
-        closes = self.stock_data_service.get_closes(tickers, start_date, end_date)
-        trades_by_date: dict[pd.Timestamp, list] = {}
+        closes = self.stock_data_service.get_closes(
+            tickers, trades[0].timestamp, datetime.now(timezone.utc)
+        )
+        # Key by calendar date (no tz): trade timestamps are tz-aware UTC while
+        # the close-price index is tz-naive UTC. `date` lets the two line up.
+        trades_by_date: dict[date, list] = {}
         for trade in trades:
-            trade_date = pd.Timestamp(trade.timestamp).normalize()
-            trades_by_date.setdefault(trade_date, []).append(trade)
+            trades_by_date.setdefault(trade.timestamp.date(), []).append(trade)
 
         records = []
 
-        for date, close_row in closes.iterrows():
-            for trade in trades_by_date.get(date, []):
+        for bar_ts, close_row in closes.iterrows():
+            for trade in trades_by_date.get(bar_ts.date(), []):
                 ticker = trade.ticker.upper()
                 trade_cost = trade.price * trade.quantity
 
@@ -104,7 +105,7 @@ class ComparisonService:
             total_value = cash + holdings_value
 
             records.append({
-                "date": date,
+                "date": bar_ts,
                 "value": total_value,
             })
 

@@ -196,10 +196,10 @@ class StockDataService:
                         raise
 
         # Internal convention: index is always tz-naive UTC.
-        if df.index.tz is not None:
+        if isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
             df.index = df.index.tz_localize(None)
 
-        if days > 0:
+        if days > 0 and isinstance(df.index, pd.DatetimeIndex):
             cutoff = self._to_naive_utc(datetime.now(timezone.utc)) - pd.Timedelta(days=days)
             df = df[df.index >= cutoff]
         return df

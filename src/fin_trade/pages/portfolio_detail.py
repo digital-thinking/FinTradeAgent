@@ -1,8 +1,9 @@
 """Portfolio detail page."""
 
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
+import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 
@@ -500,9 +501,6 @@ def _calculate_performance_data(
     security_service: SecurityService,
 ) -> dict:
     """Calculate portfolio value over time with trade markers and stacked data."""
-    from datetime import datetime
-    import pandas as pd
-
     timestamps = []
     values = []
     cash_values = []  # Track cash over time
@@ -526,20 +524,20 @@ def _calculate_performance_data(
     )
     holdings: dict[str, float] = {}
     trades = sorted(state.trades, key=lambda trade: trade.timestamp)
-    start_date = pd.Timestamp(trades[0].timestamp).normalize()
-    end_date = pd.Timestamp(datetime.now(timezone.utc)).normalize()
     closes = security_service.get_closes(
         [trade.ticker for trade in trades],
-        start_date,
-        end_date,
+        trades[0].timestamp,
+        datetime.now(timezone.utc),
     )
-    trades_by_date: dict[pd.Timestamp, list] = {}
+    # Key by calendar date (no tz): trade timestamps are tz-aware UTC while the
+    # close-price index is tz-naive UTC. `date` lets the two line up cleanly.
+    trades_by_date: dict[date, list] = {}
     for trade in trades:
-        trade_date = pd.Timestamp(trade.timestamp).normalize()
-        trades_by_date.setdefault(trade_date, []).append(trade)
+        trades_by_date.setdefault(trade.timestamp.date(), []).append(trade)
 
-    for date, close_row in closes.iterrows():
-        for trade in trades_by_date.get(date, []):
+    for bar_ts, close_row in closes.iterrows():
+        bar_date = bar_ts.date()
+        for trade in trades_by_date.get(bar_date, []):
             ticker = trade.ticker.upper()
             trade_cost = trade.price * trade.quantity
 
@@ -558,14 +556,14 @@ def _calculate_performance_data(
         )
         total_value = cash + holdings_value
 
-        timestamps.append(date)
+        timestamps.append(bar_ts)
         values.append(total_value)
         cash_values.append(cash)
         holdings_values.append(holdings_value)
 
-        for trade in trades_by_date.get(date, []):
+        for trade in trades_by_date.get(bar_date, []):
             trade_points.append({
-                "timestamp": trade.timestamp,
+                "timestamp": bar_ts,
                 "value": total_value,
                 "action": trade.action,
                 "ticker": trade.ticker,
@@ -646,12 +644,11 @@ def _filter_by_time_range(
     time_range: str,
 ) -> tuple[list, list[float], list[float], list[float], list[dict]]:
     """Filter data by selected time range."""
-    from datetime import datetime, timedelta
-
     if time_range == "All" or not timestamps:
         return timestamps, values, cash_values, holdings_values, trade_points
 
-    now = datetime.now(timezone.utc)
+    # Timestamps from `get_closes` are tz-naive UTC bar dates; cutoff must match.
+    now = pd.Timestamp(datetime.now(timezone.utc)).tz_localize(None).normalize()
     if time_range == "1W":
         cutoff = now - timedelta(weeks=1)
     elif time_range == "1M":
@@ -659,7 +656,7 @@ def _filter_by_time_range(
     elif time_range == "3M":
         cutoff = now - timedelta(days=90)
     elif time_range == "YTD":
-        cutoff = datetime(now.year, 1, 1)
+        cutoff = pd.Timestamp(now.year, 1, 1)
     else:
         return timestamps, values, cash_values, holdings_values, trade_points
 
