@@ -2,10 +2,9 @@
 
 import json
 import sqlite3
-from datetime import datetime, timedelta
-from unittest.mock import patch
-
+from datetime import datetime, timedelta, date
 import pytest
+import pandas as pd
 
 from fin_trade.services.execution_log import ExecutionLogService, ExecutionLogEntry
 
@@ -18,6 +17,18 @@ def temp_db(tmp_path, monkeypatch):
         "fin_trade.services.execution_log._db_path", db_path
     )
     return db_path
+
+
+@pytest.fixture
+def temp_dirs(tmp_path, monkeypatch):
+    """Create temporary logs and state directories."""
+    logs_dir = tmp_path / "logs"
+    state_dir = tmp_path / "state"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    state_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("fin_trade.services.execution_log._logs_dir", logs_dir)
+    monkeypatch.setattr("fin_trade.services.execution_log._state_dir", state_dir)
+    return logs_dir, state_dir
 
 
 class TestExecutionLogServiceInit:
@@ -35,6 +46,10 @@ class TestExecutionLogServiceInit:
         with sqlite3.connect(temp_db) as conn:
             cursor = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='execution_logs'"
+            )
+            assert cursor.fetchone() is not None
+            cursor = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='execution_notes'"
             )
             assert cursor.fetchone() is not None
 
@@ -362,3 +377,226 @@ class TestGetDailyStats:
         stats = service.get_daily_stats(days=7)
 
         assert stats == []
+
+
+class TestExecutionContext:
+    """Tests for execution context and outcomes."""
+
+    def test_get_execution_with_context_parses_log(self, temp_db, temp_dirs):
+        logs_dir, state_dir = temp_dirs
+        service = ExecutionLogService()
+
+        log_time = datetime(2025, 1, 2, 3, 4, 5)
+        log_id = service.log_execution(
+            portfolio_name="TestPortfolio",
+            agent_mode="langgraph",
+            model="gpt-4o",
+            duration_ms=1000,
+            input_tokens=100,
+            output_tokens=50,
+            num_trades=1,
+            success=True,
+            recommendations=[{
+                "ticker": "AAPL",
+                "name": "Apple",
+                "action": "BUY",
+                "quantity": 1,
+                "reasoning": "Test",
+            }],
+        )
+
+        with sqlite3.connect(temp_db) as conn:
+            conn.execute(
+                "UPDATE execution_logs SET timestamp = ? WHERE id = ?",
+                (log_time.isoformat(), log_id),
+            )
+            conn.commit()
+
+        log_file = logs_dir / "TestPortfolio_20250102_030405_langgraph.md"
+        log_file.write_text(
+            """# LangGraph Agent Log - 2025-01-02T03:04:05
+
+## Market Research
+
+Research content here.
+
+## Analysis
+
+Analysis content here.
+""",
+            encoding="utf-8",
+        )
+
+        state_path = state_dir / "TestPortfolio.json"
+        state_path.write_text(
+            json.dumps({
+                "cash": 10000,
+                "initial_investment": 10000,
+                "holdings": [],
+                "trades": [
+                    {
+                        "timestamp": "2025-01-01T10:00:00",
+                        "ticker": "AAPL",
+                        "name": "Apple",
+                        "action": "BUY",
+                        "quantity": 1,
+                        "price": 100,
+                        "reasoning": "Initial buy",
+                    }
+                ],
+            }),
+            encoding="utf-8",
+        )
+
+        context = service.get_execution_with_context(log_id)
+        assert context["recommendations"][0]["ticker"] == "AAPL"
+        assert context["log_context"]["research"] == "Research content here."
+        assert context["log_context"]["analysis"] == "Analysis content here."
+        assert context["portfolio_state"]["holdings"][0]["ticker"] == "AAPL"
+
+    def test_get_recommendation_outcomes(self, temp_db, temp_dirs, monkeypatch):
+        _, state_dir = temp_dirs
+
+        service = ExecutionLogService()
+
+        log_time = datetime(2025, 1, 2, 3, 4, 5)
+        log_id = service.log_execution(
+            portfolio_name="TestPortfolio",
+            agent_mode="langgraph",
+            model="gpt-4o",
+            duration_ms=1000,
+            input_tokens=100,
+            output_tokens=50,
+            num_trades=1,
+            success=True,
+            recommendations=[{
+                "ticker": "AAPL",
+                "name": "Apple",
+                "action": "BUY",
+                "quantity": 10,
+                "reasoning": "Test",
+            }],
+        )
+
+        with sqlite3.connect(temp_db) as conn:
+            conn.execute(
+                "UPDATE execution_logs SET timestamp = ? WHERE id = ?",
+                (log_time.isoformat(), log_id),
+            )
+            conn.commit()
+
+        service.mark_trades_executed(log_id, [0])
+
+        state_path = state_dir / "TestPortfolio.json"
+        state_path.write_text(
+            json.dumps({
+                "cash": 9000,
+                "initial_investment": 10000,
+                "holdings": [],
+                "trades": [
+                    {
+                        "timestamp": "2025-01-02T03:05:00",
+                        "ticker": "AAPL",
+                        "name": "Apple",
+                        "action": "BUY",
+                        "quantity": 10,
+                        "price": 100,
+                        "reasoning": "Executed",
+                    },
+                    {
+                        "timestamp": "2025-01-05T10:00:00",
+                        "ticker": "AAPL",
+                        "name": "Apple",
+                        "action": "SELL",
+                        "quantity": 10,
+                        "price": 120,
+                        "reasoning": "Exit",
+                    },
+                ],
+            }),
+            encoding="utf-8",
+        )
+
+        def fake_history(self, ticker, days=365):
+            dates = pd.to_datetime([
+                "2025-01-01",
+                "2025-01-02",
+            ])
+            return pd.DataFrame({"Close": [95, 105]}, index=dates)
+
+        def fake_price(self, ticker):
+            return 130.0
+
+        monkeypatch.setattr(
+            "fin_trade.services.stock_data.StockDataService.get_history", fake_history
+        )
+        monkeypatch.setattr(
+            "fin_trade.services.stock_data.StockDataService.get_price", fake_price
+        )
+
+        outcomes = service.get_recommendation_outcomes(log_id)
+        assert len(outcomes) == 1
+        outcome = outcomes[0]
+        assert outcome["recommended_price"] == 105.0
+        assert outcome["exit_price"] == 120.0
+        assert outcome["hypothetical_pl"] == 150.0
+        assert outcome["actual_pl"] == 200.0
+
+
+class TestExecutionNotes:
+    """Tests for execution note CRUD."""
+
+    def test_add_get_update_delete_note(self, temp_db):
+        service = ExecutionLogService()
+
+        note_id = service.add_note(
+            portfolio_name="TestPortfolio",
+            note_text="Initial note",
+            note_date=date(2025, 1, 1),
+            tags=["Earnings"],
+        )
+
+        notes = service.get_notes("TestPortfolio")
+        assert len(notes) == 1
+        assert notes[0]["id"] == note_id
+        assert notes[0]["tags"] == ["Earnings"]
+
+        service.update_note(note_id, note_text="Updated note", tags=["Fed Decision"])
+        updated = service.get_notes("TestPortfolio")[0]
+        assert updated["note_text"] == "Updated note"
+        assert updated["tags"] == ["Fed Decision"]
+
+        service.delete_note(note_id)
+        assert service.get_notes("TestPortfolio") == []
+
+    def test_add_note_with_execution_id_uses_execution_date(self, temp_db):
+        service = ExecutionLogService()
+
+        log_id = service.log_execution(
+            portfolio_name="TestPortfolio",
+            agent_mode="langgraph",
+            model="gpt-4o",
+            duration_ms=1000,
+            input_tokens=100,
+            output_tokens=50,
+            num_trades=0,
+            success=True,
+        )
+
+        execution_time = datetime(2025, 2, 3, 10, 0, 0)
+        with sqlite3.connect(temp_db) as conn:
+            conn.execute(
+                "UPDATE execution_logs SET timestamp = ? WHERE id = ?",
+                (execution_time.isoformat(), log_id),
+            )
+            conn.commit()
+
+        note_id = service.add_note(
+            portfolio_name="TestPortfolio",
+            note_text="Execution note",
+            execution_id=log_id,
+        )
+
+        notes = service.get_notes("TestPortfolio")
+        assert notes[0]["id"] == note_id
+        assert notes[0]["note_date"] == date(2025, 2, 3)
