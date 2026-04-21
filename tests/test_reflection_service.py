@@ -309,6 +309,86 @@ class TestFindCompletedTrades:
         assert result[0].buy_price == 150.0
         assert result[0].return_pct == pytest.approx(13.33, rel=0.1)
 
+    def test_fractional_holding_days(self):
+        """Test detecting a completed BUY->SELL cycle with fractional days (e.g., 4h)."""
+        service = ReflectionService()
+        buy_time = datetime(2025, 1, 1, 10, 0, 0)
+        sell_time = datetime(2025, 1, 1, 14, 0, 0)  # Exactly 4 hours later
+        
+        trades = [
+            Trade(
+                timestamp=buy_time,
+                ticker="AAPL",
+                name="Apple Inc.",
+                action="BUY",
+                quantity=10,
+                price=150.0,
+                reasoning="Quick scalp",
+            ),
+            Trade(
+                timestamp=sell_time,
+                ticker="AAPL",
+                name="Apple Inc.",
+                action="SELL",
+                quantity=10,
+                price=155.0,
+                reasoning="Target reached in 4h",
+            ),
+        ]
+
+        result = service._find_completed_trades(trades)
+
+        assert len(result) == 1
+        # 4h = 4/24 days = 1/6 ≈ 0.166666... days
+        assert result[0].holding_days == pytest.approx(0.166, abs=0.01)
+
+    def test_partial_fill_rebuild_retains_sl_tp(self, monkeypatch):
+        """Partially filled BUY must keep its SL/TP on the open remainder."""
+        from fin_trade.services import reflection as reflection_module
+
+        service = ReflectionService()
+        buy = Trade(
+            timestamp=datetime(2025, 1, 1),
+            ticker="AAPL",
+            name="Apple Inc.",
+            action="BUY",
+            quantity=10,
+            price=150.0,
+            reasoning="Bracketed entry",
+            stop_loss_price=140.0,
+            take_profit_price=170.0,
+        )
+        partial_sell = Trade(
+            timestamp=datetime(2025, 1, 5),
+            ticker="AAPL",
+            name="Apple Inc.",
+            action="SELL",
+            quantity=3,
+            price=160.0,
+            reasoning="Partial take",
+        )
+
+        captured: list[Trade] = []
+        real_trade_cls = reflection_module.Trade
+
+        def spy_trade(*args, **kwargs):
+            instance = real_trade_cls(*args, **kwargs)
+            captured.append(instance)
+            return instance
+
+        monkeypatch.setattr(reflection_module, "Trade", spy_trade)
+
+        service._find_completed_trades([buy, partial_sell])
+
+        # The rebuild path is the only runtime Trade construction inside the
+        # service, so the captured list should hold exactly the remainder.
+        assert len(captured) == 1
+        remainder = captured[0]
+        assert remainder.quantity == 7
+        assert remainder.price == 150.0
+        assert remainder.stop_loss_price == 140.0
+        assert remainder.take_profit_price == 170.0
+
 
 class TestCalculateMetrics:
     """Tests for _calculate_metrics method."""

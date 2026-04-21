@@ -209,6 +209,15 @@ def _render_metrics_comparison(
             height=400,
         )
 
+        benchmark_window = metrics_df.attrs.get("benchmark_window")
+        if benchmark_window is not None:
+            st.caption(
+                f"{benchmark_window['symbol']} row computed over the widest portfolio window: "
+                f"{benchmark_window['start'].strftime('%Y-%m-%d')} → "
+                f"{benchmark_window['end'].strftime('%Y-%m-%d')} "
+                f"({benchmark_window['days']} days)."
+            )
+
         # Additional insights
         st.divider()
         st.subheader("Quick Insights")

@@ -1,9 +1,10 @@
 """Tests for ComparisonService."""
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -22,6 +23,22 @@ def mock_stock_data_service():
     """Create a mock StockDataService."""
     mock = MagicMock()
     mock.get_price.return_value = 100.0
+
+    def get_closes(tickers, start, end):
+        # Normalize both to naive for the test mock if there is a mismatch
+        s = pd.Timestamp(start).tz_localize(None).normalize()
+        e = pd.Timestamp(end).tz_localize(None).normalize()
+        dates = pd.date_range(tz="UTC", 
+            start=s,
+            end=e,
+            freq="D",
+        )
+        return pd.DataFrame(
+            {ticker.upper(): [mock.get_price.return_value] * len(dates) for ticker in tickers},
+            index=dates,
+        )
+
+    mock.get_closes.side_effect = get_closes
     return mock
 
 
@@ -52,7 +69,7 @@ def sample_config():
 @pytest.fixture
 def sample_trades():
     """Sample trade history with profits and losses."""
-    base_date = datetime.now() - timedelta(days=30)
+    base_date = datetime.now(timezone.utc) - timedelta(days=30)
     return [
         Trade(
             timestamp=base_date,
@@ -91,6 +108,31 @@ def sample_trades():
             reasoning="Stop loss",
         ),
     ]
+
+
+def build_price_series(start_price: float, returns: list[float]) -> list[float]:
+    """Build a price series from a starting price and daily returns."""
+    prices = [start_price]
+    for daily_return in returns:
+        prices.append(prices[-1] * (1 + daily_return))
+    return prices
+
+
+def find_constant_return_shift(
+    benchmark_returns: np.ndarray,
+    target_growth_ratio: float,
+) -> float:
+    """Find a constant daily return shift that reaches the target growth ratio."""
+    low = -0.01
+    high = 0.01
+    for _ in range(100):
+        mid = (low + high) / 2
+        growth_ratio = float(np.prod(1 + benchmark_returns + mid))
+        if growth_ratio < target_growth_ratio:
+            low = mid
+        else:
+            high = mid
+    return (low + high) / 2
 
 
 class TestCalculateMetricsNoTrades:
@@ -139,7 +181,7 @@ class TestCalculateMetricsWithTrades:
 
         # Mock benchmark data
         mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
-            "date": [datetime.now() - timedelta(days=30), datetime.now()],
+            "date": [datetime.now(timezone.utc) - timedelta(days=30), datetime.now(timezone.utc)],
             "price": [400.0, 420.0],
             "cumulative_return": [0.0, 5.0],
         })
@@ -162,7 +204,7 @@ class TestCalculateMetricsWithTrades:
         )
         mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
         mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
-            "date": [datetime.now()],
+            "date": [datetime.now(timezone.utc)],
             "price": [400.0],
             "cumulative_return": [0.0],
         })
@@ -173,59 +215,402 @@ class TestCalculateMetricsWithTrades:
         assert metrics.win_rate_pct == 50.0
 
 
+class TestCalculateMetricsBeta:
+    """Tests for beta calculation from daily return covariance."""
+
+    def test_calculates_beta_from_aligned_daily_returns(
+        self,
+        comparison_service,
+        mock_portfolio_service,
+        mock_stock_data_service,
+        sample_config,
+    ):
+        """A portfolio that tracks the benchmark should have beta near 1."""
+        dates = pd.date_range(tz="UTC", start="2026-01-05", periods=5, freq="B")
+        trade = Trade(
+            timestamp=dates[0].to_pydatetime(),
+            ticker="AAPL",
+            name="Apple Inc.",
+            action="BUY",
+            quantity=1,
+            price=100.0,
+            reasoning="Track benchmark",
+        )
+        state = PortfolioState(
+            cash=0.0,
+            trades=[trade],
+            holdings=[Holding(ticker="AAPL", name="Apple Inc.", quantity=1, avg_price=100.0)],
+            initial_investment=100.0,
+        )
+        mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
+        comparison_service._build_portfolio_value_series = MagicMock(return_value=pd.DataFrame({
+            "date": dates,
+            "value": [100.0, 102.0, 101.0, 103.0, 104.0],
+        }))
+        mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
+            "date": dates,
+            "price": [250.0, 255.0, 252.5, 257.5, 260.0],
+            "cumulative_return": [0.0, 2.0, 1.0, 3.0, 4.0],
+        })
+
+        metrics = comparison_service.calculate_metrics("test")
+
+        assert metrics.beta == pytest.approx(1.0)
+
+    def test_calculates_zero_beta_for_constant_value_portfolio(
+        self,
+        comparison_service,
+        mock_portfolio_service,
+        mock_stock_data_service,
+        sample_config,
+    ):
+        """A constant-value portfolio should have zero covariance with the benchmark."""
+        dates = pd.date_range(tz="UTC", start="2026-01-05", periods=5, freq="B")
+        trade = Trade(
+            timestamp=dates[0].to_pydatetime(),
+            ticker="AAPL",
+            name="Apple Inc.",
+            action="BUY",
+            quantity=1,
+            price=100.0,
+            reasoning="Stay flat",
+        )
+        state = PortfolioState(
+            cash=100.0,
+            trades=[trade],
+            holdings=[],
+            initial_investment=100.0,
+        )
+        mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
+        comparison_service._build_portfolio_value_series = MagicMock(return_value=pd.DataFrame({
+            "date": dates,
+            "value": [100.0, 100.0, 100.0, 100.0, 100.0],
+        }))
+        mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
+            "date": dates,
+            "price": [250.0, 255.0, 252.5, 257.5, 260.0],
+            "cumulative_return": [0.0, 2.0, 1.0, 3.0, 4.0],
+        })
+
+        metrics = comparison_service.calculate_metrics("test")
+
+        assert metrics.beta == pytest.approx(0.0)
+
+
+class TestCalculateMetricsAlpha:
+    """Tests for Jensen's alpha calculation."""
+
+    def test_calculates_zero_alpha_for_perfect_benchmark_tracker(
+        self,
+        comparison_service,
+        mock_portfolio_service,
+        mock_stock_data_service,
+        sample_config,
+    ):
+        """A portfolio that matches the benchmark should have zero alpha."""
+        dates = pd.bdate_range(tz="UTC", end=pd.Timestamp(datetime.now(timezone.utc)).normalize(), periods=253)
+        benchmark_returns = np.tile(
+            np.array([0.0010, -0.0004, 0.0013, 0.0002, -0.0001]),
+            51,
+        )[:252]
+        benchmark_prices = build_price_series(100.0, benchmark_returns.tolist())
+        trade = Trade(
+            timestamp=dates[0].to_pydatetime(),
+            ticker="AAPL",
+            name="Apple Inc.",
+            action="BUY",
+            quantity=1,
+            price=100.0,
+            reasoning="Match benchmark",
+        )
+        state = PortfolioState(
+            cash=0.0,
+            trades=[trade],
+            holdings=[Holding(ticker="AAPL", name="Apple Inc.", quantity=1, avg_price=100.0)],
+            initial_investment=100.0,
+        )
+        mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
+        comparison_service._build_portfolio_value_series = MagicMock(return_value=pd.DataFrame({
+            "date": dates,
+            "value": benchmark_prices,
+        }))
+        mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
+            "date": dates,
+            "price": benchmark_prices,
+            "cumulative_return": [((price / benchmark_prices[0]) - 1) * 100 for price in benchmark_prices],
+        })
+
+        metrics = comparison_service.calculate_metrics("test")
+
+        assert metrics.beta == pytest.approx(1.0)
+        assert metrics.alpha_pct == pytest.approx(0.0, abs=0.1)
+
+    def test_calculates_positive_jensens_alpha_for_outperformance(
+        self,
+        comparison_service,
+        mock_portfolio_service,
+        mock_stock_data_service,
+        sample_config,
+    ):
+        """A portfolio with benchmark beta and +5% annualized excess should show +5% alpha."""
+        dates = pd.bdate_range(tz="UTC", end=pd.Timestamp(datetime.now(timezone.utc)).normalize(), periods=253)
+        benchmark_returns = np.tile(
+            np.array([0.0010, -0.0004, 0.0013, 0.0002, -0.0001]),
+            51,
+        )[:252]
+        benchmark_prices = build_price_series(100.0, benchmark_returns.tolist())
+        days_active = max((datetime.now(timezone.utc) - dates[0].to_pydatetime()).days, 1)
+        years = days_active / 365
+        benchmark_annualized_return = ((benchmark_prices[-1] / benchmark_prices[0]) ** (1 / years) - 1) * 100
+        target_portfolio_annualized_return = benchmark_annualized_return + 5.0
+        target_growth_ratio = (1 + target_portfolio_annualized_return / 100) ** years
+        portfolio_return_shift = find_constant_return_shift(
+            benchmark_returns,
+            target_growth_ratio,
+        )
+        portfolio_returns = benchmark_returns + portfolio_return_shift
+        portfolio_prices = build_price_series(100.0, portfolio_returns.tolist())
+        trade = Trade(
+            timestamp=dates[0].to_pydatetime(),
+            ticker="AAPL",
+            name="Apple Inc.",
+            action="BUY",
+            quantity=1,
+            price=100.0,
+            reasoning="Beat benchmark",
+        )
+        state = PortfolioState(
+            cash=0.0,
+            trades=[trade],
+            holdings=[Holding(ticker="AAPL", name="Apple Inc.", quantity=1, avg_price=100.0)],
+            initial_investment=100.0,
+        )
+        mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
+        comparison_service._build_portfolio_value_series = MagicMock(return_value=pd.DataFrame({
+            "date": dates,
+            "value": portfolio_prices,
+        }))
+        mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
+            "date": dates,
+            "price": benchmark_prices,
+            "cumulative_return": [((price / benchmark_prices[0]) - 1) * 100 for price in benchmark_prices],
+        })
+
+        metrics = comparison_service.calculate_metrics("test")
+
+        assert metrics.beta == pytest.approx(1.0, abs=1e-6)
+        assert metrics.alpha_pct == pytest.approx(5.0, abs=0.3)
+
+
+class TestCalculateMetricsVolatility:
+    """Tests for volatility from daily-resampled returns."""
+
+    def test_calculates_volatility_from_daily_resampled_returns(
+        self,
+        comparison_service,
+        mock_portfolio_service,
+        mock_stock_data_service,
+        sample_config,
+    ):
+        """Volatility should use daily returns after filling calendar gaps."""
+        dates = pd.bdate_range(tz="UTC", end=pd.Timestamp(datetime.now(timezone.utc)).normalize(), periods=3)
+        values = [100.0, 101.0, 98.98]
+        trade = Trade(
+            timestamp=dates[0].to_pydatetime(),
+            ticker="AAPL",
+            name="Apple Inc.",
+            action="BUY",
+            quantity=1,
+            price=100.0,
+            reasoning="Test volatility",
+        )
+        state = PortfolioState(
+            cash=0.0,
+            trades=[trade],
+            holdings=[Holding(ticker="AAPL", name="Apple Inc.", quantity=1, avg_price=100.0)],
+            initial_investment=100.0,
+        )
+        mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
+        comparison_service._build_portfolio_value_series = MagicMock(return_value=pd.DataFrame({
+            "date": dates,
+            "value": values,
+        }))
+        mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
+            "date": [dates[0], dates[-1]],
+            "price": [100.0, 100.0],
+            "cumulative_return": [0.0, 0.0],
+        })
+
+        metrics = comparison_service.calculate_metrics("test")
+
+        daily_returns = (
+            pd.Series(values, index=dates)
+            .reindex(pd.date_range(tz="UTC", start=dates[0], end=dates[-1], freq="D"), method="ffill")
+            .pct_change()
+            .dropna()
+        )
+        expected_volatility = float(daily_returns.std() * np.sqrt(252) * 100)
+
+        assert metrics.volatility_pct == pytest.approx(expected_volatility)
+
+
+class TestBuildPortfolioValueSeries:
+    """Tests for historical portfolio value reconstruction."""
+
+    def test_marks_holdings_to_market_each_day(
+        self, comparison_service, mock_portfolio_service, mock_stock_data_service,
+        sample_config
+    ):
+        """Value reflects daily closes instead of the original cost basis."""
+        trade_date = (datetime.now(timezone.utc) - timedelta(days=5)).replace(
+            hour=10, minute=0, second=0, microsecond=0
+        )
+        trade = Trade(
+            timestamp=trade_date,
+            ticker="AAPL",
+            name="Apple Inc.",
+            action="BUY",
+            quantity=10,
+            price=100.0,
+            reasoning="Test buy",
+        )
+        state = PortfolioState(
+            cash=9000.0,
+            trades=[trade],
+            holdings=[Holding(ticker="AAPL", name="Apple Inc.", quantity=10, avg_price=100.0)],
+            initial_investment=10000.0,
+        )
+        mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
+
+        def rising_closes(tickers, start, end):
+            dates = pd.date_range(tz="UTC", 
+                start=pd.Timestamp(start).normalize(),
+                end=pd.Timestamp(end).normalize(),
+                freq="D",
+            )
+            closes = [100.0 + (10.0 * i / (len(dates) - 1)) for i in range(len(dates))]
+            return pd.DataFrame({"AAPL": closes}, index=dates)
+
+        mock_stock_data_service.get_closes.side_effect = rising_closes
+
+        result = comparison_service._build_portfolio_value_series("test")
+
+        assert len(result) == 6
+        assert result["value"].iloc[-1] == pytest.approx(10100.0)
+
+
 class TestWinRateCalculation:
-    """Tests for _calculate_win_rate method."""
+    """Tests for _calculate_performance_stats method."""
 
     def test_win_rate_all_winners(self, comparison_service):
         """Test 100% win rate."""
         trades = [
             Trade(
-                timestamp=datetime.now() - timedelta(days=10),
+                timestamp=datetime.now(timezone.utc) - timedelta(days=10),
                 ticker="AAPL", name="Apple", action="BUY",
                 quantity=10, price=100.0, reasoning="Buy",
             ),
             Trade(
-                timestamp=datetime.now(),
+                timestamp=datetime.now(timezone.utc),
                 ticker="AAPL", name="Apple", action="SELL",
                 quantity=10, price=110.0, reasoning="Sell",  # Winner
             ),
         ]
-        win_rate = comparison_service._calculate_win_rate(trades)
+        win_rate, profit_factor = comparison_service._calculate_performance_stats(trades)
         assert win_rate == 100.0
+        assert profit_factor == float('inf')
 
     def test_win_rate_all_losers(self, comparison_service):
         """Test 0% win rate."""
         trades = [
             Trade(
-                timestamp=datetime.now() - timedelta(days=10),
+                timestamp=datetime.now(timezone.utc) - timedelta(days=10),
                 ticker="AAPL", name="Apple", action="BUY",
                 quantity=10, price=100.0, reasoning="Buy",
             ),
             Trade(
-                timestamp=datetime.now(),
+                timestamp=datetime.now(timezone.utc),
                 ticker="AAPL", name="Apple", action="SELL",
                 quantity=10, price=90.0, reasoning="Sell",  # Loser
             ),
         ]
-        win_rate = comparison_service._calculate_win_rate(trades)
+        win_rate, profit_factor = comparison_service._calculate_performance_stats(trades)
         assert win_rate == 0.0
+        assert profit_factor == 0.0
 
     def test_win_rate_no_closed_positions(self, comparison_service):
         """Test returns None when no positions have been closed."""
         trades = [
             Trade(
-                timestamp=datetime.now(),
+                timestamp=datetime.now(timezone.utc),
                 ticker="AAPL", name="Apple", action="BUY",
                 quantity=10, price=100.0, reasoning="Buy",
             ),
         ]
-        win_rate = comparison_service._calculate_win_rate(trades)
+        win_rate, profit_factor = comparison_service._calculate_performance_stats(trades)
         assert win_rate is None
+        assert profit_factor is None
 
     def test_win_rate_empty_trades(self, comparison_service):
         """Test returns None for empty trades list."""
-        win_rate = comparison_service._calculate_win_rate([])
+        win_rate, profit_factor = comparison_service._calculate_performance_stats([])
         assert win_rate is None
+        assert profit_factor is None
+
+    def test_win_rate_per_tax_lot(self, comparison_service, sample_config):
+        """A SELL closing one winning and one losing lot produces 50% win rate (1 of 2)."""
+        base_date = datetime.now(timezone.utc) - timedelta(days=10)
+        trades = [
+            Trade(
+                timestamp=base_date,
+                ticker="AAPL", name="Apple", action="BUY",
+                quantity=10, price=100.0, reasoning="Buy lot 1",
+            ),
+            Trade(
+                timestamp=base_date + timedelta(days=1),
+                ticker="AAPL", name="Apple", action="BUY",
+                quantity=10, price=120.0, reasoning="Buy lot 2",
+            ),
+            Trade(
+                timestamp=base_date + timedelta(days=2),
+                ticker="AAPL", name="Apple", action="SELL",
+                quantity=20, price=110.0, reasoning="Sell both lots",
+            ),
+        ]
+        # Current implementation (per-SELL) would say:
+        # avg_cost = (10*100 + 10*120)/20 = 110.
+        # sell_price 110 is NOT > 110, so win rate 0%?
+        # Or if it was 111, it would be 100% win rate.
+        #
+        # New implementation (per-tax-lot) should say:
+        # Lot 1: bought 100, sold 110 -> Winner
+        # Lot 2: bought 120, sold 110 -> Loser
+        # Win rate: 1/2 = 50%
+
+        # Let's adjust prices to make it clear:
+        trades[2].price = 111.0
+        # Lot 1: 111 > 100 (Win)
+        # Lot 2: 111 < 120 (Loss)
+        # Win rate should be 50%
+
+        # Also test profit factor:
+        # Winners: (111 - 100) * 10 = 110
+        # Losers: |(111 - 120) * 10| = |-90| = 90
+        # Profit factor = 110 / 90 = 1.222...
+
+        # We need to update calculate_metrics to return profit_factor_pct
+        state = PortfolioState(
+            cash=10000.0,
+            trades=trades,
+            holdings=[],
+            initial_investment=10000.0,
+        )
+        with patch.object(comparison_service.portfolio_service, 'load_portfolio') as mock_load:
+            mock_load.return_value = (sample_config, state)
+            metrics = comparison_service.calculate_metrics("test")
+
+        assert metrics.win_rate_pct == 50.0
+        assert metrics.profit_factor_pct == pytest.approx(1.222, abs=0.001)
 
 
 class TestMaxDrawdownCalculation:
@@ -287,7 +672,7 @@ class TestGetNormalizedReturns:
         )
         mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
         mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
-            "date": pd.date_range(start=datetime.now() - timedelta(days=30), periods=30, freq="D"),
+            "date": pd.date_range(tz="UTC", start=datetime.now(timezone.utc) - timedelta(days=30), periods=30, freq="D"),
             "price": [400.0 + i for i in range(30)],
             "cumulative_return": [i * 0.1 for i in range(30)],
         })
@@ -315,7 +700,7 @@ class TestGetComparisonTable:
         )
         mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
         mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
-            "date": [datetime.now() - timedelta(days=30), datetime.now()],
+            "date": [datetime.now(timezone.utc) - timedelta(days=30), datetime.now(timezone.utc)],
             "price": [400.0, 420.0],
             "cumulative_return": [0.0, 5.0],
         })
@@ -327,6 +712,113 @@ class TestGetComparisonTable:
         assert "Sharpe Ratio" in result.index
         assert "Max Drawdown" in result.index
         assert "Win Rate" in result.index
+
+    def test_benchmark_row_matches_calculate_metrics_on_synthetic_tracker(
+        self,
+        comparison_service,
+        mock_portfolio_service,
+        mock_stock_data_service,
+        sample_config,
+    ):
+        """Benchmark row numbers must match calculate_metrics run on a synthetic
+        portfolio whose value series equals the benchmark price series."""
+        dates = pd.bdate_range(tz="UTC", end=pd.Timestamp(datetime.now(timezone.utc)).normalize(), periods=60)
+        first_trade_date = dates[0].to_pydatetime()
+        benchmark_returns = np.tile(
+            np.array([0.0030, -0.0015, 0.0045, -0.0020, 0.0010]),
+            12,
+        )[:59]
+        benchmark_prices = build_price_series(100.0, benchmark_returns.tolist())
+        trade = Trade(
+            timestamp=first_trade_date,
+            ticker="AAPL",
+            name="Apple Inc.",
+            action="BUY",
+            quantity=1,
+            price=100.0,
+            reasoning="Track benchmark",
+        )
+        state = PortfolioState(
+            cash=0.0,
+            trades=[trade],
+            holdings=[Holding(ticker="AAPL", name="Apple Inc.", quantity=1, avg_price=100.0)],
+            initial_investment=100.0,
+        )
+        mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
+        benchmark_df = pd.DataFrame({
+            "date": dates,
+            "price": benchmark_prices,
+            "cumulative_return": [
+                ((price / benchmark_prices[0]) - 1) * 100 for price in benchmark_prices
+            ],
+        })
+        mock_stock_data_service.get_benchmark_performance.return_value = benchmark_df
+        # Pin the portfolio's value series to the benchmark price series so that
+        # calculate_metrics on this portfolio must produce the same numbers as
+        # the benchmark row.
+        comparison_service._build_portfolio_value_series = MagicMock(
+            return_value=pd.DataFrame({"date": dates, "value": benchmark_prices})
+        )
+
+        expected = comparison_service.calculate_metrics("test", "SPY")
+        result = comparison_service.get_comparison_table(["test"], benchmark_symbol="SPY")
+
+        benchmark_col = result["SPY"]
+
+        # Volatility, Sharpe, max drawdown, annualized return must match the
+        # synthetic tracker portfolio's metrics and never be the old hardcoded
+        # placeholders.
+        assert benchmark_col["Volatility"] == f"{expected.volatility_pct:.1f}%"
+        assert benchmark_col["Volatility"] != "~15%"
+        assert benchmark_col["Sharpe Ratio"] == f"{expected.sharpe_ratio:.2f}"
+        assert benchmark_col["Sharpe Ratio"] != "N/A"
+        assert benchmark_col["Max Drawdown"] == f"-{expected.max_drawdown_pct:.1f}%"
+        assert benchmark_col["Max Drawdown"] != "N/A"
+        assert benchmark_col["Annualized Return"] == (
+            f"{expected.annualized_return_pct:+.1f}%"
+        )
+        assert benchmark_col["Days Active"] == str(expected.days_active)
+        assert benchmark_col["Days Active"] != "365"
+
+        window = result.attrs["benchmark_window"]
+        assert window["symbol"] == "SPY"
+        assert window["start"] == first_trade_date
+        assert window["days"] == expected.days_active
+
+    def test_labels_fallback_alpha_as_excess_return(
+        self, comparison_service, mock_portfolio_service, mock_stock_data_service, sample_config
+    ):
+        """Fallback alpha should be labeled as Excess Return when beta is unavailable."""
+        state = PortfolioState(
+            cash=10000.0,
+            trades=[],
+            holdings=[],
+        )
+        mock_portfolio_service.load_portfolio.return_value = (sample_config, state)
+        comparison_service.calculate_metrics = MagicMock(return_value=PortfolioMetrics(
+            total_return_pct=10.0,
+            annualized_return_pct=10.0,
+            volatility_pct=12.0,
+            sharpe_ratio=0.5,
+            max_drawdown_pct=2.0,
+            win_rate_pct=50.0,
+            profit_factor_pct=1.5,
+            alpha_pct=10.0,
+            beta=None,
+            days_active=365,
+            num_trades=1,
+        ))
+        mock_stock_data_service.get_benchmark_performance.return_value = pd.DataFrame({
+            "date": [datetime.now(timezone.utc) - timedelta(days=365), datetime.now(timezone.utc)],
+            "price": [100.0, 110.0],
+            "cumulative_return": [0.0, 10.0],
+        })
+
+        result = comparison_service.get_comparison_table(["test"])
+
+        assert "Excess Return" in result.index
+        assert "Alpha" not in result.index
+        assert result.loc["Excess Return", "test"] == "+10.0%"
 
 
 class TestPortfolioMetricsDataclass:
@@ -341,6 +833,7 @@ class TestPortfolioMetricsDataclass:
             sharpe_ratio=0.85,
             max_drawdown_pct=10.2,
             win_rate_pct=65.0,
+            profit_factor_pct=2.1,
             alpha_pct=3.5,
             beta=1.1,
             days_active=180,
@@ -353,6 +846,7 @@ class TestPortfolioMetricsDataclass:
         assert metrics.sharpe_ratio == 0.85
         assert metrics.max_drawdown_pct == 10.2
         assert metrics.win_rate_pct == 65.0
+        assert metrics.profit_factor_pct == 2.1
         assert metrics.alpha_pct == 3.5
         assert metrics.beta == 1.1
         assert metrics.days_active == 180
@@ -367,6 +861,7 @@ class TestPortfolioMetricsDataclass:
             sharpe_ratio=None,
             max_drawdown_pct=0.0,
             win_rate_pct=None,
+            profit_factor_pct=None,
             alpha_pct=None,
             beta=None,
             days_active=0,
@@ -376,6 +871,7 @@ class TestPortfolioMetricsDataclass:
         assert metrics.annualized_return_pct is None
         assert metrics.sharpe_ratio is None
         assert metrics.win_rate_pct is None
+        assert metrics.profit_factor_pct is None
 
 
 class TestDefaultBenchmark:

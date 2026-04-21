@@ -2,7 +2,7 @@
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 _project_root = Path(__file__).parent.parent.parent.parent
@@ -116,7 +116,7 @@ class ExecutionLogService:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    datetime.now().isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                     portfolio_name,
                     agent_mode,
                     model,
@@ -269,9 +269,7 @@ class ExecutionLogService:
 
     def get_summary_stats(self, days: int = 30) -> dict:
         """Get summary statistics for the last N days."""
-        from datetime import timedelta
-
-        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
         with sqlite3.connect(_db_path) as conn:
             # Total executions
@@ -364,9 +362,7 @@ class ExecutionLogService:
 
     def get_daily_stats(self, days: int = 14) -> list[dict]:
         """Get daily aggregated stats for charting."""
-        from datetime import timedelta
-
-        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
         with sqlite3.connect(_db_path) as conn:
             cursor = conn.execute(

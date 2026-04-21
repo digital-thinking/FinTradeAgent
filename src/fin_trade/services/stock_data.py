@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -105,15 +105,15 @@ class StockDataService:
         """Check if the cache file is still valid (default: 24 hours)."""
         if not cache_path.exists():
             return False
-        mtime = datetime.fromtimestamp(cache_path.stat().st_mtime)
-        return datetime.now() - mtime < timedelta(hours=max_age_hours)
+        mtime = datetime.fromtimestamp(cache_path.stat().st_mtime, tz=timezone.utc)
+        return datetime.now(timezone.utc) - mtime < timedelta(hours=max_age_hours)
 
     def update_data(self, ticker: str, period: str = "1y") -> pd.DataFrame:
         """Fetch and cache latest price data for a ticker."""
         ticker = ticker.upper()
         try:
             stock = yf.Ticker(ticker)
-            df = stock.history(period=period)
+            df = stock.history(period=period, auto_adjust=True)
             if df.empty:
                 raise ValueError(f"No data found for {ticker}")
 
@@ -133,6 +133,18 @@ class StockDataService:
     def force_update(self, ticker: str) -> pd.DataFrame:
         """Force refresh price data for a ticker (use when executing trades)."""
         return self.update_data(ticker)
+
+    def _period_for_days(self, days: int) -> str:
+        """Map a requested day count to a yfinance history period."""
+        if days <= 365:
+            return "1y"
+        if days <= 730:
+            return "2y"
+        if days <= 1825:
+            return "5y"
+        if days <= 3650:
+            return "10y"
+        return "max"
 
     def get_history(self, ticker: str, days: int = 365) -> pd.DataFrame:
         """Get price history for a ticker."""
@@ -159,7 +171,7 @@ class StockDataService:
                 self._cache[ticker] = df
             else:
                 try:
-                    df = self.update_data(ticker)
+                    df = self.update_data(ticker, period=self._period_for_days(days))
                 except Exception:
                     # Fall back to stale cached data if available
                     if cache_path.exists():
@@ -175,7 +187,10 @@ class StockDataService:
             df.index = df.index.tz_localize(None)
 
         if days > 0:
-            cutoff = datetime.now() - timedelta(days=days)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            # Ensure cutoff is naive for comparison if index was stripped
+            if hasattr(df.index, 'tz') and df.index.tz is None:
+                cutoff = cutoff.replace(tzinfo=None)
             df = df[df.index >= cutoff]
         return df
 
@@ -189,6 +204,59 @@ class StockDataService:
         if close.empty:
             raise ValueError(f"No valid close price for {ticker}")
         return float(close.iloc[-1])
+
+    def get_closes(
+        self,
+        tickers: list[str],
+        start: datetime,
+        end: datetime,
+    ) -> pd.DataFrame:
+        """Get aligned adjusted daily closes for tickers over a date range."""
+        start_date = pd.Timestamp(start).normalize()
+        end_date = pd.Timestamp(end).normalize()
+        if end_date < start_date:
+            raise ValueError("end must be on or after start")
+
+        normalized_tickers = list(dict.fromkeys(ticker.upper() for ticker in tickers))
+        date_index = pd.date_range(start=start_date, end=end_date, freq="D")
+        if not normalized_tickers:
+            return pd.DataFrame(index=date_index)
+
+        history_start = start_date - pd.Timedelta(days=7)
+        history_index = pd.date_range(start=history_start, end=end_date, freq="D")
+        
+        now = datetime.now(timezone.utc)
+        hist_start_dt = history_start.to_pydatetime()
+        if hist_start_dt.tzinfo is None:
+            now = now.replace(tzinfo=None)
+            
+        days_needed = max((now - hist_start_dt).days + 1, 1)
+
+        close_series = {}
+        for ticker in normalized_tickers:
+            df = self.get_history(ticker, days=days_needed)
+            if df.empty:
+                raise ValueError(f"No price data available for {ticker}")
+
+            close_column = "Adj Close" if "Adj Close" in df.columns else "Close"
+            if close_column not in df.columns:
+                raise ValueError(f"No close price data available for {ticker}")
+
+            closes = df[close_column].dropna().copy()
+            if closes.empty:
+                raise ValueError(f"No valid close price data for {ticker}")
+
+            closes.index = pd.to_datetime(closes.index).normalize()
+            closes = closes.groupby(level=0).last()
+            closes = closes[(closes.index >= history_start) & (closes.index <= end_date)]
+            closes = closes.reindex(history_index).ffill().reindex(date_index)
+
+            if closes.isna().any():
+                raise ValueError(f"No close price data for {ticker} at start of range")
+
+            close_series[ticker] = closes.astype(float)
+
+        return pd.DataFrame(close_series, index=date_index)
 
     def get_cached_price(self, ticker: str) -> float | None:
         """Return the last cached close price without ever fetching from yfinance.
@@ -206,7 +274,7 @@ class StockDataService:
         return float(close.iloc[-1])
 
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float | None:
-        """Calculate RSI (Relative Strength Index)."""
+        """Calculate RSI using Wilder's smoothing (1978)."""
         if len(prices) < period + 1:
             return None
 
@@ -214,8 +282,8 @@ class StockDataService:
         gain = delta.where(delta > 0, 0.0)
         loss = (-delta).where(delta < 0, 0.0)
 
-        avg_gain = gain.rolling(window=period).mean()
-        avg_loss = loss.rolling(window=period).mean()
+        avg_gain = gain.ewm(alpha=1 / period, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1 / period, adjust=False).mean()
 
         if avg_loss.iloc[-1] == 0:
             return 100.0
@@ -230,7 +298,12 @@ class StockDataService:
         if len(df) < 2:
             return None
 
-        cutoff = datetime.now() - timedelta(days=days)
+        now = datetime.now(timezone.utc)
+        # Ensure 'now' is naive if the index was stripped
+        if hasattr(df.index, 'tz') and df.index.tz is None:
+            now = now.replace(tzinfo=None)
+
+        cutoff = now - timedelta(days=days)
         recent = df[df.index >= cutoff]
 
         if len(recent) < 2:
@@ -306,10 +379,16 @@ class StockDataService:
         change_5d = self._calculate_change_pct(df, 5)
         change_30d = self._calculate_change_pct(df, 30)
 
-        # Calculate 52-week high/low from history if not from stored data
+        # Calculate 52-week high/low from history if not from stored data.
+        # Always fetch a 400-day buffered window (≥252 trading days after
+        # weekends/holidays), independent of `days_needed` above — otherwise
+        # a 30-day slice could be mislabeled as a 52w range.
         if high_52w is None or low_52w is None:
-            high_52w = float(df["High"].max()) if "High" in df.columns else None
-            low_52w = float(df["Low"].min()) if "Low" in df.columns else None
+            range_df = self.get_history(ticker, days=400)
+            if not range_df.empty and "High" in range_df.columns:
+                high_52w = float(range_df["High"].max())
+            if not range_df.empty and "Low" in range_df.columns:
+                low_52w = float(range_df["Low"].min())
 
         pct_from_high = None
         pct_from_low = None
@@ -457,7 +536,7 @@ class StockDataService:
         """
         # Default to 1 year of data
         if end_date is None:
-            end_date = datetime.now()
+            end_date = datetime.now(timezone.utc)
         if start_date is None:
             start_date = end_date - timedelta(days=365)
 
@@ -474,7 +553,7 @@ class StockDataService:
         if df.empty:
             raise ValueError(f"No benchmark data in date range for {symbol}")
 
-        # Calculate cumulative return from start
+        # update_data() caches auto-adjusted history, so Close is split/dividend adjusted here.
         start_price = df["Close"].iloc[0]
         df = df.copy()
         df["cumulative_return"] = ((df["Close"] / start_price) - 1) * 100
@@ -488,4 +567,3 @@ class StockDataService:
         result = result.reset_index(drop=True)
 
         return result
-

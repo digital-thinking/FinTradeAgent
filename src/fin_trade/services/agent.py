@@ -1,7 +1,7 @@
 """Agent service for LLM-powered trading recommendations."""
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -56,10 +56,10 @@ class AgentService:
         model: str,
     ) -> None:
         """Save prompt and response to log file for debugging."""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         log_file = _logs_dir / f"{portfolio_name}_{timestamp}.md"
 
-        log_content = f"""# Agent Log - {datetime.now().isoformat()}
+        log_content = f"""# Agent Log - {datetime.now(timezone.utc).isoformat()}
 
 **Portfolio:** {portfolio_name}
 **Provider:** {provider}

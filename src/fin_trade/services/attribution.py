@@ -18,7 +18,7 @@ class HoldingAttribution:
     name: str
     sector: str | None
     industry: str | None
-    quantity: int
+    quantity: float
     avg_price: float
     current_price: float
     cost_basis: float
@@ -118,16 +118,20 @@ class AttributionService:
         total_gain = total_current_value - total_cost_basis
         total_gain_pct = (total_gain / total_cost_basis) * 100 if total_cost_basis > 0 else 0.0
 
-        # Update contribution percentages
+        # Use the gross sum of absolute gains so a near-zero net total can't
+        # blow contribution percentages up past ±100%. Signs are preserved so
+        # contributors are positive and detractors negative.
+        gross_abs_gain = sum(abs(a.unrealized_gain) for a in holding_attributions)
+
         for attr in holding_attributions:
-            if total_gain != 0:
-                attr.contribution_pct = (attr.unrealized_gain / total_gain) * 100
+            if gross_abs_gain > 0:
+                attr.contribution_pct = (attr.unrealized_gain / gross_abs_gain) * 100
             else:
                 attr.contribution_pct = 0.0
 
         # Calculate sector attribution
         sector_attributions = self._calculate_sector_attribution(
-            holding_attributions, total_current_value, total_gain
+            holding_attributions, total_current_value, gross_abs_gain
         )
 
         # Find top contributor and detractor
@@ -150,7 +154,7 @@ class AttributionService:
         self,
         holding_attributions: list[HoldingAttribution],
         total_current_value: float,
-        total_gain: float,
+        gross_abs_gain: float,
     ) -> list[SectorAttribution]:
         """Aggregate holdings by sector."""
         sector_data: dict[str, dict] = {}
@@ -185,7 +189,9 @@ class AttributionService:
                 else 0.0
             )
             contribution_pct = (
-                (data["total_gain"] / total_gain) * 100 if total_gain != 0 else 0.0
+                (data["total_gain"] / gross_abs_gain) * 100
+                if gross_abs_gain > 0
+                else 0.0
             )
 
             sector_attributions.append(

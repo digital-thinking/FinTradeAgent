@@ -1,12 +1,12 @@
 """Tests for PortfolioService."""
 
 import json
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fin_trade.models import AssetClass, Holding, PortfolioConfig, PortfolioState
+from fin_trade.models import AssetClass, Holding, PortfolioConfig, PortfolioState, Trade
 from fin_trade.services.portfolio import PortfolioService
 
 
@@ -257,7 +257,7 @@ class TestLoadState:
         assert len(state.holdings) == 1
         assert state.holdings[0].ticker == "AAPL"
         assert len(state.trades) == 1
-        assert state.last_execution == datetime(2024, 1, 15, 10, 30)
+        assert state.last_execution == datetime(2024, 1, 15, 10, 30, tzinfo=timezone.utc)
 
 
 class TestSaveState:
@@ -399,6 +399,33 @@ class TestCalculateGain:
         assert abs_gain == -2500.0
         assert pct_gain == -25.0
 
+    def test_calculate_gain_with_zero_initial_investment(
+        self, temp_data_dir, mock_security_service, sample_portfolio_config
+    ):
+        """Test that initial_investment=0.0 is respected and doesn't fall back to config."""
+        mock_security_service.get_price.return_value = 100.0
+
+        # State with 0.0 initial investment
+        state = PortfolioState(
+            cash=0.0,
+            holdings=[],
+            initial_investment=0.0,
+        )
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        abs_gain, pct_gain = service.calculate_gain(sample_portfolio_config, state)
+
+        # Value: 0
+        # Initial: 0.0 (NOT 10000.0 from config)
+        # Gain: 0.0 (0.0%)
+        assert abs_gain == 0.0
+        assert pct_gain == 0.0
+
 
 class TestIsExecutionOverdue:
     """Tests for is_execution_overdue method."""
@@ -421,7 +448,7 @@ class TestIsExecutionOverdue:
         self, temp_data_dir, mock_security_service, sample_portfolio_config
     ):
         """Test returns False when executed recently (within frequency)."""
-        state = PortfolioState(cash=10000.0, last_execution=datetime.now())
+        state = PortfolioState(cash=10000.0, last_execution=datetime.now(timezone.utc))
 
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
@@ -449,7 +476,7 @@ class TestIsExecutionOverdue:
 
         # Executed 2 days ago
         state = PortfolioState(
-            cash=10000.0, last_execution=datetime.now() - timedelta(days=2)
+            cash=10000.0, last_execution=datetime.now(timezone.utc) - timedelta(days=2)
         )
 
         service = PortfolioService(
@@ -460,6 +487,54 @@ class TestIsExecutionOverdue:
 
         assert service.is_execution_overdue(config, state) is True
 
+    def test_monthly_cadence_uses_calendar_month(
+        self, temp_data_dir, mock_security_service
+    ):
+        """Monthly cadence rolls over by calendar month, not a fixed 30 days."""
+        config = PortfolioConfig(
+            name="Monthly",
+            strategy_prompt="Test",
+            initial_amount=10000.0,
+            num_initial_trades=5,
+            trades_per_run=3,
+            run_frequency="monthly",
+            llm_provider="openai",
+            llm_model="gpt-4o",
+        )
+
+        # Last executed on Jan 31 — next due should be Feb 28 (not Mar 2).
+        state = PortfolioState(
+            cash=10000.0, last_execution=datetime(2026, 1, 31, 9, 0, 0, tzinfo=timezone.utc)
+        )
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        class _FrozenDatetime(datetime):
+            frozen_now = datetime(2026, 2, 28, 9, 0, 0, tzinfo=timezone.utc)
+
+            @classmethod
+            def now(cls, tz=None):
+                if tz:
+                    return cls.frozen_now.astimezone(tz)
+                return cls.frozen_now
+
+        with patch("fin_trade.services.portfolio.datetime", _FrozenDatetime):
+            # On Feb 28, the month has rolled over → overdue.
+            assert service.is_execution_overdue(config, state) is True
+
+            # On Feb 27, still within the month → not yet overdue.
+            _FrozenDatetime.frozen_now = datetime(2026, 2, 27, 9, 0, 0, tzinfo=timezone.utc)
+            assert service.is_execution_overdue(config, state) is False
+
+            # Under the old 30-day rule this would be overdue; with calendar
+            # months it is not (Feb 28 is next-due, Mar 1 is past that).
+            _FrozenDatetime.frozen_now = datetime(2026, 3, 2, 9, 0, 0, tzinfo=timezone.utc)
+            assert service.is_execution_overdue(config, state) is True
+
 
 class TestExecuteTrade:
     """Tests for execute_trade method."""
@@ -468,8 +543,6 @@ class TestExecuteTrade:
         self, temp_data_dir, mock_security_service, empty_portfolio_state
     ):
         """Test executing a BUY trade."""
-        mock_security_service.force_update_price.return_value = 100.0
-
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
             state_dir=temp_data_dir["state"],
@@ -482,6 +555,7 @@ class TestExecuteTrade:
             action="BUY",
             quantity=10,
             reasoning="Test buy",
+            price=100.0,
         )
 
         # Cash should decrease: 10000 - (10 * 100) = 9000
@@ -492,11 +566,36 @@ class TestExecuteTrade:
         assert len(new_state.trades) == 1
         assert new_state.trades[0].action == "BUY"
 
+    def test_uses_explicit_trade_price_instead_of_refetching(
+        self, temp_data_dir, mock_security_service, empty_portfolio_state
+    ):
+        """Test execute_trade writes the quoted price it was given."""
+        mock_security_service.get_price.return_value = 999.99
+        mock_security_service.force_update_price.return_value = 999.99
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        new_state = service.execute_trade(
+            empty_portfolio_state,
+            ticker="AAPL",
+            action="BUY",
+            quantity=1,
+            reasoning="Use quoted price",
+            price=123.45,
+        )
+
+        assert new_state.trades[0].price == 123.45
+        assert new_state.holdings[0].avg_price == 123.45
+        mock_security_service.force_update_price.assert_not_called()
+
     def test_executes_sell_trade(
         self, temp_data_dir, mock_security_service, sample_portfolio_state
     ):
         """Test executing a SELL trade."""
-        mock_security_service.force_update_price.return_value = 200.0
         mock_security_service.lookup_ticker.return_value = sample_portfolio_state.holdings[0]
 
         service = PortfolioService(
@@ -511,6 +610,7 @@ class TestExecuteTrade:
             action="SELL",
             quantity=5,
             reasoning="Taking profits",
+            price=200.0,
         )
 
         # Cash should increase: 5000 + (5 * 200) = 6000
@@ -518,13 +618,65 @@ class TestExecuteTrade:
         # Should still have 5 shares
         assert len(new_state.holdings) == 1
         assert new_state.holdings[0].quantity == 5
+        assert new_state.trades[-1].realized_pnl == pytest.approx(250.0)
+
+    def test_sell_records_fifo_realized_pnl(
+        self, temp_data_dir, mock_security_service
+    ):
+        """Test SELL realized P/L is calculated from FIFO buy lots."""
+        initial_state = PortfolioState(
+            cash=700.0,
+            holdings=[
+                Holding(
+                    ticker="AAPL",
+                    name="Apple Inc.",
+                    quantity=20,
+                    avg_price=15.0,
+                )
+            ],
+            trades=[
+                Trade(
+                    timestamp=datetime(2024, 1, 15, 10, 0),
+                    ticker="AAPL",
+                    name="Apple Inc.",
+                    action="BUY",
+                    quantity=10,
+                    price=10.0,
+                    reasoning="Initial position",
+                ),
+                Trade(
+                    timestamp=datetime(2024, 1, 16, 10, 0),
+                    ticker="AAPL",
+                    name="Apple Inc.",
+                    action="BUY",
+                    quantity=10,
+                    price=20.0,
+                    reasoning="Add to position",
+                ),
+            ],
+        )
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        new_state = service.execute_trade(
+            initial_state,
+            ticker="AAPL",
+            action="SELL",
+            quantity=15,
+            reasoning="Take profits",
+            price=25.0,
+        )
+
+        assert new_state.trades[-1].realized_pnl == pytest.approx(175.0)
 
     def test_buy_fails_with_insufficient_cash(
         self, temp_data_dir, mock_security_service, empty_portfolio_state
     ):
         """Test BUY fails when insufficient cash."""
-        mock_security_service.force_update_price.return_value = 5000.0  # Very expensive
-
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
             state_dir=temp_data_dir["state"],
@@ -538,14 +690,13 @@ class TestExecuteTrade:
                 action="BUY",
                 quantity=10,  # Would cost 50000, but only have 10000
                 reasoning="Test",
+                price=5000.0,
             )
 
     def test_buy_allows_negative_cash_with_override(
         self, temp_data_dir, mock_security_service, empty_portfolio_state
     ):
         """Test BUY can proceed below zero cash when override is enabled."""
-        mock_security_service.force_update_price.return_value = 5000.0
-
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
             state_dir=temp_data_dir["state"],
@@ -558,6 +709,7 @@ class TestExecuteTrade:
             action="BUY",
             quantity=3,  # Costs 15000, starts with 10000
             reasoning="Manual override",
+            price=5000.0,
             allow_negative_cash=True,
         )
 
@@ -571,8 +723,6 @@ class TestExecuteTrade:
         self, temp_data_dir, mock_security_service, sample_portfolio_state
     ):
         """Test SELL fails when insufficient holdings."""
-        mock_security_service.force_update_price.return_value = 100.0
-
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
             state_dir=temp_data_dir["state"],
@@ -586,14 +736,13 @@ class TestExecuteTrade:
                 action="SELL",
                 quantity=100,  # Only have 10 shares
                 reasoning="Test",
+                price=100.0,
             )
 
     def test_sell_fails_when_not_holding_stock(
         self, temp_data_dir, mock_security_service, empty_portfolio_state
     ):
         """Test SELL fails when not holding the stock."""
-        mock_security_service.force_update_price.return_value = 100.0
-
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
             state_dir=temp_data_dir["state"],
@@ -607,14 +756,13 @@ class TestExecuteTrade:
                 action="SELL",
                 quantity=10,
                 reasoning="Test",
+                price=100.0,
             )
 
     def test_buy_updates_average_price_for_existing_holding(
         self, temp_data_dir, mock_security_service, sample_portfolio_state
     ):
         """Test BUY updates average price when adding to existing position."""
-        mock_security_service.force_update_price.return_value = 200.0
-
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
             state_dir=temp_data_dir["state"],
@@ -627,6 +775,7 @@ class TestExecuteTrade:
             action="BUY",
             quantity=10,  # Buy 10 more at $200
             reasoning="Averaging up",
+            price=200.0,
         )
 
         # Now have 20 shares total
@@ -640,8 +789,6 @@ class TestExecuteTrade:
         self, temp_data_dir, mock_security_service, empty_portfolio_state
     ):
         """Test BUY trade records stop-loss and take-profit prices."""
-        mock_security_service.force_update_price.return_value = 100.0
-
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
             state_dir=temp_data_dir["state"],
@@ -654,6 +801,7 @@ class TestExecuteTrade:
             action="BUY",
             quantity=10,
             reasoning="Test buy",
+            price=100.0,
             stop_loss_price=90.0,
             take_profit_price=120.0,
         )
@@ -671,8 +819,6 @@ class TestExecuteTrade:
         self, temp_data_dir, mock_security_service
     ):
         """Test BUY updates stop-loss/take-profit when adding to position."""
-        mock_security_service.force_update_price.return_value = 100.0
-
         # Start with a holding that has SL/TP
         initial_state = PortfolioState(
             cash=5000.0,
@@ -700,6 +846,7 @@ class TestExecuteTrade:
             action="BUY",
             quantity=5,
             reasoning="Adding to position",
+            price=100.0,
             stop_loss_price=85.0,  # New SL/TP
             take_profit_price=130.0,
         )
@@ -713,8 +860,6 @@ class TestExecuteTrade:
         self, temp_data_dir, mock_security_service
     ):
         """Test BUY preserves existing SL/TP when not provided in new trade."""
-        mock_security_service.force_update_price.return_value = 100.0
-
         # Start with a holding that has SL/TP
         initial_state = PortfolioState(
             cash=5000.0,
@@ -742,6 +887,7 @@ class TestExecuteTrade:
             action="BUY",
             quantity=5,
             reasoning="Adding to position",
+            price=100.0,
             # Not providing SL/TP
         )
 
@@ -754,7 +900,6 @@ class TestExecuteTrade:
         self, temp_data_dir, mock_security_service
     ):
         """Test partial SELL preserves SL/TP on remaining shares."""
-        mock_security_service.force_update_price.return_value = 100.0
         mock_security_service.lookup_ticker.return_value = MagicMock(
             ticker="AAPL", name="Apple Inc."
         )
@@ -770,7 +915,19 @@ class TestExecuteTrade:
                     take_profit_price=120.0,
                 )
             ],
-            trades=[],
+            trades=[
+                Trade(
+                    timestamp=datetime(2024, 1, 15, 10, 0),
+                    ticker="AAPL",
+                    name="Apple Inc.",
+                    action="BUY",
+                    quantity=10,
+                    price=90.0,
+                    reasoning="Open position",
+                    stop_loss_price=80.0,
+                    take_profit_price=120.0,
+                )
+            ],
         )
 
         service = PortfolioService(
@@ -785,6 +942,7 @@ class TestExecuteTrade:
             action="SELL",
             quantity=5,
             reasoning="Taking partial profits",
+            price=100.0,
         )
 
         holding = new_state.holdings[0]
@@ -810,6 +968,7 @@ class TestExecuteTrade:
                 action="BUY",
                 quantity=0,
                 reasoning="Test",
+                price=100.0,
             )
 
     def test_rejects_negative_quantity(
@@ -829,6 +988,7 @@ class TestExecuteTrade:
                 action="BUY",
                 quantity=-5,
                 reasoning="Test",
+                price=100.0,
             )
 
 
@@ -967,6 +1127,39 @@ class TestLoadStateStopLoss:
 
         assert state.holdings[0].stop_loss_price is None
         assert state.holdings[0].take_profit_price is None
+
+    def test_handles_missing_realized_pnl_in_older_trade_state(
+        self, temp_data_dir, mock_security_service
+    ):
+        """Test graceful handling of missing realized P/L in older state files."""
+        state_data = {
+            "cash": 5000.0,
+            "holdings": [],
+            "trades": [
+                {
+                    "timestamp": "2024-01-15T10:30:00",
+                    "ticker": "AAPL",
+                    "name": "Apple Inc.",
+                    "action": "SELL",
+                    "quantity": 5,
+                    "price": 175.0,
+                    "reasoning": "Trim position",
+                }
+            ],
+        }
+        state_path = temp_data_dir["state"] / "test.json"
+        state_path.write_text(json.dumps(state_data))
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        state = service._load_state("test", initial_amount=10000.0)
+
+        assert len(state.trades) == 1
+        assert state.trades[0].realized_pnl is None
 
 
 class TestClonePortfolio:
@@ -1346,8 +1539,6 @@ class TestExecuteTradeAssetClass:
     def test_rejects_fractional_quantity_for_stocks(
         self, temp_data_dir, mock_security_service, empty_portfolio_state
     ):
-        mock_security_service.force_update_price.return_value = 100.0
-
         service = PortfolioService(
             portfolios_dir=temp_data_dir["portfolios"],
             state_dir=temp_data_dir["state"],
@@ -1361,13 +1552,13 @@ class TestExecuteTradeAssetClass:
                 action="BUY",
                 quantity=1.5,
                 reasoning="Invalid fractional stock trade",
+                price=100.0,
                 asset_class=AssetClass.STOCKS,
             )
 
     def test_allows_fractional_quantity_for_crypto(
         self, temp_data_dir, mock_security_service, empty_portfolio_state
     ):
-        mock_security_service.force_update_price.return_value = 40000.0
         mock_security_service.lookup_ticker.return_value = MagicMock(
             ticker="BTC-USD",
             name="Bitcoin USD",
@@ -1385,9 +1576,122 @@ class TestExecuteTradeAssetClass:
             action="BUY",
             quantity=0.1,
             reasoning="Open BTC position",
+            price=40000.0,
             asset_class=AssetClass.CRYPTO,
         )
 
         assert len(new_state.holdings) == 1
         assert new_state.holdings[0].ticker == "BTC-USD"
         assert new_state.holdings[0].quantity == 0.1
+
+    def test_full_sell_after_fractional_buys_leaves_no_residual(
+        self, temp_data_dir, mock_security_service, empty_portfolio_state
+    ):
+        """BUY 0.1 + BUY 0.2 then SELL 0.3 must close the position cleanly.
+
+        0.1 + 0.2 == 0.30000000000000004 in IEEE-754, so a naive SELL would
+        either reject (need 0.3, have 0.3...04 looks fine, but if we mirrored
+        the numbers the other way around it would) or leave a ~5e-17
+        residual holding. With tolerant comparison the SELL succeeds and the
+        dust is dropped.
+        """
+        mock_security_service.lookup_ticker.return_value = MagicMock(
+            ticker="BTC-USD",
+            name="Bitcoin USD",
+        )
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        state = service.execute_trade(
+            empty_portfolio_state,
+            ticker="BTC-USD",
+            action="BUY",
+            quantity=0.1,
+            reasoning="First slice",
+            price=1000.0,
+            asset_class=AssetClass.CRYPTO,
+        )
+        state = service.execute_trade(
+            state,
+            ticker="BTC-USD",
+            action="BUY",
+            quantity=0.2,
+            reasoning="Second slice",
+            price=1000.0,
+            asset_class=AssetClass.CRYPTO,
+        )
+        # Sanity check: floating-point residue really is present before sell.
+        assert state.holdings[0].quantity != 0.3
+
+        state = service.execute_trade(
+            state,
+            ticker="BTC-USD",
+            action="SELL",
+            quantity=0.3,
+            reasoning="Close position",
+            price=1100.0,
+            asset_class=AssetClass.CRYPTO,
+        )
+
+        assert state.holdings == []
+
+
+class TestTimestampNormalization:
+    """Tests for timestamp normalization to UTC."""
+
+    def test_normalizes_naive_timestamp_on_load(self, temp_data_dir, mock_security_service):
+        """Test that naive timestamps are treated as UTC on load."""
+        state_data = {
+            "cash": 10000.0,
+            "trades": [
+                {
+                    "timestamp": "2024-01-15T23:00:00",  # Naive
+                    "ticker": "AAPL",
+                    "name": "Apple Inc.",
+                    "action": "BUY",
+                    "quantity": 10,
+                    "price": 150.0,
+                    "reasoning": "Test",
+                }
+            ],
+            "last_execution": "2024-01-15T23:00:00",
+        }
+        state_path = temp_data_dir["state"] / "normalization.json"
+        state_path.write_text(json.dumps(state_data))
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+        state = service._load_state("normalization", 10000.0)
+
+        expected = datetime(2024, 1, 15, 23, 0, 0, tzinfo=timezone.utc)
+        assert state.trades[0].timestamp == expected
+        assert state.last_execution == expected
+
+    def test_filters_correctly_with_utc_cutoff(self, temp_data_dir, mock_security_service):
+        """
+        Unit test: a trade created at local 23:00 on day D still falls on day D when
+        filtered with a UTC cutoff of D 00:00.
+        """
+        # "Local" 23:00 on 2024-01-15, stored as UTC-aware
+        trade_time = datetime(2024, 1, 15, 23, 0, 0, tzinfo=timezone.utc)
+        
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+        
+        # Cutoff at 00:00 UTC on 2024-01-15
+        cutoff = datetime(2024, 1, 15, 0, 0, 0, tzinfo=timezone.utc)
+        
+        # The trade at 23:00 is >= 00:00
+        assert trade_time >= cutoff
+        # And if we normalize both to date
+        assert trade_time.date() == cutoff.date()

@@ -1,7 +1,7 @@
 """Portfolio detail page."""
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 import plotly.graph_objects as go
@@ -93,35 +93,45 @@ def _render_summary(
 ) -> None:
     """Render the portfolio summary metrics."""
     total_value = portfolio_service.calculate_value(state)
-    abs_gain, pct_gain = portfolio_service.calculate_gain(config, state)
     is_overdue = portfolio_service.is_execution_overdue(config, state)
 
-    # Calculate holdings value
+    # Calculate holdings and realized/unrealized P/L.
     holdings_value = 0.0
+    holdings_cost_basis = 0.0
     for holding in state.holdings:
+        holdings_cost_basis += holding.avg_price * holding.quantity
         try:
             price = security_service.get_price(holding.ticker)
             holdings_value += price * holding.quantity
         except Exception:
             holdings_value += holding.avg_price * holding.quantity
 
-    col1, col2, col3, col4, col5 = st.columns(5)
+    unrealized_pnl = holdings_value - holdings_cost_basis
+    realized_pnl = sum(
+        trade.realized_pnl or 0.0
+        for trade in state.trades
+        if trade.realized_pnl is not None
+    )
+
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
 
     with col1:
         st.metric("Total Value", f"${total_value:,.2f}")
 
     with col2:
-        gain_delta = f"{pct_gain:+.1f}%"
-        st.metric("Gain/Loss", f"${abs_gain:,.2f}", delta=gain_delta)
+        st.metric("Unrealized P/L", f"${unrealized_pnl:,.2f}")
 
     with col3:
+        st.metric("Realized P/L", f"${realized_pnl:,.2f}")
+
+    with col4:
         holdings_label = "Crypto Holdings" if config.asset_class == AssetClass.CRYPTO else "Stock Holdings"
         st.metric(holdings_label, f"${holdings_value:,.2f}")
 
-    with col4:
+    with col5:
         st.metric("Cash Available", f"${state.cash:,.2f}")
 
-    with col5:
+    with col6:
         render_large_status_badge(is_overdue)
 
     with st.expander("Portfolio Configuration"):
@@ -382,7 +392,6 @@ def _render_performance_chart(
     security_service: SecurityService,
 ) -> None:
     """Render the portfolio performance chart with interactive features."""
-    from datetime import datetime, timedelta
     from fin_trade.services import StockDataService
 
     st.subheader("Performance")
@@ -426,7 +435,11 @@ def _render_performance_chart(
     )
 
     # Use actual initial investment if recorded, otherwise fall back to config
-    initial_investment = state.initial_investment or config.initial_amount
+    initial_investment = (
+        state.initial_investment
+        if state.initial_investment is not None
+        else config.initial_amount
+    )
 
     # Display metrics row
     _render_performance_metrics(metrics, initial_investment)
@@ -437,7 +450,7 @@ def _render_performance_chart(
         try:
             stock_data_service = StockDataService()
             start_date = filtered_timestamps[0]
-            end_date = filtered_timestamps[-1] if len(filtered_timestamps) > 1 else datetime.now()
+            end_date = filtered_timestamps[-1] if len(filtered_timestamps) > 1 else datetime.now(timezone.utc)
             benchmark_df = stock_data_service.get_benchmark_performance(
                 symbol=benchmark_symbol,
                 start_date=start_date,
@@ -476,6 +489,7 @@ def _calculate_performance_data(
 ) -> dict:
     """Calculate portfolio value over time with trade markers and stacked data."""
     from datetime import datetime
+    import pandas as pd
 
     timestamps = []
     values = []
@@ -483,66 +497,69 @@ def _calculate_performance_data(
     holdings_values = []  # Track holdings value over time
     trade_points = []  # (timestamp, value, action, ticker, quantity)
 
+    if not state.trades:
+        return {
+            "timestamps": timestamps,
+            "values": values,
+            "cash_values": cash_values,
+            "holdings_values": holdings_values,
+            "trade_points": trade_points,
+        }
+
     # Use actual initial investment if recorded, otherwise fall back to config
-    cash = state.initial_investment or config.initial_amount
-    holdings: dict[str, dict] = {}
+    cash = (
+        state.initial_investment
+        if state.initial_investment is not None
+        else config.initial_amount
+    )
+    holdings: dict[str, float] = {}
+    trades = sorted(state.trades, key=lambda trade: trade.timestamp)
+    start_date = pd.Timestamp(trades[0].timestamp).normalize()
+    end_date = pd.Timestamp(datetime.now(timezone.utc)).normalize()
+    closes = security_service.get_closes(
+        [trade.ticker for trade in trades],
+        start_date,
+        end_date,
+    )
+    trades_by_date: dict[pd.Timestamp, list] = {}
+    for trade in trades:
+        trade_date = pd.Timestamp(trade.timestamp).normalize()
+        trades_by_date.setdefault(trade_date, []).append(trade)
 
-    for trade in state.trades:
-        trade_cost = trade.price * trade.quantity
+    for date, close_row in closes.iterrows():
+        for trade in trades_by_date.get(date, []):
+            ticker = trade.ticker.upper()
+            trade_cost = trade.price * trade.quantity
 
-        if trade.action == "BUY":
-            cash -= trade_cost
-            if trade.ticker in holdings:
-                existing = holdings[trade.ticker]
-                total_qty = existing["quantity"] + trade.quantity
-                avg_price = (
-                    existing["avg_price"] * existing["quantity"] + trade_cost
-                ) / total_qty
-                holdings[trade.ticker] = {"quantity": total_qty, "avg_price": avg_price}
-            else:
-                holdings[trade.ticker] = {"quantity": trade.quantity, "avg_price": trade.price}
-        else:  # SELL
-            cash += trade_cost
-            if trade.ticker in holdings:
-                holdings[trade.ticker]["quantity"] -= trade.quantity
-                if holdings[trade.ticker]["quantity"] <= 0:
-                    del holdings[trade.ticker]
+            if trade.action == "BUY":
+                cash -= trade_cost
+                holdings[ticker] = holdings.get(ticker, 0.0) + trade.quantity
+            else:  # SELL
+                cash += trade_cost
+                holdings[ticker] = holdings.get(ticker, 0.0) - trade.quantity
+                if holdings[ticker] <= 0:
+                    del holdings[ticker]
 
-        # Calculate portfolio value at this point
-        holdings_value = sum(h["quantity"] * h["avg_price"] for h in holdings.values())
+        holdings_value = sum(
+            quantity * float(close_row[ticker])
+            for ticker, quantity in holdings.items()
+        )
         total_value = cash + holdings_value
 
-        timestamps.append(trade.timestamp)
+        timestamps.append(date)
         values.append(total_value)
         cash_values.append(cash)
         holdings_values.append(holdings_value)
-        trade_points.append({
-            "timestamp": trade.timestamp,
-            "value": total_value,
-            "action": trade.action,
-            "ticker": trade.ticker,
-            "quantity": trade.quantity,
-            "price": trade.price,
-        })
 
-    # Add current value as final point
-    try:
-        current_holdings_value = 0.0
-        for ticker, h in holdings.items():
-            try:
-                current_price = security_service.get_price(ticker)
-                current_holdings_value += h["quantity"] * current_price
-            except Exception:
-                current_holdings_value += h["quantity"] * h["avg_price"]
-
-        current_total = cash + current_holdings_value
-        now = datetime.now()
-        timestamps.append(now)
-        values.append(current_total)
-        cash_values.append(cash)
-        holdings_values.append(current_holdings_value)
-    except Exception:
-        pass
+        for trade in trades_by_date.get(date, []):
+            trade_points.append({
+                "timestamp": trade.timestamp,
+                "value": total_value,
+                "action": trade.action,
+                "ticker": trade.ticker,
+                "quantity": trade.quantity,
+                "price": trade.price,
+            })
 
     return {
         "timestamps": timestamps,
@@ -564,7 +581,11 @@ def _calculate_performance_metrics(
         return {}
 
     # Use actual initial investment if recorded, otherwise fall back to config
-    initial = state.initial_investment or config.initial_amount
+    initial = (
+        state.initial_investment
+        if state.initial_investment is not None
+        else config.initial_amount
+    )
     current = values[-1]
     abs_gain = current - initial
     pct_gain = (abs_gain / initial) * 100 if initial > 0 else 0
@@ -618,7 +639,7 @@ def _filter_by_time_range(
     if time_range == "All" or not timestamps:
         return timestamps, values, cash_values, holdings_values, trade_points
 
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     if time_range == "1W":
         cutoff = now - timedelta(weeks=1)
     elif time_range == "1M":
@@ -1011,7 +1032,7 @@ def _render_agent_execution(
                 st.session_state.debate_transcript = None
 
             # Record execution time regardless of trades
-            state.last_execution = datetime.now()
+            state.last_execution = datetime.now(timezone.utc)
             portfolio_service.save_state(portfolio_name, state)
             st.session_state.recommendation = recommendation
             st.rerun()
@@ -1077,6 +1098,11 @@ def _render_agent_execution(
                 # Sort trades: SELL first, then BUY
                 # This ensures cash from sells is available for buys
                 sorted_trades = sorted(trades, key=lambda t: 0 if t.action == "SELL" else 1)
+                quoted_prices: dict[str, float] = {}
+
+                for trade in sorted_trades:
+                    if trade.ticker not in quoted_prices:
+                        quoted_prices[trade.ticker] = security_service.get_price(trade.ticker)
 
                 for trade in sorted_trades:
                     state = portfolio_service.execute_trade(
@@ -1085,6 +1111,7 @@ def _render_agent_execution(
                         trade.action,
                         trade.quantity,
                         trade.reasoning,
+                        price=quoted_prices[trade.ticker],
                         stop_loss_price=trade.stop_loss_price,
                         take_profit_price=trade.take_profit_price,
                         asset_class=config.asset_class,

@@ -3,11 +3,12 @@
 import json
 import re
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
 import yaml
+from dateutil.relativedelta import relativedelta
 
 from fin_trade.models import (
     AssetClass,
@@ -83,11 +84,11 @@ class PortfolioService:
         )
 
     @staticmethod
-    def _to_naive_datetime(dt: datetime) -> datetime:
-        """Convert a datetime to naive (no timezone) for consistent comparisons."""
-        if dt.tzinfo is not None:
-            return dt.replace(tzinfo=None)
-        return dt
+    def _to_utc_aware(dt: datetime) -> datetime:
+        """Convert a datetime to UTC-aware for consistent comparisons."""
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
 
     def _load_state(self, name: str, initial_amount: float) -> PortfolioState:
         """Load portfolio state from JSON, or create new if not exists."""
@@ -113,7 +114,7 @@ class PortfolioService:
 
         trades = [
             Trade(
-                timestamp=self._to_naive_datetime(datetime.fromisoformat(t["timestamp"])),
+                timestamp=self._to_utc_aware(datetime.fromisoformat(t["timestamp"])),
                 ticker=t.get("ticker", t.get("isin", "UNKNOWN")),
                 name=t.get("name", t.get("ticker", "Unknown")),
                 action=t["action"],
@@ -122,13 +123,18 @@ class PortfolioService:
                 reasoning=t["reasoning"],
                 stop_loss_price=t.get("stop_loss_price"),
                 take_profit_price=t.get("take_profit_price"),
+                realized_pnl=(
+                    float(t["realized_pnl"])
+                    if t.get("realized_pnl") is not None
+                    else None
+                ),
             )
             for t in data.get("trades", [])
         ]
 
         last_execution = None
         if data.get("last_execution"):
-            last_execution = self._to_naive_datetime(datetime.fromisoformat(data["last_execution"]))
+            last_execution = self._to_utc_aware(datetime.fromisoformat(data["last_execution"]))
 
         # Calculate initial_investment from trade history if not recorded
         initial_investment = data.get("initial_investment")
@@ -184,6 +190,7 @@ class PortfolioService:
                     "reasoning": t.reasoning,
                     "stop_loss_price": t.stop_loss_price,
                     "take_profit_price": t.take_profit_price,
+                    "realized_pnl": t.realized_pnl,
                 }
                 for t in state.trades
             ],
@@ -210,7 +217,11 @@ class PortfolioService:
         """Calculate absolute and percentage gain/loss."""
         current_value = self.calculate_value(state)
         # Use actual initial investment if recorded, otherwise fall back to config
-        initial = float(state.initial_investment or config.initial_amount)
+        initial = float(
+            state.initial_investment
+            if state.initial_investment is not None
+            else config.initial_amount
+        )
         absolute_gain = current_value - initial
         percentage_gain = (absolute_gain / initial) * 100 if initial > 0 else 0.0
         return float(absolute_gain), float(percentage_gain)
@@ -222,17 +233,73 @@ class PortfolioService:
         if state.last_execution is None:
             return True
 
-        now = datetime.now()
-        last = state.last_execution
+        now = datetime.now(timezone.utc)
+        next_due = self._next_execution_due(state.last_execution, config.run_frequency)
+        return now >= next_due
 
-        frequency_deltas: dict[Literal["daily", "weekly", "monthly"], timedelta] = {
-            "daily": timedelta(days=1),
-            "weekly": timedelta(weeks=1),
-            "monthly": timedelta(days=30),
-        }
+    @staticmethod
+    def _next_execution_due(
+        last_execution: datetime,
+        run_frequency: Literal["daily", "weekly", "monthly"],
+    ) -> datetime:
+        """Compute the next scheduled execution time from the last run."""
+        if run_frequency == "daily":
+            return last_execution + timedelta(days=1)
+        if run_frequency == "weekly":
+            return last_execution + timedelta(weeks=1)
+        if run_frequency == "monthly":
+            return last_execution + relativedelta(months=1)
+        return last_execution + timedelta(weeks=1)
 
-        delta = frequency_deltas.get(config.run_frequency, timedelta(weeks=1))
-        return now - last >= delta
+    def _calculate_realized_pnl_for_sell(
+        self,
+        trades: list[Trade],
+        ticker: str,
+        quantity: float,
+        sell_price: float,
+    ) -> float:
+        """Calculate FIFO realized P/L for a SELL trade."""
+        lots: list[list[float]] = []
+        normalized_ticker = ticker.upper()
+
+        for trade in trades:
+            if trade.ticker.upper() != normalized_ticker:
+                continue
+
+            if trade.action == "BUY":
+                lots.append([trade.quantity, trade.price])
+                continue
+
+            remaining_to_match = trade.quantity
+            while remaining_to_match > 0 and lots:
+                lot_quantity, lot_price = lots[0]
+                matched_quantity = min(remaining_to_match, lot_quantity)
+                remaining_to_match -= matched_quantity
+                lot_quantity -= matched_quantity
+                if lot_quantity <= 0:
+                    lots.pop(0)
+                else:
+                    lots[0][0] = lot_quantity
+
+        remaining_to_sell = quantity
+        realized_pnl = 0.0
+        while remaining_to_sell > 0 and lots:
+            lot_quantity, lot_price = lots[0]
+            matched_quantity = min(remaining_to_sell, lot_quantity)
+            realized_pnl += matched_quantity * (sell_price - lot_price)
+            remaining_to_sell -= matched_quantity
+            lot_quantity -= matched_quantity
+            if lot_quantity <= 0:
+                lots.pop(0)
+            else:
+                lots[0][0] = lot_quantity
+
+        if remaining_to_sell > 0:
+            raise ValueError(
+                f"Insufficient trade lots for {ticker}: need {quantity}, have {quantity - remaining_to_sell}"
+            )
+
+        return realized_pnl
 
     def execute_trade(
         self,
@@ -241,6 +308,7 @@ class PortfolioService:
         action: Literal["BUY", "SELL"],
         quantity: float,
         reasoning: str,
+        price: float,
         stop_loss_price: float | None = None,
         take_profit_price: float | None = None,
         asset_class: AssetClass = AssetClass.STOCKS,
@@ -248,8 +316,11 @@ class PortfolioService:
     ) -> PortfolioState:
         """Execute a trade and return updated state."""
         quantity = float(quantity)
+        price = float(price)
         if quantity <= 0:
             raise ValueError(f"Invalid quantity: {quantity}. Must be greater than 0.")
+        if price <= 0:
+            raise ValueError(f"Invalid price: {price}. Must be greater than 0.")
         if asset_class == AssetClass.STOCKS and not quantity.is_integer():
             raise ValueError(f"Stock quantities must be whole numbers, got {quantity}.")
 
@@ -257,13 +328,12 @@ class PortfolioService:
 
         # Lookup security info from ticker
         security = self.security_service.lookup_ticker(ticker)
-        # Force update price when executing trades to ensure fresh data
-        price = self.security_service.force_update_price(ticker)
         cost = price * quantity
 
         holdings = list(state.holdings)
         trades = list(state.trades)
         cash = state.cash
+        realized_pnl = None
 
         if action == "BUY":
             if cost > cash and not allow_negative_cash:
@@ -298,15 +368,26 @@ class PortfolioService:
 
         elif action == "SELL":
             existing = next((h for h in holdings if h.ticker == ticker), None)
-            if not existing or existing.quantity < quantity:
+            # Tolerant comparison: 0.1 + 0.2 == 0.30000000000000004 would
+            # otherwise either reject a legitimate sell or leave a ~5e-17
+            # residual holding behind. Crypto needs tighter tolerance than
+            # stocks because positions can be very small.
+            qty_tol = 1e-9 if asset_class == AssetClass.CRYPTO else 1e-6
+            if not existing or quantity - existing.quantity > qty_tol:
                 raise ValueError(
                     f"Insufficient holdings: need {quantity}, have {existing.quantity if existing else 0}"
                 )
 
+            realized_pnl = self._calculate_realized_pnl_for_sell(
+                trades,
+                ticker,
+                quantity,
+                price,
+            )
             cash += cost
             new_qty = existing.quantity - quantity
             holdings = [h for h in holdings if h.ticker != ticker]
-            if new_qty > 0:
+            if new_qty > qty_tol:
                 holdings.append(Holding(
                     ticker=existing.ticker,
                     name=existing.name,
@@ -317,7 +398,7 @@ class PortfolioService:
                 ))
 
         trade = Trade(
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
             ticker=security.ticker,
             name=security.name,
             action=action,
@@ -326,6 +407,7 @@ class PortfolioService:
             reasoning=reasoning,
             stop_loss_price=stop_loss_price,
             take_profit_price=take_profit_price,
+            realized_pnl=realized_pnl,
         )
         trades.append(trade)
 
@@ -333,7 +415,7 @@ class PortfolioService:
             cash=cash,
             holdings=holdings,
             trades=trades,
-            last_execution=datetime.now(),
+            last_execution=datetime.now(timezone.utc),
             initial_investment=state.initial_investment,
         )
 
@@ -431,7 +513,7 @@ class PortfolioService:
             archive_dir = self.state_dir / "archive"
             archive_dir.mkdir(parents=True, exist_ok=True)
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             archive_path = archive_dir / f"{name}_{timestamp}.json"
             shutil.move(str(state_path), str(archive_path))
         elif state_path.exists():
@@ -470,7 +552,7 @@ class PortfolioService:
             archive_dir = self.state_dir / "archive"
             archive_dir.mkdir(parents=True, exist_ok=True)
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             archive_path = archive_dir / f"{name}_{timestamp}.json"
             shutil.move(str(state_path), str(archive_path))
         elif state_path.exists():

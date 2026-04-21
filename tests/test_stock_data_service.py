@@ -71,7 +71,12 @@ class TestUpdateData:
         # Create mock DataFrame
         dates = pd.date_range("2024-01-01", periods=5, freq="D")
         mock_df = pd.DataFrame(
-            {"Close": [100.0, 101.0, 102.0, 103.0, 104.0]},
+            {
+                "Open": [99.0, 100.0, 101.0, 102.0, 103.0],
+                "High": [101.0, 102.0, 103.0, 104.0, 105.0],
+                "Low": [98.0, 99.0, 100.0, 101.0, 102.0],
+                "Close": [100.0, 101.0, 102.0, 103.0, 104.0],
+            },
             index=dates,
         )
 
@@ -84,10 +89,37 @@ class TestUpdateData:
 
         assert len(result) == 5
         assert "TEST" in service._cache
+        mock_ticker.history.assert_called_once_with(period="1y", auto_adjust=True)
 
         # Check file was created
         cache_path = tmp_path / "TEST_prices.csv"
         assert cache_path.exists()
+
+    @patch("fin_trade.services.stock_data.yf")
+    def test_caches_split_adjusted_closes(self, mock_yf, tmp_path):
+        """Test cached closes preserve split-adjusted history."""
+        dates = pd.date_range("2024-01-01", periods=2, freq="D")
+        adjusted_df = pd.DataFrame(
+            {
+                "Open": [99.0, 109.0],
+                "High": [101.0, 111.0],
+                "Low": [98.0, 108.0],
+                "Close": [100.0, 110.0],
+            },
+            index=dates,
+        )
+
+        mock_ticker = MagicMock()
+        mock_ticker.history.return_value = adjusted_df
+        mock_yf.Ticker.return_value = mock_ticker
+
+        service = StockDataService(data_dir=tmp_path)
+        service.update_data("SPLIT")
+
+        cached_df = pd.read_csv(tmp_path / "SPLIT_prices.csv", index_col=0, parse_dates=True)
+
+        assert cached_df["Close"].tolist() == [100.0, 110.0]
+        mock_ticker.history.assert_called_once_with(period="1y", auto_adjust=True)
 
     @patch("fin_trade.services.stock_data.yf")
     def test_raises_error_for_empty_data(self, mock_yf, tmp_path):
@@ -119,7 +151,15 @@ class TestForceUpdate:
     def test_calls_update_data(self, mock_yf, tmp_path):
         """Test force_update delegates to update_data."""
         dates = pd.date_range("2024-01-01", periods=3, freq="D")
-        mock_df = pd.DataFrame({"Close": [100.0, 101.0, 102.0]}, index=dates)
+        mock_df = pd.DataFrame(
+            {
+                "Open": [99.0, 100.0, 101.0],
+                "High": [101.0, 102.0, 103.0],
+                "Low": [98.0, 99.0, 100.0],
+                "Close": [100.0, 101.0, 102.0],
+            },
+            index=dates,
+        )
 
         mock_ticker = MagicMock()
         mock_ticker.history.return_value = mock_df
@@ -130,6 +170,20 @@ class TestForceUpdate:
 
         assert len(result) == 3
         mock_yf.Ticker.assert_called_with("FORCE")
+
+
+class TestPeriodForDays:
+    """Tests for yfinance period selection."""
+
+    def test_maps_days_to_fetch_periods(self, tmp_path):
+        """Test longer requested histories fetch longer periods."""
+        service = StockDataService(data_dir=tmp_path)
+
+        assert service._period_for_days(365) == "1y"
+        assert service._period_for_days(366) == "2y"
+        assert service._period_for_days(731) == "5y"
+        assert service._period_for_days(1826) == "10y"
+        assert service._period_for_days(3651) == "max"
 
 
 class TestGetHistory:
@@ -180,7 +234,15 @@ class TestGetHistory:
 
         # Mock fresh data
         fresh_dates = pd.date_range(end=datetime.now(), periods=5, freq="D")
-        fresh_df = pd.DataFrame({"Close": [100.0, 101.0, 102.0, 103.0, 104.0]}, index=fresh_dates)
+        fresh_df = pd.DataFrame(
+            {
+                "Open": [99.0, 100.0, 101.0, 102.0, 103.0],
+                "High": [101.0, 102.0, 103.0, 104.0, 105.0],
+                "Low": [98.0, 99.0, 100.0, 101.0, 102.0],
+                "Close": [100.0, 101.0, 102.0, 103.0, 104.0],
+            },
+            index=fresh_dates,
+        )
 
         mock_ticker = MagicMock()
         mock_ticker.history.return_value = fresh_df
@@ -247,6 +309,41 @@ class TestGetPrice:
         assert price == 102.0
 
 
+class TestGetCloses:
+    """Tests for aligned daily close retrieval."""
+
+    def test_returns_adjusted_closes_on_daily_index(self, tmp_path):
+        """Test adjusted closes are aligned and forward-filled by day."""
+        service = StockDataService(data_dir=tmp_path)
+        start = pd.Timestamp(datetime.now()).normalize() - pd.Timedelta(days=5)
+        end = start + pd.Timedelta(days=3)
+        df = pd.DataFrame(
+            {
+                "Close": [1000.0, 1004.0, 1006.0],
+                "Adj Close": [100.0, 104.0, 106.0],
+            },
+            index=[start, start + pd.Timedelta(days=2), start + pd.Timedelta(days=3)],
+        )
+        service._cache["AAPL"] = df
+
+        result = service.get_closes(["aapl"], start, end)
+
+        assert list(result.columns) == ["AAPL"]
+        assert result.index.equals(pd.date_range(start=start, end=end, freq="D"))
+        assert result.loc[start, "AAPL"] == 100.0
+        assert result.loc[start + pd.Timedelta(days=1), "AAPL"] == 100.0
+        assert result.loc[start + pd.Timedelta(days=2), "AAPL"] == 104.0
+
+    def test_raises_when_end_before_start(self, tmp_path):
+        """Test date ranges must be ordered."""
+        service = StockDataService(data_dir=tmp_path)
+        start = datetime.now()
+        end = start - timedelta(days=1)
+
+        with pytest.raises(ValueError, match="end must be on or after start"):
+            service.get_closes(["AAPL"], start, end)
+
+
 class TestCalculateRsi:
     """Tests for _calculate_rsi method."""
 
@@ -285,6 +382,46 @@ class TestCalculateRsi:
         rsi = service._calculate_rsi(prices, period=14)
 
         assert rsi == 100.0
+
+    def test_uses_wilder_smoothing(self, tmp_path):
+        """RSI must use Wilder's (1978) EWM smoothing, not a simple rolling mean.
+
+        Feeds a 20-day hand-crafted close series and checks the final RSI
+        against the value produced by Wilder's recursive smoothing
+        (equivalent to pandas ewm(alpha=1/period, adjust=False).mean()).
+        """
+        service = StockDataService(data_dir=tmp_path)
+
+        # Hand-crafted 20-day series (mix of gains and losses).
+        closes = [
+            46.1250, 47.1250, 46.4375, 46.9375, 44.9375,
+            44.2500, 44.6250, 45.7500, 47.8125, 47.5625,
+            47.0000, 44.5625, 46.3125, 47.6875, 46.6875,
+            45.6875, 43.0625, 43.5625, 44.8750, 43.6875,
+        ]
+        prices = pd.Series(closes)
+        period = 14
+
+        # Independently compute the expected RSI with Wilder's smoothing:
+        # y[t] = ((p-1)*y[t-1] + x[t]) / p, seeded at 0 to match how pandas
+        # ewm(adjust=False) consumes the NaN-at-index-0 produced by .diff().
+        diffs = [b - a for a, b in zip(closes[:-1], closes[1:])]
+        gains = [0.0] + [max(d, 0.0) for d in diffs]
+        losses = [0.0] + [max(-d, 0.0) for d in diffs]
+        avg_gain, avg_loss = gains[0], losses[0]
+        for g, l in zip(gains[1:], losses[1:]):
+            avg_gain = ((period - 1) * avg_gain + g) / period
+            avg_loss = ((period - 1) * avg_loss + l) / period
+        expected_rs = avg_gain / avg_loss
+        expected_rsi = 100 - 100 / (1 + expected_rs)
+
+        rsi = service._calculate_rsi(prices, period=period)
+
+        assert rsi is not None
+        # Simple rolling-mean implementation would give ~48.05; Wilder's
+        # smoothing (the correct formula) yields ~42.10 here.
+        assert rsi == pytest.approx(expected_rsi, abs=1e-9)
+        assert rsi == pytest.approx(42.098057, abs=1e-4)
 
 
 class TestCalculateChangePct:
@@ -383,6 +520,51 @@ class TestGetPriceContext:
 
         with pytest.raises(ValueError, match="No price data available"):
             service.get_price_context("EMPTY")
+
+    def test_52w_range_uses_400_day_window(self, tmp_path):
+        """52w high/low must come from ≥400 buffered days (≥252 trading days),
+        never from the potentially-30-day `days_needed` window.
+        """
+        service = StockDataService(data_dir=tmp_path)
+
+        # Cache ~400 days of data with the maximum High at day ~390 ago —
+        # outside a 30-day or even 365-day window, inside a 400-day window.
+        end = datetime.now()
+        dates = pd.date_range(end=end, periods=400, freq="D")
+        highs = [100.0 + i * 0.01 for i in range(400)]  # mostly climbing slowly
+        highs[10] = 500.0  # early spike at day ~390 ago
+        lows = [50.0 - i * 0.01 for i in range(400)]
+        lows[10] = 5.0  # matching early low
+        df = pd.DataFrame({
+            "Close": [100.0 + i * 0.01 for i in range(400)],
+            "High": highs,
+            "Low": lows,
+            "Volume": [1_000_000 for _ in range(400)],
+        }, index=dates)
+        service._cache["WIDE"] = df
+
+        # Security service provides MA-50 but no 52w range — forces the 52w
+        # history fallback to fire.
+        security_service = MagicMock()
+        security_service.get_52w_range.return_value = None
+        security_service.get_moving_averages.return_value = {"ma_50": 123.0}
+        security_service.get_short_interest.return_value = None
+
+        # Spy on get_history to confirm the 52w path explicitly requests 400 days.
+        original_get_history = service.get_history
+        call_days: list[int] = []
+
+        def tracking_get_history(ticker: str, days: int = 365) -> pd.DataFrame:
+            call_days.append(days)
+            return original_get_history(ticker, days=days)
+
+        service.get_history = tracking_get_history  # type: ignore[assignment]
+
+        ctx = service.get_price_context("WIDE", security_service=security_service)
+
+        assert 400 in call_days, f"Expected a days=400 fetch for 52w range; got {call_days}"
+        assert ctx.high_52w == pytest.approx(500.0)
+        assert ctx.low_52w == pytest.approx(5.0)
 
 
 class TestGetHoldingsContext:

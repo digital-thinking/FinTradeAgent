@@ -450,6 +450,20 @@ def _apply_pending_trades(
 
     errors = []
     applied_indices = []
+    quoted_prices: dict[str, float] = {}
+
+    try:
+        for i in selected_indices:
+            rec = recommendations[i]
+            ticker = rec.get("ticker", "")
+            quantity = rec.get("quantity", 0)
+            if quantity <= 0 or not ticker:
+                continue
+            if ticker not in quoted_prices:
+                quoted_prices[ticker] = security_service.get_price(ticker)
+    except Exception as e:
+        st.error(f"Failed to capture quoted prices: {e}")
+        return
 
     for i in selected_indices:
         rec = recommendations[i]
@@ -467,6 +481,7 @@ def _apply_pending_trades(
                 action,
                 quantity,
                 reasoning,
+                price=quoted_prices[ticker],
                 stop_loss_price=stop_loss_price,
                 take_profit_price=take_profit_price,
                 asset_class=config.asset_class,

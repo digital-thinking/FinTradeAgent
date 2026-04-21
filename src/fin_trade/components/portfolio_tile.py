@@ -87,7 +87,11 @@ def _create_mini_chart(
         return None
 
     # Use actual initial investment if recorded, otherwise fall back to config
-    initial = state.initial_investment or config.initial_amount
+    initial = (
+        state.initial_investment
+        if state.initial_investment is not None
+        else config.initial_amount
+    )
 
     # Calculate portfolio value at each trade point (same logic as detail page)
     cash_values = [initial]

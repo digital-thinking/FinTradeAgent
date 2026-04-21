@@ -3,9 +3,13 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+from dateutil.relativedelta import relativedelta
 
 from fin_trade.cache import get_portfolio_metrics
+from fin_trade.models import AssetClass
+from fin_trade.pages.portfolio_detail import format_quantity
 from fin_trade.services import PortfolioService, AttributionService, SecurityService
 from fin_trade.services.attribution import SectorAttribution, HoldingAttribution
 
@@ -116,7 +120,7 @@ def render_dashboard_page(portfolio_service: PortfolioService) -> None:
         freq = p["Frequency"]
         
         if not last_run:
-            next_run = datetime.now() # Run immediately if never run
+            next_run = datetime.now(timezone.utc) # Run immediately if never run
             status = "Pending (New)"
         else:
             if freq == "daily":
@@ -124,11 +128,11 @@ def render_dashboard_page(portfolio_service: PortfolioService) -> None:
             elif freq == "weekly":
                 next_run = last_run + timedelta(weeks=1)
             elif freq == "monthly":
-                next_run = last_run + timedelta(days=30)
+                next_run = last_run + relativedelta(months=1)
             else:
                 next_run = last_run + timedelta(days=1) # Default
             
-            if datetime.now() > next_run:
+            if datetime.now(timezone.utc) > next_run:
                 status = "Overdue"
             else:
                 status = "Scheduled"
@@ -170,7 +174,7 @@ def _render_performance_attribution(
 
     # Aggregate attribution across all portfolios
     all_sector_data: dict[str, dict] = {}
-    all_holding_data: list[HoldingAttribution] = []
+    all_holding_data: list[tuple[HoldingAttribution, AssetClass]] = []
     total_gain = 0.0
 
     for filename in portfolios:
@@ -196,8 +200,9 @@ def _render_performance_attribution(
                 all_sector_data[sector_attr.sector]["total_current_value"] += sector_attr.total_current_value
                 all_sector_data[sector_attr.sector]["holdings_count"] += sector_attr.holdings_count
 
-            # Collect all holding attributions
-            all_holding_data.extend(result.by_holding)
+            # Collect all holding attributions paired with their portfolio's asset class
+            # so crypto quantities are rendered with the correct precision downstream.
+            all_holding_data.extend((h, config.asset_class) for h in result.by_holding)
 
         except Exception:
             continue
@@ -304,7 +309,9 @@ def _render_sector_attribution_chart(
         )
 
 
-def _render_top_performers(holding_data: list[HoldingAttribution]) -> None:
+def _render_top_performers(
+    holding_data: list[tuple[HoldingAttribution, AssetClass]],
+) -> None:
     """Render the top/bottom performers section."""
     st.markdown("**Top Contributors & Detractors**")
 
@@ -312,18 +319,18 @@ def _render_top_performers(holding_data: list[HoldingAttribution]) -> None:
         st.info("No holding data available.")
         return
 
-    # Sort by unrealized gain
-    sorted_holdings = sorted(holding_data, key=lambda x: x.unrealized_gain, reverse=True)
+    # Sort by unrealized gain (pair stays with each holding for precision-aware formatting).
+    sorted_holdings = sorted(holding_data, key=lambda pair: pair[0].unrealized_gain, reverse=True)
 
     # Top 3 contributors
     top_contributors = sorted_holdings[:3]
     # Bottom 3 detractors (only if negative)
-    bottom_detractors = [h for h in sorted_holdings[-3:] if h.unrealized_gain < 0]
+    bottom_detractors = [pair for pair in sorted_holdings[-3:] if pair[0].unrealized_gain < 0]
     bottom_detractors.reverse()
 
     # Display top contributors
     st.markdown("*Top Contributors*")
-    for i, h in enumerate(top_contributors):
+    for i, (h, _asset_class) in enumerate(top_contributors):
         gain_color = "green" if h.unrealized_gain >= 0 else "red"
         st.markdown(
             f"**{i+1}. {h.ticker}** ({h.sector or 'Unknown'}): "
@@ -332,7 +339,7 @@ def _render_top_performers(holding_data: list[HoldingAttribution]) -> None:
 
     if bottom_detractors:
         st.markdown("*Top Detractors*")
-        for i, h in enumerate(bottom_detractors):
+        for i, (h, _asset_class) in enumerate(bottom_detractors):
             st.markdown(
                 f"**{i+1}. {h.ticker}** ({h.sector or 'Unknown'}): "
                 f":red[${h.unrealized_gain:+,.2f}] ({h.gain_pct:+.1f}%)"
@@ -345,13 +352,13 @@ def _render_top_performers(holding_data: list[HoldingAttribution]) -> None:
                 "Ticker": h.ticker,
                 "Name": h.name,
                 "Sector": h.sector or "Unknown",
-                "Qty": h.quantity,
+                "Qty": format_quantity(h.quantity, asset_class),
                 "Avg Price": h.avg_price,
                 "Current": h.current_price,
                 "Gain/Loss": h.unrealized_gain,
                 "Return %": h.gain_pct,
             }
-            for h in sorted_holdings
+            for h, asset_class in sorted_holdings
         ])
 
         st.dataframe(
@@ -360,7 +367,7 @@ def _render_top_performers(holding_data: list[HoldingAttribution]) -> None:
                 "Ticker": st.column_config.TextColumn("Ticker", width="small"),
                 "Name": st.column_config.TextColumn("Name", width="medium"),
                 "Sector": st.column_config.TextColumn("Sector", width="medium"),
-                "Qty": st.column_config.NumberColumn("Qty", format="d"),
+                "Qty": st.column_config.TextColumn("Qty"),
                 "Avg Price": st.column_config.NumberColumn("Avg Price", format="$,.2f"),
                 "Current": st.column_config.NumberColumn("Current", format="$,.2f"),
                 "Gain/Loss": st.column_config.NumberColumn("Gain/Loss", format="$,.2f"),

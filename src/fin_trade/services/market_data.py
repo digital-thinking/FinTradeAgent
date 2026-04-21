@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,7 +23,7 @@ class EarningsInfo:
     earnings_date: datetime | None
     eps_estimate: float | None
     revenue_estimate: float | None
-    days_until_earnings: int | None
+    hours_until_earnings: float | None
 
     def to_context_string(self) -> str:
         """Format earnings info for agent context."""
@@ -31,8 +31,12 @@ class EarningsInfo:
             return f"{self.ticker}: No upcoming earnings date available"
 
         parts = [f"{self.ticker}: Earnings on {self.earnings_date.strftime('%Y-%m-%d')}"]
-        if self.days_until_earnings is not None:
-            parts.append(f"({self.days_until_earnings} days away)")
+        if self.hours_until_earnings is not None:
+            if self.hours_until_earnings < 24:
+                parts.append("(today)")
+            else:
+                days = int(self.hours_until_earnings / 24)
+                parts.append(f"({days} days away)")
         if self.eps_estimate is not None:
             parts.append(f"EPS est: ${self.eps_estimate:.2f}")
         if self.revenue_estimate is not None:
@@ -89,7 +93,7 @@ class MacroData:
     dow_price: float | None
     dow_change_pct: float | None
     treasury_10y: float | None
-    treasury_2y: float | None
+    treasury_3m: float | None
     vix: float | None
     timestamp: datetime
 
@@ -112,16 +116,17 @@ class MacroData:
         if self.vix:
             lines.append(f"  VIX (Volatility): {self.vix:.2f}")
 
-        if self.treasury_10y or self.treasury_2y:
+        if self.treasury_10y or self.treasury_3m:
             lines.append("INTEREST RATES:")
             if self.treasury_10y:
                 lines.append(f"  10-Year Treasury: {self.treasury_10y:.2f}%")
-            if self.treasury_2y:
-                lines.append(f"  2-Year Treasury: {self.treasury_2y:.2f}%")
-            if self.treasury_10y and self.treasury_2y:
-                spread = self.treasury_10y - self.treasury_2y
+            if self.treasury_3m:
+                lines.append(f"  3-Month Treasury: {self.treasury_3m:.2f}%")
+            if self.treasury_10y and self.treasury_3m:
+                # Yahoo's ^IRX is the 3M bill, so this inversion signal is 10Y-3M, not 10Y-2Y.
+                spread = self.treasury_10y - self.treasury_3m
                 inversion = " (INVERTED - recession signal)" if spread < 0 else ""
-                lines.append(f"  Yield Spread (10Y-2Y): {spread:.2f}%{inversion}")
+                lines.append(f"  Yield Spread (10Y-3M): {spread:.2f}%{inversion}")
 
         return "\n".join(lines)
 
@@ -142,7 +147,7 @@ class MarketDataService:
         if key not in self._cache:
             return False
         cached_time, _ = self._cache[key]
-        return datetime.now() - cached_time < self._cache_duration
+        return datetime.now(timezone.utc) - cached_time < self._cache_duration
 
     def _get_cached(self, key: str) -> object | None:
         """Get cached data if valid."""
@@ -152,7 +157,7 @@ class MarketDataService:
 
     def _set_cached(self, key: str, data: object) -> None:
         """Store data in cache."""
-        self._cache[key] = (datetime.now(), data)
+        self._cache[key] = (datetime.now(timezone.utc), data)
 
     def get_earnings_info(
         self,
@@ -182,15 +187,19 @@ class MarketDataService:
         if security_service:
             stored_earnings = security_service.get_earnings_timestamp(ticker)
             if stored_earnings:
+                # Ensure stored_earnings is UTC-aware
+                if stored_earnings.tzinfo is None:
+                    stored_earnings = stored_earnings.replace(tzinfo=timezone.utc)
+                
                 # Check if stored date is in the future
-                days_until = (stored_earnings - datetime.now()).days
-                if days_until >= 0:
+                hours_until = (stored_earnings - datetime.now(timezone.utc)).total_seconds() / 3600
+                if hours_until >= -1:
                     result = EarningsInfo(
                         ticker=ticker,
                         earnings_date=stored_earnings,
                         eps_estimate=None,  # Not available from stored data
                         revenue_estimate=None,
-                        days_until_earnings=days_until,
+                        hours_until_earnings=hours_until,
                     )
                     self._set_cached(cache_key, result)
                     return result
@@ -201,7 +210,7 @@ class MarketDataService:
         earnings_date = None
         eps_estimate = None
         revenue_estimate = None
-        days_until = None
+        hours_until = None
 
         # calendar can be a DataFrame or dict depending on yfinance version
         if calendar is not None:
@@ -229,14 +238,20 @@ class MarketDataService:
                     revenue_estimate = calendar.get("Revenue Estimate")
 
         if earnings_date:
-            days_until = (earnings_date - datetime.now()).days
+            # Ensure earnings_date is UTC-aware (yfinance typically returns UTC or naive)
+            if earnings_date.tzinfo is None:
+                earnings_date = earnings_date.replace(tzinfo=timezone.utc)
+            else:
+                earnings_date = earnings_date.astimezone(timezone.utc)
+                
+            hours_until = (earnings_date - datetime.now(timezone.utc)).total_seconds() / 3600
 
         result = EarningsInfo(
             ticker=ticker,
             earnings_date=earnings_date,
             eps_estimate=eps_estimate,
             revenue_estimate=revenue_estimate,
-            days_until_earnings=days_until,
+            hours_until_earnings=hours_until,
         )
         self._set_cached(cache_key, result)
         return result
@@ -407,7 +422,7 @@ class MarketDataService:
         dow_price, dow_change = get_latest_price_and_change("^DJI")
         vix, _ = get_latest_price_and_change("^VIX")
         treasury_10y = get_treasury_yield("^TNX")
-        treasury_2y = get_treasury_yield("^IRX")  # 3-month as proxy, 2Y is ^TWO
+        treasury_3m = get_treasury_yield("^IRX")  # ^IRX is the 3-month T-bill yield.
 
         result = MacroData(
             sp500_price=sp500_price,
@@ -417,9 +432,9 @@ class MarketDataService:
             dow_price=dow_price,
             dow_change_pct=dow_change,
             treasury_10y=treasury_10y,
-            treasury_2y=treasury_2y,
+            treasury_3m=treasury_3m,
             vix=vix,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
         )
         self._set_cached(cache_key, result)
         return result
@@ -437,12 +452,17 @@ class MarketDataService:
         earnings_upcoming = []
         for ticker in tickers:
             info = self.get_earnings_info(ticker)
-            if info.days_until_earnings is not None and 0 <= info.days_until_earnings <= 30:
+            if (
+                info.hours_until_earnings is not None
+                and -1 <= info.hours_until_earnings <= 30 * 24
+            ):
                 earnings_upcoming.append(info)
 
         if earnings_upcoming:
             lines.append("UPCOMING EARNINGS (next 30 days):")
-            for info in sorted(earnings_upcoming, key=lambda x: x.days_until_earnings or 999):
+            for info in sorted(
+                earnings_upcoming, key=lambda x: x.hours_until_earnings or 9999
+            ):
                 lines.append(f"  {info.to_context_string()}")
             lines.append("")
 

@@ -480,7 +480,21 @@ def _apply_pending_trades(
 
     config, state = portfolio_service.load_portfolio(portfolio_filename)
 
-    # If this is an empty portfolio and we need more cash, increase it
+    quoted_prices: dict[str, float] = {}
+    try:
+        for i in selected_indices:
+            rec = recommendations[i]
+            ticker = ticker_corrections.get(i, rec.get("ticker", ""))
+            quantity = quantity_adjustments.get(i, rec.get("quantity", 0))
+            if quantity <= 0 or not ticker:
+                continue
+            if ticker not in quoted_prices:
+                quoted_prices[ticker] = security_service.get_price(ticker)
+    except Exception as e:
+        st.error(f"Failed to capture quoted prices: {e}")
+        return
+
+    # If this is an empty portfolio, validate the initial BUY batch against available cash.
     if increase_cash_if_needed:
         # Calculate total cost of BUY trades (using adjusted quantities)
         total_buy_cost = 0.0
@@ -491,20 +505,16 @@ def _apply_pending_trades(
                 quantity = quantity_adjustments.get(i, rec.get("quantity", 0))
                 if quantity <= 0:
                     continue
-                try:
-                    price = security_service.get_price(ticker)
-                    if price:
-                        total_buy_cost += price * quantity
-                except Exception:
-                    pass
+                price = quoted_prices.get(ticker)
+                if price is not None:
+                    total_buy_cost += price * quantity
 
-        # If we need more cash, increase it
         if total_buy_cost > state.cash:
-            cash_needed = total_buy_cost - state.cash
-            state.cash += cash_needed + 100  # Add a small buffer
-
-        # Record actual initial investment (cash before first trades)
-        state.initial_investment = state.cash
+            st.error(
+                f"Insufficient cash for initial trades: need ${total_buy_cost:.2f}, "
+                f"have ${state.cash:.2f}."
+            )
+            return
 
     errors = []
     applied_indices = []
@@ -531,12 +541,15 @@ def _apply_pending_trades(
             continue
 
         try:
+            if state.initial_investment is None and not state.trades:
+                state.initial_investment = state.cash
             state = portfolio_service.execute_trade(
                 state,
                 ticker,
                 action,
                 quantity,
                 reasoning,
+                price=quoted_prices[ticker],
                 stop_loss_price=stop_loss_price,
                 take_profit_price=take_profit_price,
                 asset_class=config.asset_class,

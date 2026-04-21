@@ -62,7 +62,7 @@ USING MARKET INTELLIGENCE DATA:
 - EARNINGS: Consider upcoming earnings dates when making decisions. Avoid initiating new positions right before earnings (high volatility risk). Be aware of EPS/revenue estimates.
 - SEC FILINGS: Recent 8-K filings often contain material events (acquisitions, leadership changes, material contracts). 10-Q/10-K filings provide quarterly/annual financial updates.
 - INSIDER TRADING: Insider buying is often a bullish signal (insiders rarely buy unless confident). Large insider selling may be concerning but can also be routine (diversification, tax planning).
-- MACRO DATA: Consider overall market direction (indices), volatility (VIX), and interest rate environment (Treasury yields). An inverted yield curve (2Y > 10Y) historically signals recession risk.
+- MACRO DATA: Consider overall market direction (indices), volatility (VIX), and interest rate environment (Treasury yields). An inverted 3M/10Y yield curve (3M > 10Y) historically signals recession risk.
 
 Please analyze the current portfolio and market conditions based on your strategy and the market intelligence data provided, then provide your trading recommendations.
 This is for educational experiments! Do act given the strategy and don't hesitate, you won't loose any money or anyone else does, but you are evaluated on your theoretical performance

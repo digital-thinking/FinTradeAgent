@@ -1,6 +1,6 @@
 """Overview page showing all portfolio tiles."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import streamlit as st
 
@@ -156,7 +156,7 @@ def _execute_all_agents(
                 agent = LangGraphAgentService(security_service=security_service)
                 recommendations, metrics = agent.execute(config, state)
 
-            state.last_execution = datetime.now()
+            state.last_execution = datetime.now(timezone.utc)
             portfolio_service.save_state(filename, state)
 
             results.append({
