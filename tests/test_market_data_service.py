@@ -251,6 +251,26 @@ class TestGetEarningsInfo:
         mock_yf.Ticker.assert_called_with("AAPL")
 
     @patch("fin_trade.services.market_data.yf")
+    def test_fetches_earnings_from_fundamentals_ticker(self, mock_yf, tmp_path):
+        """Test earnings lookup honors an explicit fundamentals_ticker argument."""
+        mock_ticker = MagicMock()
+        mock_ticker.calendar = pd.DataFrame()
+        mock_yf.Ticker.return_value = mock_ticker
+
+        security_service = MagicMock()
+        security_service.get_earnings_timestamp.return_value = None
+
+        service = MarketDataService(cache_dir=tmp_path)
+        result = service.get_earnings_info(
+            "INGA.AS",
+            security_service=security_service,
+            fundamentals_ticker="ING",
+        )
+
+        assert result.ticker == "INGA.AS"
+        mock_yf.Ticker.assert_called_once_with("ING")
+
+    @patch("fin_trade.services.market_data.yf")
     def test_handles_empty_calendar(self, mock_yf, tmp_path):
         """Test handles empty calendar gracefully."""
         mock_ticker = MagicMock()
@@ -460,29 +480,94 @@ class TestGetFullContextForHoldings:
         earnings_5h_from_now = now + timedelta(hours=5)
         earnings_2_days_away = now + timedelta(days=2)
 
-        def mock_get_earnings_info(ticker):
+        def mock_get_earnings_info(ticker, **_kwargs):
             if ticker == "PAST":
-                return EarningsInfo(ticker="PAST", earnings_date=earnings_3h_ago, 
-                                    eps_estimate=None, revenue_estimate=None, 
+                return EarningsInfo(ticker="PAST", earnings_date=earnings_3h_ago,
+                                    eps_estimate=None, revenue_estimate=None,
                                     hours_until_earnings=(earnings_3h_ago - now).total_seconds() / 3600)
             if ticker == "TODAY":
-                return EarningsInfo(ticker="TODAY", earnings_date=earnings_5h_from_now, 
-                                    eps_estimate=None, revenue_estimate=None, 
+                return EarningsInfo(ticker="TODAY", earnings_date=earnings_5h_from_now,
+                                    eps_estimate=None, revenue_estimate=None,
                                     hours_until_earnings=(earnings_5h_from_now - now).total_seconds() / 3600)
             if ticker == "FUTURE":
-                return EarningsInfo(ticker="FUTURE", earnings_date=earnings_2_days_away, 
-                                    eps_estimate=None, revenue_estimate=None, 
+                return EarningsInfo(ticker="FUTURE", earnings_date=earnings_2_days_away,
+                                    eps_estimate=None, revenue_estimate=None,
                                     hours_until_earnings=(earnings_2_days_away - now).total_seconds() / 3600)
             return None
 
+        from fin_trade.models import Holding
+        holdings = [
+            Holding(ticker=t, name=t, quantity=1, avg_price=10.0)
+            for t in ("PAST", "TODAY", "FUTURE")
+        ]
+
         with patch.object(service, 'get_earnings_info', side_effect=mock_get_earnings_info):
-            context = service.get_full_context_for_holdings(["PAST", "TODAY", "FUTURE"])
-            
+            context = service.get_full_context_for_holdings(holdings)
+
             assert "PAST" not in context
             assert "TODAY" in context
             assert "(today)" in context
             assert "FUTURE" in context
             assert "2 days away" in context
+
+    def test_passes_fundamentals_ticker_from_holdings(self, tmp_path):
+        """Test per-holding fundamentals_ticker is forwarded to child methods."""
+        from fin_trade.models import Holding
+
+        service = MarketDataService(cache_dir=tmp_path)
+        security_service = MagicMock()
+        service.get_macro_data = MagicMock(return_value=MacroData(
+            sp500_price=4800,
+            sp500_change_pct=1.0,
+            nasdaq_price=None,
+            nasdaq_change_pct=None,
+            dow_price=None,
+            dow_change_pct=None,
+            treasury_10y=None,
+            treasury_3m=None,
+            vix=None,
+            timestamp=datetime.now(),
+        ))
+        service.get_earnings_info = MagicMock(return_value=EarningsInfo(
+            ticker="INGA.AS",
+            earnings_date=None,
+            eps_estimate=None,
+            revenue_estimate=None,
+            hours_until_earnings=None,
+        ))
+        service.get_sec_filings = MagicMock(return_value=[])
+        service.get_insider_trades = MagicMock(return_value=[])
+
+        holdings = [Holding(
+            ticker="INGA.AS",
+            name="ING Groep",
+            quantity=10,
+            avg_price=14.0,
+            fundamentals_ticker="ING",
+        )]
+
+        service.get_full_context_for_holdings(
+            holdings,
+            security_service=security_service,
+        )
+
+        service.get_earnings_info.assert_called_once_with(
+            "INGA.AS",
+            security_service=security_service,
+            fundamentals_ticker="ING",
+        )
+        service.get_sec_filings.assert_called_once_with(
+            "INGA.AS",
+            limit=3,
+            security_service=security_service,
+            fundamentals_ticker="ING",
+        )
+        service.get_insider_trades.assert_called_once_with(
+            "INGA.AS",
+            limit=3,
+            security_service=security_service,
+            fundamentals_ticker="ING",
+        )
 
     @patch("fin_trade.services.market_data.yf")
     def test_returns_full_context(self, mock_yf, tmp_path):
@@ -498,8 +583,13 @@ class TestGetFullContextForHoldings:
         )
         mock_yf.Ticker.return_value = mock_ticker
 
+        from fin_trade.models import Holding
         service = MarketDataService(cache_dir=tmp_path)
-        result = service.get_full_context_for_holdings(["AAPL", "MSFT"])
+        holdings = [
+            Holding(ticker="AAPL", name="Apple", quantity=1, avg_price=100.0),
+            Holding(ticker="MSFT", name="Microsoft", quantity=1, avg_price=100.0),
+        ]
+        result = service.get_full_context_for_holdings(holdings)
 
         # Should at least have market overview
         assert "MARKET OVERVIEW" in result
@@ -563,4 +653,6 @@ class TestGetHoldingsContextByAssetClass:
         result = service.get_holdings_context(["AAPL"], AssetClass.STOCKS)
 
         assert result == "stock context"
-        service.get_full_context_for_holdings.assert_called_once_with(["AAPL"])
+        service.get_full_context_for_holdings.assert_called_once_with(
+            ["AAPL"], security_service=None
+        )

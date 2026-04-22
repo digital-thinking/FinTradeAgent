@@ -30,6 +30,11 @@ class SecurityService:
 
     Security data is stored in {TICKER}_data.json files containing
     full yfinance info. Prices are delegated to StockDataService.
+
+    Fundamentals lookups (sector, analyst targets, earnings, 52w range, MAs,
+    insider/short data) accept an optional ``fundamentals_ticker`` argument.
+    When provided, that symbol is used as the source for business-level
+    fields while prices continue to come from the traded listing.
     """
 
     def __init__(
@@ -48,12 +53,17 @@ class SecurityService:
             stock_data_service = StockDataService(data_dir=data_dir)
         self._stock_data_service = stock_data_service
 
-        # Initialize caches
         self._by_ticker: dict[str, Security] = {}
         self._full_info: dict[str, dict] = {}  # ticker -> full yfinance info
 
-        # Load persisted security data from files
         self._load_persisted_securities()
+
+    @staticmethod
+    def _resolve(ticker: str, fundamentals_ticker: str | None) -> str:
+        """Return the ticker used for fundamentals lookups."""
+        if fundamentals_ticker:
+            return fundamentals_ticker.upper()
+        return ticker.upper()
 
     def _get_data_file_path(self, ticker: str) -> Path:
         """Get the path to the data file for a security."""
@@ -64,6 +74,14 @@ class SecurityService:
         for data_file in self.data_dir.glob("*_data.json"):
             with open(data_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
+
+            # Legacy files written by the old fallback code cached the
+            # fundamentals ticker's info under the listing ticker (tagged
+            # with ``_fundamentals_ticker``). Skip those — we now cache each
+            # ticker under its own key and the listing needs a fresh local
+            # fetch to get its real currency.
+            if data.get("_fundamentals_ticker"):
+                continue
 
             ticker = data.get("ticker") or data.get("symbol")
             name = data.get("shortName") or data.get("longName") or data.get("name") or ticker
@@ -79,60 +97,83 @@ class SecurityService:
         ticker = ticker.upper()
         data_file = self._get_data_file_path(ticker)
 
-        # Add metadata
         data["_saved_at"] = datetime.now(timezone.utc).isoformat()
         data["ticker"] = ticker
 
-        # Convert any non-serializable values
         serializable_data = {}
         for key, value in data.items():
             try:
                 json.dumps(value)
                 serializable_data[key] = value
             except (TypeError, ValueError):
-                # Convert non-serializable values to string
                 serializable_data[key] = str(value)
 
         with open(data_file, "w", encoding="utf-8") as f:
             json.dump(serializable_data, f, indent=2, default=str)
 
+    def _fetch_and_cache_info(self, ticker: str) -> dict:
+        """Fetch yfinance info for one ticker and cache it under that ticker."""
+        ticker = ticker.upper()
+        stock = yf.Ticker(ticker)
+        info = dict(stock.info)
+
+        name = info.get("shortName") or info.get("longName") or ticker
+        info["ticker"] = ticker
+        if "shortName" not in info:
+            info["shortName"] = name
+
+        self._save_security_data(ticker, info)
+        self._full_info[ticker] = info
+        self._register(Security(ticker=ticker, name=name))
+        return info
+
+    def _ensure_info(self, ticker: str) -> dict:
+        """Return cached info for ticker, fetching if missing."""
+        ticker = ticker.upper()
+        info = self._full_info.get(ticker)
+        if info is None:
+            info = self._fetch_and_cache_info(ticker)
+        return info
+
     def get_by_ticker(self, ticker: str) -> Security | None:
         """Get a security by its ticker symbol."""
         return self._by_ticker.get(ticker.upper())
 
-    def get_full_info(self, ticker: str) -> dict | None:
-        """Get full yfinance info for a ticker if available."""
-        return self._full_info.get(ticker.upper())
+    def get_full_info(
+        self,
+        ticker: str,
+        fundamentals_ticker: str | None = None,
+    ) -> dict | None:
+        """Get cached yfinance info. Returns fundamentals_ticker's info when set."""
+        source = self._resolve(ticker, fundamentals_ticker)
+        return self._full_info.get(source)
 
-    def lookup_ticker(self, ticker: str) -> Security:
-        """
-        Lookup a security by ticker. If not known, fetch info from yfinance
-        and register the security.
+    def lookup_ticker(
+        self,
+        ticker: str,
+        fundamentals_ticker: str | None = None,
+    ) -> Security:
+        """Look up a security by ticker, fetching and caching info if unknown.
+
+        When ``fundamentals_ticker`` is given, that symbol's info is also
+        pre-fetched so subsequent fundamentals calls can hit the cache.
         """
         ticker = ticker.upper()
+        if fundamentals_ticker:
+            fundamentals_ticker = fundamentals_ticker.upper()
 
-        # Check if already known in memory
+        info = self._full_info.get(ticker)
+        if info is None:
+            info = self._fetch_and_cache_info(ticker)
+
+        if fundamentals_ticker and fundamentals_ticker != ticker:
+            if fundamentals_ticker not in self._full_info:
+                self._fetch_and_cache_info(fundamentals_ticker)
+
         if ticker in self._by_ticker:
             return self._by_ticker[ticker]
 
-        # Fetch from yfinance
-        stock = yf.Ticker(ticker)
-        info = stock.info
-
         name = info.get("shortName") or info.get("longName") or ticker
-
-        # Ensure ticker is in the info dict
-        info["ticker"] = ticker
-
-        if "shortName" not in info:
-            info["shortName"] = name
-
-        # Save full info to file (ticker-based)
-        self._save_security_data(ticker, info)
-
-        # Cache full info
-        self._full_info[ticker] = info
-
         security = Security(ticker=ticker, name=name)
         self._register(security)
         return security
@@ -173,44 +214,49 @@ class SecurityService:
         self._stock_data_service.force_update(ticker)
         return self._stock_data_service.get_price(ticker)
 
-    def get_stock_info(self, ticker: str) -> dict:
-        """Get stock information including name, sector, etc."""
+    def get_currency(
+        self,
+        ticker: str,
+    ) -> str:
+        """Return the native currency of a ticker's traded listing."""
+        info = self._ensure_info(ticker)
+        return info.get("currency") or "USD"
+
+    def get_stock_info(
+        self,
+        ticker: str,
+        fundamentals_ticker: str | None = None,
+    ) -> dict:
+        """Get stock information including name, sector, currency.
+
+        ``currency`` always comes from the traded listing (``ticker``) so
+        price-denominated comparisons remain honest. Business-level fields
+        (sector, industry, country, website) prefer the ``fundamentals_ticker``
+        data when provided — the primary/ADR listing usually has richer info.
+        """
         ticker = ticker.upper()
+        local_info = self._ensure_info(ticker)
 
-        # Check if we have cached full info
-        if ticker in self._full_info:
-            info = self._full_info[ticker]
-            return {
-                "name": info.get("shortName") or info.get("longName") or ticker,
-                "ticker": ticker,
-                "currency": info.get("currency", "USD"),
-                "sector": info.get("sector"),
-                "industry": info.get("industry"),
-                "country": info.get("country"),
-                "website": info.get("website"),
-                "marketCap": info.get("marketCap"),
-            }
+        fundamentals_info = local_info
+        if fundamentals_ticker:
+            fundamentals_info = self._ensure_info(fundamentals_ticker)
 
-        stock = yf.Ticker(ticker)
-        info = stock.info
-
-        name = info.get("shortName") or info.get("longName") or ticker
-
-        info["ticker"] = ticker
-
-        # Save and cache the full info
-        self._save_security_data(ticker, info)
-        self._full_info[ticker] = info
+        name = (
+            local_info.get("shortName")
+            or local_info.get("longName")
+            or ticker
+        )
 
         return {
             "name": name,
             "ticker": ticker,
-            "currency": info.get("currency", "USD"),
-            "sector": info.get("sector"),
-            "industry": info.get("industry"),
-            "country": info.get("country"),
-            "website": info.get("website"),
-            "marketCap": info.get("marketCap"),
+            "fundamentals_ticker": fundamentals_ticker.upper() if fundamentals_ticker else ticker,
+            "currency": local_info.get("currency") or "USD",
+            "sector": fundamentals_info.get("sector") or local_info.get("sector"),
+            "industry": fundamentals_info.get("industry") or local_info.get("industry"),
+            "country": fundamentals_info.get("country") or local_info.get("country"),
+            "website": fundamentals_info.get("website") or local_info.get("website"),
+            "marketCap": fundamentals_info.get("marketCap"),
         }
 
     def delete_security(self, ticker: str) -> None:
@@ -229,51 +275,51 @@ class SecurityService:
         self._full_info.pop(ticker, None)
         self._stock_data_service._cache.pop(ticker, None)
 
-    def refresh_security_data(self, ticker: str) -> dict:
+    def refresh_security_data(
+        self,
+        ticker: str,
+        fundamentals_ticker: str | None = None,
+    ) -> dict:
         """Force refresh security data from yfinance and save to file."""
         ticker = ticker.upper()
-        stock = yf.Ticker(ticker)
-        info = stock.info
-
-        name = info.get("shortName") or info.get("longName") or ticker
-
-        info["ticker"] = ticker
-
-        # Save and update caches
-        self._save_security_data(ticker, info)
-        self._full_info[ticker] = info
-
-        security = Security(ticker=ticker, name=name)
-        self._register(security)
-
+        info = self._fetch_and_cache_info(ticker)
+        if fundamentals_ticker and fundamentals_ticker.upper() != ticker:
+            self._fetch_and_cache_info(fundamentals_ticker.upper())
         return info
 
-    def is_data_stale(self, ticker: str, max_age_hours: int = 24) -> bool:
+    def is_data_stale(
+        self,
+        ticker: str,
+        max_age_hours: int = 24,
+        fundamentals_ticker: str | None = None,
+    ) -> bool:
         """Check if stored data for a ticker is stale (older than max_age_hours)."""
-        info = self._full_info.get(ticker.upper())
+        source = self._resolve(ticker, fundamentals_ticker)
+        info = self._full_info.get(source)
         if not info:
             return True
         saved_at = info.get("_saved_at")
         if not saved_at:
             return True
         saved_time = datetime.fromisoformat(saved_at)
-        # Normalize to UTC-aware if naive
         if saved_time.tzinfo is None:
             saved_time = saved_time.replace(tzinfo=timezone.utc)
-            
+
         return datetime.now(timezone.utc) - saved_time > timedelta(hours=max_age_hours)
 
     # ==================== Rich Data Methods ====================
-    # These methods expose already-stored yfinance data without new API calls
+    # These methods expose already-stored yfinance data without new API calls.
+    # Each returns a ``currency`` field so callers can convert to a display
+    # currency via FxService — price-denominated values (52w, MAs, analyst
+    # targets) are in the fundamentals ticker's native currency.
 
-    def get_short_interest(self, ticker: str) -> dict | None:
-        """Get short interest data from stored JSON.
-
-        Returns:
-            Dict with shares_short, short_ratio (days to cover), short_percent_float
-            or None if not available
-        """
-        info = self._full_info.get(ticker.upper())
+    def get_short_interest(
+        self,
+        ticker: str,
+        fundamentals_ticker: str | None = None,
+    ) -> dict | None:
+        """Short interest data (shares_short, short_ratio, short_percent_float)."""
+        info = self.get_full_info(ticker, fundamentals_ticker)
         if not info:
             return None
 
@@ -283,17 +329,17 @@ class SecurityService:
 
         return {
             "shares_short": shares_short,
-            "short_ratio": info.get("shortRatio"),  # Days to cover
+            "short_ratio": info.get("shortRatio"),
             "short_percent_float": info.get("shortPercentOfFloat"),
         }
 
-    def get_52w_range(self, ticker: str) -> dict | None:
-        """Get 52-week range from stored JSON.
-
-        Returns:
-            Dict with high_52w, low_52w or None if not available
-        """
-        info = self._full_info.get(ticker.upper())
+    def get_52w_range(
+        self,
+        ticker: str,
+        fundamentals_ticker: str | None = None,
+    ) -> dict | None:
+        """52-week range with the source currency attached."""
+        info = self.get_full_info(ticker, fundamentals_ticker)
         if not info:
             return None
 
@@ -305,15 +351,16 @@ class SecurityService:
         return {
             "high_52w": high,
             "low_52w": low,
+            "currency": info.get("currency") or "USD",
         }
 
-    def get_moving_averages(self, ticker: str) -> dict | None:
-        """Get moving averages from stored JSON.
-
-        Returns:
-            Dict with ma_50, ma_200 or None if not available
-        """
-        info = self._full_info.get(ticker.upper())
+    def get_moving_averages(
+        self,
+        ticker: str,
+        fundamentals_ticker: str | None = None,
+    ) -> dict | None:
+        """Moving averages with the source currency attached."""
+        info = self.get_full_info(ticker, fundamentals_ticker)
         if not info:
             return None
 
@@ -325,15 +372,16 @@ class SecurityService:
         return {
             "ma_50": ma_50,
             "ma_200": ma_200,
+            "currency": info.get("currency") or "USD",
         }
 
-    def get_analyst_data(self, ticker: str) -> dict | None:
-        """Get analyst ratings from stored JSON.
-
-        Returns:
-            Dict with target_price, recommendation or None if not available
-        """
-        info = self._full_info.get(ticker.upper())
+    def get_analyst_data(
+        self,
+        ticker: str,
+        fundamentals_ticker: str | None = None,
+    ) -> dict | None:
+        """Analyst ratings and targets with source currency attached."""
+        info = self.get_full_info(ticker, fundamentals_ticker)
         if not info:
             return None
 
@@ -348,15 +396,16 @@ class SecurityService:
             "target_low": info.get("targetLowPrice"),
             "recommendation": rec,
             "num_analysts": info.get("numberOfAnalystOpinions"),
+            "currency": info.get("currency") or "USD",
         }
 
-    def get_volume_data(self, ticker: str) -> dict | None:
-        """Get volume metrics from stored JSON.
-
-        Returns:
-            Dict with avg_volume, avg_volume_10d or None if not available
-        """
-        info = self._full_info.get(ticker.upper())
+    def get_volume_data(
+        self,
+        ticker: str,
+        fundamentals_ticker: str | None = None,
+    ) -> dict | None:
+        """Volume metrics (avg_volume, avg_volume_10d)."""
+        info = self.get_full_info(ticker, fundamentals_ticker)
         if not info:
             return None
 
@@ -369,13 +418,13 @@ class SecurityService:
             "avg_volume_10d": info.get("averageVolume10days"),
         }
 
-    def get_earnings_timestamp(self, ticker: str) -> datetime | None:
-        """Get earnings date from stored JSON.
-
-        Returns:
-            Datetime of next earnings or None if not available
-        """
-        info = self._full_info.get(ticker.upper())
+    def get_earnings_timestamp(
+        self,
+        ticker: str,
+        fundamentals_ticker: str | None = None,
+    ) -> datetime | None:
+        """Next earnings date if available."""
+        info = self.get_full_info(ticker, fundamentals_ticker)
         if not info:
             return None
 
@@ -388,13 +437,18 @@ class SecurityService:
         except (TypeError, ValueError, OSError):
             return None
 
-    def get_valuation_metrics(self, ticker: str) -> dict | None:
-        """Get valuation metrics from stored JSON.
+    def get_valuation_metrics(
+        self,
+        ticker: str,
+        fundamentals_ticker: str | None = None,
+    ) -> dict | None:
+        """Valuation metrics (beta, PE, P/B, market cap).
 
-        Returns:
-            Dict with beta, pe_trailing, pe_forward, etc.
+        PE ratios and price/book are dimensionless and comparable across
+        listings. ``market_cap`` is attached with its source currency so
+        callers can convert if needed.
         """
-        info = self._full_info.get(ticker.upper())
+        info = self.get_full_info(ticker, fundamentals_ticker)
         if not info:
             return None
 
@@ -404,4 +458,5 @@ class SecurityService:
             "pe_forward": info.get("forwardPE"),
             "price_to_book": info.get("priceToBook"),
             "market_cap": info.get("marketCap"),
+            "currency": info.get("currency") or "USD",
         }

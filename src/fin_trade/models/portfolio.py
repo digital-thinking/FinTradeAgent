@@ -23,6 +23,10 @@ class Holding:
     avg_price: float
     stop_loss_price: float | None = None
     take_profit_price: float | None = None
+    # Optional US/primary symbol to use for business-level fundamentals
+    # (sector, analyst targets, earnings, insider trades) when the traded
+    # listing has sparse yfinance data. Prices always come from `ticker`.
+    fundamentals_ticker: str | None = None
 
 
 @dataclass
@@ -39,6 +43,9 @@ class Trade:
     stop_loss_price: float | None = None
     take_profit_price: float | None = None
     realized_pnl: float | None = None
+    # Snapshot of the listing's native currency at trade time so historical
+    # P/L conversion doesn't depend on re-fetching yfinance later.
+    currency: str | None = None
 
 
 @dataclass
@@ -66,6 +73,9 @@ class PortfolioConfig:
     asset_class: AssetClass = AssetClass.STOCKS
     agent_mode: Literal["simple", "langgraph", "debate"] = "langgraph"
     debate_config: DebateConfig | None = None
+    # Currency used for display/prompts/UI. Native prices and avg_price are
+    # stored untouched; conversion happens at read time via FxService.
+    display_currency: str = "USD"
 
 
 @dataclass

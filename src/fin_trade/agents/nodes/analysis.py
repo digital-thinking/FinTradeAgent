@@ -40,9 +40,8 @@ def _build_analysis_prompt(state: SimpleAgentState) -> str:
     # Pass SecurityService to use stored 52w range, MAs, short interest data
     security_service = SecurityService()
     stock_data_service = StockDataService()
-    holding_tickers = [h.ticker for h in portfolio_state.holdings]
     price_contexts = stock_data_service.get_holdings_context(
-        holding_tickers, security_service
+        portfolio_state.holdings, security_service
     )
 
     # Format holdings with rich context (price history, RSI, volume, MAs, short interest)
@@ -67,8 +66,9 @@ USER GUIDANCE (from portfolio manager - incorporate this into your analysis):
     try:
         market_data_service = MarketDataService()
         market_data_context = market_data_service.get_holdings_context(
-            holding_tickers,
+            portfolio_state.holdings,
             config.asset_class,
+            security_service=security_service,
         )
     except Exception:
         market_data_context = "Market data temporarily unavailable."

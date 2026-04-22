@@ -322,22 +322,25 @@ class StockDataService:
         self,
         ticker: str,
         security_service: SecurityService | None = None,
+        fundamentals_ticker: str | None = None,
     ) -> PriceContext:
         """Get rich price context for a ticker including history and indicators.
 
-        If security_service is provided, uses stored 52w range and MA data
-        to reduce API calls (only fetches 30 days of history for RSI/changes).
+        When ``security_service`` is provided, pulls 52w range / MAs / short
+        interest from stored yfinance info. ``fundamentals_ticker`` — if set
+        — routes those fundamentals lookups to the US/primary listing.
+        Prices always come from ``ticker`` (the traded listing).
 
-        Args:
-            ticker: Stock ticker symbol
-            security_service: Optional SecurityService for stored data reuse
-
-        Returns:
-            PriceContext with price history and technical indicators
+        Since `fiftyTwoWeekHigh` / `fiftyDayAverage` from an ADR are quoted
+        in that ADR's currency (usually USD) while our ``current_price`` is
+        in the listing's native currency, we only use the stored 52w / MAs
+        when there is no fundamentals_ticker override — otherwise we fall
+        back to local price history so all derived ratios stay honest.
+        Callers that want primary-listing 52w / MAs should convert via
+        FxService at display time.
         """
         ticker = ticker.upper()
 
-        # Try to get 52w range and MAs from stored data
         high_52w = None
         low_52w = None
         ma_50_stored = None
@@ -346,19 +349,21 @@ class StockDataService:
         short_percent_float = None
 
         if security_service:
-            # Get stored 52w range (avoid fetching 365 days of history)
-            range_data = security_service.get_52w_range(ticker)
-            if range_data:
-                high_52w = range_data["high_52w"]
-                low_52w = range_data["low_52w"]
+            use_listing_for_prices = fundamentals_ticker is None
 
-            # Get stored MA data
-            ma_data = security_service.get_moving_averages(ticker)
-            if ma_data:
-                ma_50_stored = ma_data["ma_50"]
+            if use_listing_for_prices:
+                range_data = security_service.get_52w_range(ticker)
+                if range_data:
+                    high_52w = range_data["high_52w"]
+                    low_52w = range_data["low_52w"]
 
-            # Get short interest data
-            si_data = security_service.get_short_interest(ticker)
+                ma_data = security_service.get_moving_averages(ticker)
+                if ma_data:
+                    ma_50_stored = ma_data["ma_50"]
+
+            # Short interest is dimensionless (% of float, shares) — safe
+            # to pull from the fundamentals ticker regardless.
+            si_data = security_service.get_short_interest(ticker, fundamentals_ticker)
             if si_data:
                 shares_short = si_data["shares_short"]
                 short_ratio = si_data["short_ratio"]
@@ -448,21 +453,24 @@ class StockDataService:
 
     def get_holdings_context(
         self,
-        tickers: list[str],
+        holdings: list,
         security_service: SecurityService | None = None,
     ) -> dict[str, PriceContext]:
-        """Get price context for multiple tickers.
+        """Get price context for a list of holdings.
 
-        Args:
-            tickers: List of ticker symbols
-            security_service: Optional SecurityService for stored data reuse
+        Each holding's ``fundamentals_ticker`` (if set) is used to route
+        fundamentals lookups to its primary listing.
 
         Returns:
-            Dict mapping ticker to PriceContext
+            Dict mapping ticker to PriceContext.
         """
         result = {}
-        for ticker in tickers:
-            result[ticker] = self.get_price_context(ticker, security_service)
+        for h in holdings:
+            result[h.ticker] = self.get_price_context(
+                h.ticker,
+                security_service,
+                fundamentals_ticker=getattr(h, "fundamentals_ticker", None),
+            )
         return result
 
     def format_holdings_for_prompt(
@@ -486,8 +494,7 @@ class StockDataService:
             return "  None (empty portfolio)"
 
         if price_contexts is None:
-            tickers = [h.ticker for h in holdings]
-            price_contexts = self.get_holdings_context(tickers, security_service)
+            price_contexts = self.get_holdings_context(holdings, security_service)
 
         unit_label = "units" if asset_class == AssetClass.CRYPTO else "shares"
 

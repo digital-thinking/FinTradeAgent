@@ -159,33 +159,37 @@ class MarketDataService:
         """Store data in cache."""
         self._cache[key] = (datetime.now(timezone.utc), data)
 
+    @staticmethod
+    def _resolve_source(ticker: str, fundamentals_ticker: str | None) -> str:
+        """Return the ticker to use as the fundamentals/events data source."""
+        if fundamentals_ticker:
+            return fundamentals_ticker.upper()
+        return ticker.upper()
+
     def get_earnings_info(
         self,
         ticker: str,
         security_service: SecurityService | None = None,
+        fundamentals_ticker: str | None = None,
     ) -> EarningsInfo:
         """Fetch earnings calendar information for a ticker.
 
-        If security_service is provided, checks stored data first
-        before calling yfinance API.
-
-        Args:
-            ticker: Stock ticker symbol
-            security_service: Optional SecurityService for stored data reuse
-
-        Returns:
-            EarningsInfo with earnings date and estimates
+        When ``fundamentals_ticker`` is given, corporate events are pulled
+        from that symbol (typically the US/primary listing) instead of the
+        traded ticker.
         """
         ticker = ticker.upper()
-        cache_key = f"earnings_{ticker}"
+        source = self._resolve_source(ticker, fundamentals_ticker)
+        cache_key = f"earnings_{ticker}_{source}"
 
         cached = self._get_cached(cache_key)
         if cached:
             return cached  # type: ignore
 
-        # Try to get earnings date from stored SecurityService data first
         if security_service:
-            stored_earnings = security_service.get_earnings_timestamp(ticker)
+            stored_earnings = security_service.get_earnings_timestamp(
+                ticker, fundamentals_ticker
+            )
             if stored_earnings:
                 # Ensure stored_earnings is UTC-aware
                 if stored_earnings.tzinfo is None:
@@ -204,7 +208,7 @@ class MarketDataService:
                     self._set_cached(cache_key, result)
                     return result
 
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(source)
         calendar = stock.calendar
 
         earnings_date = None
@@ -256,16 +260,23 @@ class MarketDataService:
         self._set_cached(cache_key, result)
         return result
 
-    def get_insider_trades(self, ticker: str, limit: int = 5) -> list[InsiderTrade]:
+    def get_insider_trades(
+        self,
+        ticker: str,
+        limit: int = 5,
+        security_service: SecurityService | None = None,
+        fundamentals_ticker: str | None = None,
+    ) -> list[InsiderTrade]:
         """Fetch recent insider trading transactions for a ticker."""
         ticker = ticker.upper()
-        cache_key = f"insider_{ticker}"
+        source = self._resolve_source(ticker, fundamentals_ticker)
+        cache_key = f"insider_{ticker}_{source}"
 
         cached = self._get_cached(cache_key)
         if cached:
             return cached[:limit]  # type: ignore
 
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(source)
         insider_df = stock.insider_transactions
 
         if insider_df is None or insider_df.empty:
@@ -317,11 +328,17 @@ class MarketDataService:
         return trades[:limit]
 
     def get_sec_filings(
-        self, ticker: str, filing_types: list[str] | None = None, limit: int = 5
+        self,
+        ticker: str,
+        filing_types: list[str] | None = None,
+        limit: int = 5,
+        security_service: SecurityService | None = None,
+        fundamentals_ticker: str | None = None,
     ) -> list[SECFiling]:
         """Fetch recent SEC filings for a ticker."""
         ticker = ticker.upper()
-        cache_key = f"sec_{ticker}"
+        source = self._resolve_source(ticker, fundamentals_ticker)
+        cache_key = f"sec_{ticker}_{source}"
 
         if filing_types is None:
             filing_types = ["8-K", "10-Q", "10-K"]
@@ -331,7 +348,7 @@ class MarketDataService:
             filings = [f for f in cached if f.filing_type in filing_types]  # type: ignore
             return filings[:limit]
 
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(source)
         sec_filings = stock.sec_filings
 
         if sec_filings is None or (
@@ -439,19 +456,31 @@ class MarketDataService:
         self._set_cached(cache_key, result)
         return result
 
-    def get_full_context_for_holdings(self, tickers: list[str]) -> str:
-        """Get full market data context for a list of holdings."""
+    def get_full_context_for_holdings(
+        self,
+        holdings: list,
+        security_service: SecurityService | None = None,
+    ) -> str:
+        """Get full market data context for a list of holdings.
+
+        ``holdings`` entries expose ``ticker`` and optional
+        ``fundamentals_ticker`` — each holding's events are pulled from
+        its fundamentals ticker when set.
+        """
         lines = []
 
-        # Macro data first
         macro = self.get_macro_data()
         lines.append(macro.to_context_string())
         lines.append("")
 
-        # Earnings calendar
         earnings_upcoming = []
-        for ticker in tickers:
-            info = self.get_earnings_info(ticker)
+        for h in holdings:
+            fundamentals = getattr(h, "fundamentals_ticker", None)
+            info = self.get_earnings_info(
+                h.ticker,
+                security_service=security_service,
+                fundamentals_ticker=fundamentals,
+            )
             if (
                 info.hours_until_earnings is not None
                 and -1 <= info.hours_until_earnings <= 30 * 24
@@ -466,15 +495,19 @@ class MarketDataService:
                 lines.append(f"  {info.to_context_string()}")
             lines.append("")
 
-        # Recent SEC filings
         all_filings = []
-        for ticker in tickers:
-            filings = self.get_sec_filings(ticker, limit=3)
+        for h in holdings:
+            fundamentals = getattr(h, "fundamentals_ticker", None)
+            filings = self.get_sec_filings(
+                h.ticker,
+                limit=3,
+                security_service=security_service,
+                fundamentals_ticker=fundamentals,
+            )
             all_filings.extend(filings)
 
-        # Sort by date, most recent first
         all_filings.sort(key=lambda x: x.date or datetime.min, reverse=True)
-        recent_filings = all_filings[:10]  # Top 10 most recent across all holdings
+        recent_filings = all_filings[:10]
 
         if recent_filings:
             lines.append("RECENT SEC FILINGS:")
@@ -482,15 +515,19 @@ class MarketDataService:
                 lines.append(f"  {filing.to_context_string()}")
             lines.append("")
 
-        # Insider trading activity
         all_insider_trades = []
-        for ticker in tickers:
-            trades = self.get_insider_trades(ticker, limit=3)
+        for h in holdings:
+            fundamentals = getattr(h, "fundamentals_ticker", None)
+            trades = self.get_insider_trades(
+                h.ticker,
+                limit=3,
+                security_service=security_service,
+                fundamentals_ticker=fundamentals,
+            )
             all_insider_trades.extend(trades)
 
-        # Sort by date, most recent first
         all_insider_trades.sort(key=lambda x: x.date or datetime.min, reverse=True)
-        recent_trades = all_insider_trades[:10]  # Top 10 most recent
+        recent_trades = all_insider_trades[:10]
 
         if recent_trades:
             lines.append("RECENT INSIDER TRADING:")
@@ -501,8 +538,9 @@ class MarketDataService:
 
     def get_holdings_context(
         self,
-        tickers: list[str],
+        holdings: list,
         asset_class: AssetClass = AssetClass.STOCKS,
+        security_service: SecurityService | None = None,
     ) -> str:
         """Get holdings context aligned to asset class."""
         if asset_class == AssetClass.CRYPTO:
@@ -512,4 +550,6 @@ class MarketDataService:
                 "CRYPTO NOTE: Stock fundamentals (earnings, SEC filings, insider trades) "
                 "are not applicable."
             )
-        return self.get_full_context_for_holdings(tickers)
+        return self.get_full_context_for_holdings(
+            holdings, security_service=security_service
+        )

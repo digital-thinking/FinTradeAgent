@@ -485,6 +485,7 @@ def _apply_pending_trades(
                 stop_loss_price=stop_loss_price,
                 take_profit_price=take_profit_price,
                 asset_class=config.asset_class,
+                display_currency=config.display_currency,
             )
             applied_indices.append(i)
         except Exception as e:

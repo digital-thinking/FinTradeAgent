@@ -201,13 +201,14 @@ def _get_market_data_context(state: DebateAgentState) -> str:
     """Get market data context for holdings."""
     config = state["portfolio_config"]
     portfolio_state = state["portfolio_state"]
-    holding_tickers = [h.ticker for h in portfolio_state.holdings]
 
     try:
+        security_service = SecurityService()
         market_data_service = MarketDataService()
         return market_data_service.get_holdings_context(
-            holding_tickers,
+            portfolio_state.holdings,
             config.asset_class,
+            security_service=security_service,
         )
     except Exception:
         return "Market data temporarily unavailable."

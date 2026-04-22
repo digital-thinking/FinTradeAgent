@@ -11,8 +11,8 @@ def get_portfolio_value(_portfolio_service: PortfolioService, portfolio_name: st
 
     The underscore prefix on _portfolio_service tells Streamlit not to hash it.
     """
-    _, state = _portfolio_service.load_portfolio(portfolio_name)
-    return _portfolio_service.calculate_value(state)
+    config, state = _portfolio_service.load_portfolio(portfolio_name)
+    return _portfolio_service.calculate_value(state, config.display_currency)
 
 
 @st.cache_data(ttl=60)
@@ -37,7 +37,7 @@ def get_portfolio_metrics(
     More efficient than separate calls when you need multiple values.
     """
     config, state = _portfolio_service.load_portfolio(portfolio_name)
-    value = _portfolio_service.calculate_value(state)
+    value = _portfolio_service.calculate_value(state, config.display_currency)
     abs_gain, pct_gain = _portfolio_service.calculate_gain(config, state)
     return {
         "value": value,

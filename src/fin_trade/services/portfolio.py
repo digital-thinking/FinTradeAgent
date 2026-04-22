@@ -18,6 +18,7 @@ from fin_trade.models import (
     PortfolioState,
     Trade,
 )
+from fin_trade.services.fx import FxService
 from fin_trade.services.security import SecurityService
 
 
@@ -29,6 +30,7 @@ class PortfolioService:
         portfolios_dir: Path | None = None,
         state_dir: Path | None = None,
         security_service: SecurityService | None = None,
+        fx_service: FxService | None = None,
     ):
         if portfolios_dir is None:
             portfolios_dir = Path("data/portfolios")
@@ -38,6 +40,7 @@ class PortfolioService:
         self.portfolios_dir = portfolios_dir
         self.state_dir = state_dir
         self.security_service = security_service or SecurityService()
+        self.fx_service = fx_service or FxService()
 
         self.portfolios_dir.mkdir(parents=True, exist_ok=True)
         self.state_dir.mkdir(parents=True, exist_ok=True)
@@ -67,6 +70,10 @@ class PortfolioService:
                 include_neutral=dc.get("include_neutral", True),
             )
 
+        display_currency = str(data.get("display_currency", "USD")).strip().upper()
+        if not display_currency:
+            raise ValueError("display_currency cannot be empty")
+
         return PortfolioConfig(
             name=data["name"],
             strategy_prompt=data["strategy_prompt"],
@@ -81,6 +88,7 @@ class PortfolioService:
             asset_class=AssetClass(data.get("asset_class", AssetClass.STOCKS.value)),
             agent_mode=data.get("agent_mode", "langgraph"),
             debate_config=debate_config,
+            display_currency=display_currency,
         )
 
     @staticmethod
@@ -108,6 +116,7 @@ class PortfolioService:
                 avg_price=float(h["avg_price"]),
                 stop_loss_price=h.get("stop_loss_price"),
                 take_profit_price=h.get("take_profit_price"),
+                fundamentals_ticker=h.get("fundamentals_ticker"),
             )
             for h in data.get("holdings", [])
         ]
@@ -128,6 +137,7 @@ class PortfolioService:
                     if t.get("realized_pnl") is not None
                     else None
                 ),
+                currency=t.get("currency"),
             )
             for t in data.get("trades", [])
         ]
@@ -166,34 +176,42 @@ class PortfolioService:
         """Save portfolio state to JSON."""
         state_path = self.state_dir / f"{name}.json"
 
+        holdings_data = []
+        for h in state.holdings:
+            entry = {
+                "ticker": h.ticker,
+                "name": h.name,
+                "quantity": h.quantity,
+                "avg_price": h.avg_price,
+                "stop_loss_price": h.stop_loss_price,
+                "take_profit_price": h.take_profit_price,
+            }
+            if h.fundamentals_ticker:
+                entry["fundamentals_ticker"] = h.fundamentals_ticker
+            holdings_data.append(entry)
+
+        trades_data = []
+        for t in state.trades:
+            entry = {
+                "timestamp": t.timestamp.isoformat(),
+                "ticker": t.ticker,
+                "name": t.name,
+                "action": t.action,
+                "quantity": t.quantity,
+                "price": t.price,
+                "reasoning": t.reasoning,
+                "stop_loss_price": t.stop_loss_price,
+                "take_profit_price": t.take_profit_price,
+                "realized_pnl": t.realized_pnl,
+            }
+            if t.currency:
+                entry["currency"] = t.currency
+            trades_data.append(entry)
+
         data = {
             "cash": state.cash,
-            "holdings": [
-                {
-                    "ticker": h.ticker,
-                    "name": h.name,
-                    "quantity": h.quantity,
-                    "avg_price": h.avg_price,
-                    "stop_loss_price": h.stop_loss_price,
-                    "take_profit_price": h.take_profit_price,
-                }
-                for h in state.holdings
-            ],
-            "trades": [
-                {
-                    "timestamp": t.timestamp.isoformat(),
-                    "ticker": t.ticker,
-                    "name": t.name,
-                    "action": t.action,
-                    "quantity": t.quantity,
-                    "price": t.price,
-                    "reasoning": t.reasoning,
-                    "stop_loss_price": t.stop_loss_price,
-                    "take_profit_price": t.take_profit_price,
-                    "realized_pnl": t.realized_pnl,
-                }
-                for t in state.trades
-            ],
+            "holdings": holdings_data,
+            "trades": trades_data,
             "last_execution": (
                 state.last_execution.isoformat() if state.last_execution else None
             ),
@@ -203,20 +221,32 @@ class PortfolioService:
         with open(state_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
-    def calculate_value(self, state: PortfolioState) -> float:
-        """Calculate total portfolio value (cash + holdings)."""
+    def calculate_value(
+        self,
+        state: PortfolioState,
+        display_currency: str = "USD",
+    ) -> float:
+        """Calculate total portfolio value in ``display_currency``.
+
+        Each holding's current value is computed in its listing's native
+        currency (price × quantity), then converted to ``display_currency``
+        via FxService. Cash is assumed to be in the display currency.
+        """
         total = float(state.cash)
         for holding in state.holdings:
-            price = self.security_service.get_price(holding.ticker)
-            total += float(price) * holding.quantity
+            price = float(self.security_service.get_price(holding.ticker))
+            native_value = price * holding.quantity
+            native_ccy = self.security_service.get_currency(holding.ticker)
+            total += self.fx_service.convert(
+                native_value, native_ccy, display_currency
+            )
         return total
 
     def calculate_gain(
         self, config: PortfolioConfig, state: PortfolioState
     ) -> tuple[float, float]:
-        """Calculate absolute and percentage gain/loss."""
-        current_value = self.calculate_value(state)
-        # Use actual initial investment if recorded, otherwise fall back to config
+        """Calculate absolute and percentage gain/loss in the display currency."""
+        current_value = self.calculate_value(state, config.display_currency)
         initial = float(
             state.initial_investment
             if state.initial_investment is not None
@@ -257,8 +287,17 @@ class PortfolioService:
         ticker: str,
         quantity: float,
         sell_price: float,
+        sell_currency: str | None,
+        sell_timestamp: datetime,
+        display_currency: str,
     ) -> float:
-        """Calculate FIFO realized P/L for a SELL trade."""
+        """Calculate FIFO realized P/L for a SELL, converted to display currency.
+
+        Each BUY lot is converted from its native trade currency at the
+        BUY timestamp, and the SELL leg at the SELL timestamp — so FX moves
+        between buy and sell are correctly attributed to realized P/L.
+        """
+        # Lot: [remaining_qty, price_in_display_ccy]
         lots: list[list[float]] = []
         normalized_ticker = ticker.upper()
 
@@ -266,13 +305,18 @@ class PortfolioService:
             if trade.ticker.upper() != normalized_ticker:
                 continue
 
+            trade_ccy = trade.currency or display_currency
+            price_in_display = self.fx_service.convert(
+                trade.price, trade_ccy, display_currency, at=trade.timestamp
+            )
+
             if trade.action == "BUY":
-                lots.append([trade.quantity, trade.price])
+                lots.append([trade.quantity, price_in_display])
                 continue
 
             remaining_to_match = trade.quantity
             while remaining_to_match > 0 and lots:
-                lot_quantity, lot_price = lots[0]
+                lot_quantity, _lot_price = lots[0]
                 matched_quantity = min(remaining_to_match, lot_quantity)
                 remaining_to_match -= matched_quantity
                 lot_quantity -= matched_quantity
@@ -281,12 +325,17 @@ class PortfolioService:
                 else:
                     lots[0][0] = lot_quantity
 
+        sell_ccy = sell_currency or display_currency
+        sell_price_display = self.fx_service.convert(
+            sell_price, sell_ccy, display_currency, at=sell_timestamp
+        )
+
         remaining_to_sell = quantity
         realized_pnl = 0.0
         while remaining_to_sell > 0 and lots:
-            lot_quantity, lot_price = lots[0]
+            lot_quantity, lot_price_display = lots[0]
             matched_quantity = min(remaining_to_sell, lot_quantity)
-            realized_pnl += matched_quantity * (sell_price - lot_price)
+            realized_pnl += matched_quantity * (sell_price_display - lot_price_display)
             remaining_to_sell -= matched_quantity
             lot_quantity -= matched_quantity
             if lot_quantity <= 0:
@@ -313,8 +362,15 @@ class PortfolioService:
         take_profit_price: float | None = None,
         asset_class: AssetClass = AssetClass.STOCKS,
         allow_negative_cash: bool = False,
+        fundamentals_ticker: str | None = None,
+        display_currency: str = "USD",
     ) -> PortfolioState:
-        """Execute a trade and return updated state."""
+        """Execute a trade and return updated state.
+
+        ``price`` is in the listing's native currency. Cash is tracked in
+        ``display_currency``; the trade's native cost is converted at the
+        trade-timestamp FX rate.
+        """
         quantity = float(quantity)
         price = float(price)
         if quantity <= 0:
@@ -326,9 +382,14 @@ class PortfolioService:
 
         self.security_service.validate_ticker_for_asset_class(ticker, asset_class)
 
-        # Lookup security info from ticker
-        security = self.security_service.lookup_ticker(ticker)
-        cost = price * quantity
+        security = self.security_service.lookup_ticker(ticker, fundamentals_ticker)
+        trade_currency = self.security_service.get_currency(ticker)
+        trade_timestamp = datetime.now(timezone.utc)
+
+        native_cost = price * quantity
+        cost_display = self.fx_service.convert(
+            native_cost, trade_currency, display_currency, at=trade_timestamp
+        )
 
         holdings = list(state.holdings)
         trades = list(state.trades)
@@ -336,10 +397,10 @@ class PortfolioService:
         realized_pnl = None
 
         if action == "BUY":
-            if cost > cash and not allow_negative_cash:
-                raise ValueError(f"Insufficient cash: need {cost}, have {cash}")
+            if cost_display > cash and not allow_negative_cash:
+                raise ValueError(f"Insufficient cash: need {cost_display}, have {cash}")
 
-            cash -= cost
+            cash -= cost_display
             existing = next((h for h in holdings if h.ticker == ticker), None)
             if existing:
                 total_qty = existing.quantity + quantity
@@ -347,7 +408,6 @@ class PortfolioService:
                     (existing.avg_price * existing.quantity) + (price * quantity)
                 ) / total_qty
                 holdings = [h for h in holdings if h.ticker != ticker]
-                # Use new SL/TP if provided, otherwise keep existing
                 holdings.append(Holding(
                     ticker=security.ticker,
                     name=security.name,
@@ -355,6 +415,7 @@ class PortfolioService:
                     avg_price=avg_price,
                     stop_loss_price=stop_loss_price or existing.stop_loss_price,
                     take_profit_price=take_profit_price or existing.take_profit_price,
+                    fundamentals_ticker=fundamentals_ticker or existing.fundamentals_ticker,
                 ))
             else:
                 holdings.append(Holding(
@@ -364,6 +425,7 @@ class PortfolioService:
                     avg_price=price,
                     stop_loss_price=stop_loss_price,
                     take_profit_price=take_profit_price,
+                    fundamentals_ticker=fundamentals_ticker,
                 ))
 
         elif action == "SELL":
@@ -383,8 +445,11 @@ class PortfolioService:
                 ticker,
                 quantity,
                 price,
+                trade_currency,
+                trade_timestamp,
+                display_currency,
             )
-            cash += cost
+            cash += cost_display
             new_qty = existing.quantity - quantity
             holdings = [h for h in holdings if h.ticker != ticker]
             if new_qty > qty_tol:
@@ -395,10 +460,11 @@ class PortfolioService:
                     avg_price=existing.avg_price,
                     stop_loss_price=existing.stop_loss_price,
                     take_profit_price=existing.take_profit_price,
+                    fundamentals_ticker=existing.fundamentals_ticker,
                 ))
 
         trade = Trade(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=trade_timestamp,
             ticker=security.ticker,
             name=security.name,
             action=action,
@@ -408,6 +474,7 @@ class PortfolioService:
             stop_loss_price=stop_loss_price,
             take_profit_price=take_profit_price,
             realized_pnl=realized_pnl,
+            currency=trade_currency,
         )
         trades.append(trade)
 
@@ -415,7 +482,7 @@ class PortfolioService:
             cash=cash,
             holdings=holdings,
             trades=trades,
-            last_execution=datetime.now(timezone.utc),
+            last_execution=trade_timestamp,
             initial_investment=state.initial_investment,
         )
 
