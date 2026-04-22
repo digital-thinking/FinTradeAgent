@@ -100,19 +100,24 @@ def _render_summary(
     security_service: SecurityService,
 ) -> None:
     """Render the portfolio summary metrics."""
-    total_value = portfolio_service.calculate_value(state)
+    display_ccy = config.display_currency
+    total_value = portfolio_service.calculate_value(state, display_ccy)
     is_overdue = portfolio_service.is_execution_overdue(config, state)
 
-    # Calculate holdings and realized/unrealized P/L.
+    # Calculate holdings and realized/unrealized P/L in the display currency.
+    fx_service = portfolio_service.fx_service
     holdings_value = 0.0
     holdings_cost_basis = 0.0
     for holding in state.holdings:
-        holdings_cost_basis += holding.avg_price * holding.quantity
+        native_ccy = security_service.get_currency(holding.ticker)
+        cost_native = holding.avg_price * holding.quantity
+        holdings_cost_basis += fx_service.convert(cost_native, native_ccy, display_ccy)
         try:
             price = security_service.get_price(holding.ticker)
-            holdings_value += price * holding.quantity
+            value_native = price * holding.quantity
         except Exception:
-            holdings_value += holding.avg_price * holding.quantity
+            value_native = cost_native
+        holdings_value += fx_service.convert(value_native, native_ccy, display_ccy)
 
     unrealized_pnl = holdings_value - holdings_cost_basis
     realized_pnl = sum(
@@ -124,27 +129,27 @@ def _render_summary(
     col1, col2, col3, col4, col5, col6 = st.columns(6)
 
     with col1:
-        st.metric("Total Value", f"${total_value:,.2f}")
+        st.metric("Total Value", f"{total_value:,.2f} {display_ccy}")
 
     with col2:
-        st.metric("Unrealized P/L", f"${unrealized_pnl:,.2f}")
+        st.metric("Unrealized P/L", f"{unrealized_pnl:,.2f} {display_ccy}")
 
     with col3:
-        st.metric("Realized P/L", f"${realized_pnl:,.2f}")
+        st.metric("Realized P/L", f"{realized_pnl:,.2f} {display_ccy}")
 
     with col4:
         holdings_label = "Crypto Holdings" if config.asset_class == AssetClass.CRYPTO else "Stock Holdings"
-        st.metric(holdings_label, f"${holdings_value:,.2f}")
+        st.metric(holdings_label, f"{holdings_value:,.2f} {display_ccy}")
 
     with col5:
-        st.metric("Cash Available", f"${state.cash:,.2f}")
+        st.metric("Cash Available", f"{state.cash:,.2f} {display_ccy}")
 
     with col6:
         render_large_status_badge(is_overdue)
 
     with st.expander("Portfolio Configuration"):
         st.write(f"**Strategy:** {config.strategy_prompt[:200]}...")
-        st.write(f"**Initial Amount:** ${config.initial_amount:,.2f}")
+        st.write(f"**Initial Amount:** {config.initial_amount:,.2f} {display_ccy}")
         st.write(f"**Run Frequency:** {config.run_frequency}")
         st.write(f"**Trades per Run:** {config.trades_per_run}")
         st.write(f"**LLM:** {config.llm_provider} / {config.llm_model}")
@@ -243,10 +248,10 @@ def _render_reset_dialog(
 
     # Show what will be lost
     st.markdown("**What will be lost:**")
-    current_value = portfolio_service.calculate_value(state)
+    current_value = portfolio_service.calculate_value(state, config.display_currency)
     st.markdown(f"- **{len(state.trades)}** trades")
     st.markdown(f"- **{len(state.holdings)}** holdings")
-    st.markdown(f"- **${current_value:,.2f}** current value")
+    st.markdown(f"- **{current_value:,.2f} {config.display_currency}** current value")
 
     st.divider()
 
@@ -1394,6 +1399,7 @@ def _render_agent_execution(
                         stop_loss_price=trade.stop_loss_price,
                         take_profit_price=trade.take_profit_price,
                         asset_class=config.asset_class,
+                        display_currency=config.display_currency,
                     )
                 portfolio_service.save_state(portfolio_name, state)
                 st.session_state.recommendation = None

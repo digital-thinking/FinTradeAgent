@@ -239,6 +239,93 @@ class TestGetStockInfo:
         with pytest.raises(Exception, match="API Error"):
             service.get_stock_info("ERRORSTOCK")
 
+    @patch("fin_trade.services.security.yf")
+    def test_uses_fundamentals_ticker_when_provided(self, mock_yf, tmp_path):
+        """Test get_stock_info merges fundamentals data from the override ticker."""
+
+        listing_info = {
+            "shortName": "ING AS Listing",
+            "currency": "EUR",
+            "sector": None,
+            "industry": None,
+            "country": None,
+        }
+        fundamentals_info = {
+            "shortName": "ING Group",
+            "currency": "USD",
+            "sector": "Financial Services",
+            "industry": "Banks—Diversified",
+            "country": "Netherlands",
+            "marketCap": 100,
+        }
+
+        def make_ticker(symbol):
+            ticker = MagicMock()
+            ticker.info = fundamentals_info if symbol == "ING" else listing_info
+            return ticker
+
+        mock_yf.Ticker.side_effect = make_ticker
+
+        mock_stock_service = MagicMock()
+        service = SecurityService(
+            data_dir=tmp_path,
+            stock_data_service=mock_stock_service,
+        )
+
+        info = service.get_stock_info("INGA.AS", fundamentals_ticker="ING")
+
+        # Both listings are fetched and cached independently
+        called_symbols = {call.args[0] for call in mock_yf.Ticker.call_args_list}
+        assert called_symbols == {"INGA.AS", "ING"}
+
+        assert info["ticker"] == "INGA.AS"
+        assert info["fundamentals_ticker"] == "ING"
+        # Currency is always the listing's native currency
+        assert info["currency"] == "EUR"
+        # Business fields come from the fundamentals ticker
+        assert info["sector"] == "Financial Services"
+        assert info["country"] == "Netherlands"
+        assert info["marketCap"] == 100
+
+        assert (tmp_path / "INGA.AS_data.json").exists()
+        assert (tmp_path / "ING_data.json").exists()
+
+    @patch("fin_trade.services.security.yf")
+    def test_lookup_ticker_preloads_fundamentals_symbol(self, mock_yf, tmp_path):
+        """lookup_ticker pre-fetches the fundamentals ticker but keeps the listing identity."""
+        listing_info = {"shortName": "Cameco Frankfurt", "sector": None}
+        fundamentals_info = {"shortName": "Cameco Corporation", "sector": "Energy"}
+
+        def make_ticker(symbol):
+            ticker = MagicMock()
+            ticker.info = (
+                fundamentals_info if symbol == "CCJ" else listing_info
+            )
+            return ticker
+
+        mock_yf.Ticker.side_effect = make_ticker
+
+        mock_stock_service = MagicMock()
+        service = SecurityService(
+            data_dir=tmp_path,
+            stock_data_service=mock_stock_service,
+        )
+
+        security = service.lookup_ticker("CJ6.F", fundamentals_ticker="CCJ")
+
+        # Listing identity is kept — Security.ticker is the traded symbol
+        assert security.ticker == "CJ6.F"
+        assert security.name == "Cameco Frankfurt"
+
+        # Both symbols cached under their own files
+        assert (tmp_path / "CCJ_data.json").exists()
+        assert (tmp_path / "CJ6.F_data.json").exists()
+
+        # Subsequent fundamentals lookups return CCJ info
+        fundamentals = service.get_full_info("CJ6.F", fundamentals_ticker="CCJ")
+        assert fundamentals is not None
+        assert fundamentals["sector"] == "Energy"
+
 
 class TestIsDataStale:
     """Tests for is_data_stale method."""
@@ -399,6 +486,33 @@ class TestGet52wRange:
         assert range_data is not None
         assert range_data["high_52w"] == 212.19
         assert range_data["low_52w"] == 86.62
+
+    def test_returns_range_from_explicit_fundamentals_ticker(self, tmp_path):
+        """Test range data resolves through the fundamentals_ticker argument."""
+        data_dir = tmp_path / "stock_data"
+        data_dir.mkdir()
+
+        security_data = {
+            "ticker": "ING",
+            "shortName": "ING Group",
+            "currency": "USD",
+            "fiftyTwoWeekHigh": 25.0,
+            "fiftyTwoWeekLow": 15.0,
+        }
+        (data_dir / "ING_data.json").write_text(json.dumps(security_data))
+
+        mock_stock_service = MagicMock()
+        service = SecurityService(
+            data_dir=data_dir,
+            stock_data_service=mock_stock_service,
+        )
+
+        range_data = service.get_52w_range("INGA.AS", fundamentals_ticker="ING")
+        assert range_data == {
+            "high_52w": 25.0,
+            "low_52w": 15.0,
+            "currency": "USD",
+        }
 
 
 class TestGetMovingAverages:

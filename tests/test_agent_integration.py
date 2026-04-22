@@ -54,5 +54,9 @@ def test_agent_includes_market_data_in_prompt():
     assert "S&P 500" in prompt
     assert "USING MARKET INTELLIGENCE DATA" in prompt
 
-    # Verify the service was called with correct tickers
-    mock_market_data.get_holdings_context.assert_called_once_with(["AAPL"], config.asset_class)
+    # Verify the service was called with the holdings list
+    mock_market_data.get_holdings_context.assert_called_once_with(
+        state.holdings,
+        config.asset_class,
+        security_service=mock_security,
+    )

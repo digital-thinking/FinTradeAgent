@@ -98,6 +98,33 @@ class TestLoadConfig:
         assert config.run_frequency == "weekly"
         assert config.llm_provider == "openai"
         assert config.agent_mode == "simple"
+        assert config.display_currency == "USD"
+
+    def test_loads_display_currency(
+        self, temp_data_dir, mock_security_service
+    ):
+        """Test loading explicit display_currency and normalizing to uppercase."""
+        config_content = """name: EUR Portfolio
+strategy_prompt: Test strategy
+initial_amount: 10000.0
+num_initial_trades: 3
+trades_per_run: 2
+run_frequency: weekly
+llm_provider: openai
+llm_model: gpt-4o
+display_currency: eur
+"""
+        (temp_data_dir["portfolios"] / "eur_portfolio.yaml").write_text(config_content)
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+
+        config = service._load_config("eur_portfolio")
+
+        assert config.display_currency == "EUR"
 
     def test_raises_file_not_found_for_missing_config(
         self, temp_data_dir, mock_security_service
@@ -284,6 +311,134 @@ class TestSaveState:
         assert data["holdings"][0]["ticker"] == "AAPL"
 
 
+class TestSerializationRoundtrip:
+    """Round-trip save/load tests for new optional fields."""
+
+    def test_holding_with_fundamentals_ticker_roundtrips(
+        self, temp_data_dir, mock_security_service
+    ):
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+        state = PortfolioState(
+            cash=1000.0,
+            holdings=[
+                Holding(
+                    ticker="INGA.AS",
+                    name="ING Groep",
+                    quantity=10,
+                    avg_price=14.0,
+                    fundamentals_ticker="ING",
+                )
+            ],
+        )
+
+        service.save_state("roundtrip", state)
+        loaded = service._load_state("roundtrip", initial_amount=0.0)
+
+        assert loaded.holdings[0].fundamentals_ticker == "ING"
+
+    def test_holding_without_fundamentals_ticker_is_omitted(
+        self, temp_data_dir, mock_security_service, sample_holding
+    ):
+        """When fundamentals_ticker is None, the field should not bloat JSON."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+        state = PortfolioState(cash=1000.0, holdings=[sample_holding])
+
+        service.save_state("no_fund", state)
+        data = json.loads((temp_data_dir["state"] / "no_fund.json").read_text())
+
+        assert "fundamentals_ticker" not in data["holdings"][0]
+        loaded = service._load_state("no_fund", initial_amount=0.0)
+        assert loaded.holdings[0].fundamentals_ticker is None
+
+    def test_trade_with_currency_roundtrips(
+        self, temp_data_dir, mock_security_service
+    ):
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+        state = PortfolioState(
+            cash=1000.0,
+            trades=[
+                Trade(
+                    timestamp=datetime(2024, 1, 15, 10, 30, tzinfo=timezone.utc),
+                    ticker="ASML.AS",
+                    name="ASML Holding",
+                    action="BUY",
+                    quantity=5,
+                    price=600.0,
+                    reasoning="Semi leader",
+                    currency="EUR",
+                )
+            ],
+        )
+
+        service.save_state("trade_ccy", state)
+        loaded = service._load_state("trade_ccy", initial_amount=0.0)
+
+        assert loaded.trades[0].currency == "EUR"
+
+    def test_trade_without_currency_is_omitted_and_loads_as_none(
+        self, temp_data_dir, mock_security_service, sample_trade
+    ):
+        """Legacy JSON without currency should still load cleanly (backward compat)."""
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+        state = PortfolioState(cash=1000.0, trades=[sample_trade])
+
+        service.save_state("no_ccy", state)
+        data = json.loads((temp_data_dir["state"] / "no_ccy.json").read_text())
+
+        assert "currency" not in data["trades"][0]
+        loaded = service._load_state("no_ccy", initial_amount=0.0)
+        assert loaded.trades[0].currency is None
+
+    def test_legacy_state_without_new_fields_loads(
+        self, temp_data_dir, mock_security_service
+    ):
+        """Existing JSON files written before the new fields should load as None."""
+        legacy = {
+            "cash": 500.0,
+            "holdings": [
+                {"ticker": "AAPL", "name": "Apple", "quantity": 1, "avg_price": 150.0}
+            ],
+            "trades": [
+                {
+                    "timestamp": "2024-01-15T10:30:00+00:00",
+                    "ticker": "AAPL",
+                    "name": "Apple",
+                    "action": "BUY",
+                    "quantity": 1,
+                    "price": 150.0,
+                    "reasoning": "legacy",
+                }
+            ],
+        }
+        (temp_data_dir["state"] / "legacy.json").write_text(json.dumps(legacy))
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+        )
+        loaded = service._load_state("legacy", initial_amount=0.0)
+
+        assert loaded.holdings[0].fundamentals_ticker is None
+        assert loaded.trades[0].currency is None
+
+
 class TestCalculateValue:
     """Tests for calculate_value method."""
 
@@ -303,6 +458,72 @@ class TestCalculateValue:
 
         # 5000 cash + (10 shares * $200) = 7000
         assert value == 7000.0
+
+    def test_converts_eur_holding_to_display_currency(
+        self, temp_data_dir, mock_security_service, mock_fx_service
+    ):
+        """EUR holding + USD cash should be converted to EUR for display."""
+        mock_security_service.get_price.return_value = 100.0  # EUR per share
+        mock_security_service.get_currency.return_value = "EUR"
+
+        # EUR→EUR: 1.0, USD→EUR: 0.9 (cash is always in display currency here)
+        mock_fx_service.convert.side_effect = (
+            lambda amount, from_ccy=None, to_ccy=None, at=None:
+            amount if from_ccy == to_ccy else amount * 0.9
+        )
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+            fx_service=mock_fx_service,
+        )
+        state = PortfolioState(
+            cash=1000.0,
+            holdings=[
+                Holding(ticker="ASML.AS", name="ASML", quantity=5, avg_price=90.0)
+            ],
+        )
+
+        value = service.calculate_value(state, display_currency="EUR")
+
+        # Cash (1000, treated as display ccy) + 5 * 100 EUR @ 1.0 = 1500
+        assert value == pytest.approx(1500.0)
+
+    def test_mixed_currency_holdings_convert_per_native_ccy(
+        self, temp_data_dir, mock_security_service, mock_fx_service
+    ):
+        """Each holding's native currency converts independently."""
+        prices = {"AAPL": 200.0, "ASML.AS": 600.0}
+        currencies = {"AAPL": "USD", "ASML.AS": "EUR"}
+        mock_security_service.get_price.side_effect = lambda t: prices[t]
+        mock_security_service.get_currency.side_effect = lambda t: currencies[t]
+
+        # USD→USD: 1.0, EUR→USD: 1.10
+        rates = {("USD", "USD"): 1.0, ("EUR", "USD"): 1.10}
+        mock_fx_service.convert.side_effect = (
+            lambda amount, from_ccy=None, to_ccy=None, at=None:
+            amount * rates[(from_ccy, to_ccy)]
+        )
+
+        service = PortfolioService(
+            portfolios_dir=temp_data_dir["portfolios"],
+            state_dir=temp_data_dir["state"],
+            security_service=mock_security_service,
+            fx_service=mock_fx_service,
+        )
+        state = PortfolioState(
+            cash=1000.0,
+            holdings=[
+                Holding(ticker="AAPL", name="Apple", quantity=10, avg_price=150.0),
+                Holding(ticker="ASML.AS", name="ASML", quantity=5, avg_price=500.0),
+            ],
+        )
+
+        value = service.calculate_value(state, display_currency="USD")
+
+        # 1000 cash + (10 * 200 USD) + (5 * 600 EUR * 1.10) = 1000 + 2000 + 3300 = 6300
+        assert value == pytest.approx(6300.0)
 
     def test_calculates_value_with_only_cash(
         self, temp_data_dir, mock_security_service, empty_portfolio_state

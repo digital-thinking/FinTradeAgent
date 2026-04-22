@@ -23,7 +23,7 @@ def render_portfolio_tile(
         abs_gain = metrics["absolute_gain"]
         pct_gain = metrics["percentage_gain"]
     else:
-        value = portfolio_service.calculate_value(state)
+        value = portfolio_service.calculate_value(state, config.display_currency)
         abs_gain, pct_gain = portfolio_service.calculate_gain(config, state)
     is_overdue = portfolio_service.is_execution_overdue(config, state)
     num_holdings = len(state.holdings)
@@ -55,9 +55,16 @@ def render_portfolio_tile(
         # Value metrics
         metric_col1, metric_col2 = st.columns(2)
         with metric_col1:
-            st.metric("Portfolio Value", f"${value:,.2f}")
+            st.metric(
+                "Portfolio Value",
+                f"{value:,.2f} {config.display_currency}",
+            )
         with metric_col2:
-            st.metric("Return", f"${abs_gain:,.2f}", delta=f"{pct_gain:+.1f}%")
+            st.metric(
+                "Return",
+                f"{abs_gain:,.2f} {config.display_currency}",
+                delta=f"{pct_gain:+.1f}%",
+            )
 
         # Mini chart
         fig = _create_mini_chart(config, state, gain_color)

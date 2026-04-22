@@ -3,7 +3,7 @@
 import pytest
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from fin_trade.models import (
     AssetClass,
@@ -18,6 +18,24 @@ from fin_trade.services.security import Security
 from fin_trade.services.stock_data import PriceContext
 
 
+@pytest.fixture(autouse=True)
+def _identity_fx_service():
+    """Replace FxService with an identity stub for all tests.
+
+    Any PortfolioService instantiated without an explicit fx_service would
+    otherwise spin up a real FxService, hitting yfinance and the on-disk
+    cache. Tests that genuinely exercise FX should patch fin_trade.services.fx
+    themselves.
+    """
+    stub = MagicMock()
+    stub.return_value.get_rate.return_value = 1.0
+    stub.return_value.convert.side_effect = (
+        lambda amount, from_ccy=None, to_ccy=None, at=None: amount
+    )
+    with patch("fin_trade.services.portfolio.FxService", stub):
+        yield stub
+
+
 @pytest.fixture
 def mock_security_service():
     """Create a mock SecurityService."""
@@ -27,8 +45,20 @@ def mock_security_service():
     mock.get_price.return_value = 100.0
     mock.force_update_price.return_value = 100.0
 
+    # Default listing currency — tests that care about FX can override
+    mock.get_currency.return_value = "USD"
+
+    # Default fundamentals-derived fields — return None so market_data short-circuits
+    mock.get_earnings_timestamp.return_value = None
+    mock.get_52w_range.return_value = None
+    mock.get_moving_averages.return_value = None
+    mock.get_short_interest.return_value = None
+    mock.get_analyst_data.return_value = None
+    mock.get_volume_data.return_value = None
+    mock.get_valuation_metrics.return_value = None
+
     # Default security lookup
-    def lookup_ticker(ticker: str) -> Security:
+    def lookup_ticker(ticker: str, fundamentals_ticker: str | None = None) -> Security:
         return Security(
             ticker=ticker.upper(),
             name=f"{ticker.upper()} Inc.",
@@ -50,6 +80,19 @@ def mock_security_service():
 
     mock.validate_ticker_for_asset_class.side_effect = validate_ticker_for_asset_class
 
+    return mock
+
+
+@pytest.fixture
+def mock_fx_service():
+    """Create a mock FxService that performs identity conversions.
+
+    Returns 1.0 for any rate and passes amounts through unchanged — keeps
+    unit tests independent of yfinance and the on-disk FX cache.
+    """
+    mock = MagicMock()
+    mock.get_rate.return_value = 1.0
+    mock.convert.side_effect = lambda amount, from_ccy=None, to_ccy=None, at=None: amount
     return mock
 
 

@@ -38,7 +38,7 @@ def mock_security_service():
         "GOOGL": {"sector": "Technology", "industry": "Internet Content"},
     }
 
-    def get_stock_info(ticker: str) -> dict:
+    def get_stock_info(ticker: str, fundamentals_ticker: str | None = None) -> dict:
         return stock_info.get(ticker.upper(), {})
 
     mock.get_stock_info.side_effect = get_stock_info
@@ -203,7 +203,7 @@ class TestCalculateAttributionMultipleHoldings:
             "LOSE": {"sector": "Beta", "industry": "Y"},
         }
         mock.get_price.side_effect = lambda t: prices[t.upper()]
-        mock.get_stock_info.side_effect = lambda t: info[t.upper()]
+        mock.get_stock_info.side_effect = lambda t, fundamentals_ticker=None: info[t.upper()]
 
         service = AttributionService(mock)
         holdings = [
@@ -258,7 +258,7 @@ class TestSectorAttribution:
     def test_unknown_sector_handling(self, mock_security_service, sample_config):
         """Test that holdings without sector info are grouped under 'Unknown'."""
         # Override stock info to return empty dict
-        mock_security_service.get_stock_info.side_effect = lambda ticker: {}
+        mock_security_service.get_stock_info.side_effect = lambda ticker, fundamentals_ticker=None: {}
 
         service = AttributionService(mock_security_service)
         holdings = [

@@ -85,9 +85,10 @@ class AgentService:
         unit_label = "units" if config.asset_class == AssetClass.CRYPTO else "shares"
 
         # Get rich price context for holdings (history, RSI, volume, MAs, short interest)
-        holding_tickers = [h.ticker for h in state.holdings]
         holdings_info_str = self.stock_data_service.format_holdings_for_prompt(
-            state.holdings, security_service=self.security_service
+            state.holdings,
+            security_service=self.security_service,
+            asset_class=config.asset_class,
         )
 
         trades_info = []
@@ -99,7 +100,9 @@ class AgentService:
 
         # Fetch market data context for holdings
         market_data_context = self.market_data_service.get_holdings_context(
-            holding_tickers, config.asset_class
+            state.holdings,
+            config.asset_class,
+            security_service=self.security_service,
         )
 
         # Generate self-reflection on past performance

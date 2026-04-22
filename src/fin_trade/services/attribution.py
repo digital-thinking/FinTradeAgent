@@ -88,7 +88,7 @@ class AttributionService:
 
         for holding in state.holdings:
             current_price = self._get_price(holding.ticker)
-            stock_info = self._get_stock_info(holding.ticker)
+            stock_info = self._get_stock_info(holding.ticker, holding.fundamentals_ticker)
 
             cost_basis = holding.avg_price * holding.quantity
             current_value = current_price * holding.quantity
@@ -215,6 +215,6 @@ class AttributionService:
         """Get current price for a ticker."""
         return self.security_service.get_price(ticker)
 
-    def _get_stock_info(self, ticker: str) -> dict:
+    def _get_stock_info(self, ticker: str, fundamentals_ticker: str | None = None) -> dict:
         """Get stock info for a ticker."""
-        return self.security_service.get_stock_info(ticker)
+        return self.security_service.get_stock_info(ticker, fundamentals_ticker)

@@ -625,7 +625,11 @@ class TestGetHoldingsContext:
             }, index=dates)
             service._cache[ticker] = df
 
-        result = service.get_holdings_context(["AAPL", "MSFT"])
+        holdings = [
+            Holding(ticker="AAPL", name="Apple", quantity=1, avg_price=100.0),
+            Holding(ticker="MSFT", name="Microsoft", quantity=1, avg_price=100.0),
+        ]
+        result = service.get_holdings_context(holdings)
 
         assert "AAPL" in result
         assert "MSFT" in result
@@ -647,9 +651,14 @@ class TestGetHoldingsContext:
         service._cache["GOOD"] = df
         service._cache["BAD"] = pd.DataFrame(columns=["Close"])  # Empty
 
+        holdings = [
+            Holding(ticker="GOOD", name="Good", quantity=1, avg_price=100.0),
+            Holding(ticker="BAD", name="Bad", quantity=1, avg_price=100.0),
+        ]
+
         # Should raise error for BAD ticker (no fallback)
         with pytest.raises(ValueError, match="No price data available for BAD"):
-            service.get_holdings_context(["GOOD", "BAD"])
+            service.get_holdings_context(holdings)
 
 
 class TestFormatHoldingsForPrompt:
